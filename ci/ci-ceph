@@ -1,0 +1,19 @@
+#!/bin/sh -ex
+
+. /home/user/env/bin/activate
+pip install . plugins/*
+
+#pytest -v --cov=wildland --cov-report term --cov-report html "$@"
+
+HOST=$(hostname -s)
+IPADDR=$(getent hosts "$NODE" | awk '{ print $1 }')
+FSID=$(uuidgen)
+
+printf "hostname=%s ipaddr=%s fsid=%s" "$hostname" "$ipaddr" "$fsid"
+
+sed \
+    -e s:@HOST@:"$HOST":g \
+    -e s:@IPADDR@:"$IPADDR":g \
+    -e s:@FSID@:"$FSID":g \
+< ci/ceph.conf.in \
+> /etc/ceph/ceph.conf
