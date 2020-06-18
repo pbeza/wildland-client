@@ -1,8 +1,7 @@
 stages:
   - test
-  - docs
 
-lint:
+ceph:
   stage: test
   image: docker/compose:latest
   services:
@@ -10,66 +9,4 @@ lint:
   script:
     - cd ci
     - docker-compose build
-    - docker-compose run wildland-fuse-ci ./ci/ci-lint
-
-pytest:
-  stage: test
-  image: docker/compose:latest
-  services:
-    - docker:dind
-  script:
-    - mkdir --mode=0777 htmlcov/
-    - cd ci
-    - docker-compose build
-    - docker-compose run wildland-fuse-ci ./ci/ci-pytest
-  artifacts:
-    paths:
-      - htmlcov/
-  coverage: '/TOTAL.*\s(\d+)%/'
-
-smoke-test:
-  stage: test
-  image: docker/compose:latest
-  services:
-    - docker:dind
-  script:
-    - cd docker
-    - docker-compose build
-    - docker-compose run wildland-fuse wl-smoke-test < /dev/null
-
-pages-test:
-  stage: docs
-  image: docker/compose:latest
-  except:
-    - master
-  services:
-    - docker:dind
-  script:
-    - mkdir --mode=0777 Documentation/_build
-    - cd ci
-    - docker-compose build
-    - docker-compose run wildland-fuse-ci ./ci/ci-docs
-  artifacts:
-    paths:
-      - Documentation/_build
-
-pages:
-  stage: docs
-  image: docker/compose:latest
-  dependencies:
-    - pytest
-  only:
-    - master
-  services:
-    - docker:dind
-  script:
-    - mkdir --mode=0777 Documentation/_build
-    - cd ci
-    - docker-compose build
-    - docker-compose run wildland-fuse-ci ./ci/ci-docs
-    - cp -r ../Documentation/_build/html ../public
-    - cp -r ../Documentation/_build/man ../public/man
-    - cp -r ../htmlcov ../public/coverage
-  artifacts:
-    paths:
-      - public/
+    - docker-compose run wildland-fuse-ci ./ci/ci-ceph
