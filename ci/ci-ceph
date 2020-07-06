@@ -1,15 +1,19 @@
 #!/bin/sh -ex
 
-. /home/user/env/bin/activate
-pip install . plugins/*
+#. /home/user/env/bin/activate
+#pip install . plugins/*
 
 #pytest -v --cov=wildland --cov-report term --cov-report html "$@"
 
 HOST=$(hostname -s)
-IPADDR=$(getent hosts "$NODE" | awk '{ print $1 }')
+IPADDR=10.137.0.52
+#IPADDR=$(getent hosts "$HOST" | awk '{ print $1 }')
 FSID=$(uuidgen)
 
-printf "hostname=%s ipaddr=%s fsid=%s" "$hostname" "$ipaddr" "$fsid"
+BLOCK_SIZE=$((100 * 1000 * 1024))
+BLOCK_PATH=block
+
+printf "HOST=%s IPADDR=%s FSID=%s" "$HOST" "$IPADDR" "$FSID"
 
 sed \
     -e s:@HOST@:"$HOST":g \
@@ -17,3 +21,24 @@ sed \
     -e s:@FSID@:"$FSID":g \
 < ci/ceph.conf.in \
 > /etc/ceph/ceph.conf
+
+# https://ceph.readthedocs.io/en/latest/install/manual-deployment/
+ceph-authtool --create-keyring /tmp/ceph.mon.keyring --gen-key -n mon. --cap mon 'allow *'
+ceph-authtool --create-keyring /etc/ceph/ceph.client.admin.keyring --gen-key -n client.admin --cap mon 'allow *' --cap osd 'allow *' --cap mds 'allow *' --cap mgr 'allow *'
+ceph-authtool --create-keyring /var/lib/ceph/bootstrap-osd/ceph.keyring --gen-key -n client.bootstrap-osd --cap mon 'profile bootstrap-osd' --cap mgr 'allow r'
+ceph-authtool /tmp/ceph.mon.keyring --import-keyring /etc/ceph/ceph.client.admin.keyring
+ceph-authtool /tmp/ceph.mon.keyring --import-keyring /var/lib/ceph/bootstrap-osd/ceph.keyring
+chown ceph:ceph /tmp/ceph.mon.keyring
+monmaptool --create --add "$HOST" "$IPADDR" --fsid "$FSID" /tmp/monmap
+mkdir -p /var/lib/ceph/mon/ceph-"$HOST"
+chown -R ceph:ceph /var/lib/ceph/mon/ceph-"$HOST"
+sudo -u ceph ceph-mon --mkfs -i "$HOST" --monmap /tmp/monmap --keyring /tmp/ceph.mon.keyring
+
+systemctl restart ceph-mon@"$HOST"
+
+truncate -s "$BLOCK_SIZE" "$BLOCK_PATH"
+BLOCK_LOOP="$(losetup -f --show "$BLOCK_PATH")"
+
+ceph-volume lvm prepare --bluestore --data "$BLOCK_LOOP"
+ceph-volume lvm activate 0 "$FSID"
+systemctl restart ceph-osd@0

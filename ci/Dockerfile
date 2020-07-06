@@ -19,7 +19,10 @@ RUN apt-get install -y \
       python3-venv \
       fuse \
       libfuse-dev \
-      pkg-config
+      pkg-config \
+      ceph \
+      radosgw \
+      uuid-runtime
 
 RUN useradd --create-home user
 
