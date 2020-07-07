@@ -32,6 +32,7 @@ import threading
 from typing import Dict, Callable
 
 import fuse
+import pyfuse3
 
 
 logger = logging.getLogger('fuse')
@@ -97,6 +98,39 @@ def debug_handler(func, bound=False):
             logger.exception('error while handling %s', func.__name__)
             return -errno.EINVAL
     return wrapper
+
+
+def async_debug_handler(func):
+    '''A decorator for wrapping FUSE API.
+
+    Helpful for debugging.
+    '''
+    @functools.wraps(func)
+    async def wrapper(*args, **kwds):
+        start_coverage()
+
+        try:
+            args_to_display = args[1:]
+
+            logger.debug('%s(%s)', func.__name__, ', '.join(itertools.chain(
+                (debug_repr(i) for i in args_to_display),
+                (f'{k}={v!r}' for k, v in kwds.items()))))
+
+            ret = await func(*args, **kwds)
+            ret_repr = debug_repr(ret)
+            logger.debug('%s → %s', func.__name__, ret_repr)
+            return ret
+        except OSError as err:
+            # TODO this shouldn't happen
+            logger.warning('%s !→ %s %s', func.__name__,
+                           errno.errorcode[err.errno],
+                           err.strerror)
+            raise pyfuse3.FUSEError(err.errno)
+        except Exception:
+            logger.exception('error while handling %s', func.__name__)
+            raise pyfuse3.FUSEError(errno.EINVAL)
+    return wrapper
+
 
 
 def debug_repr(obj):

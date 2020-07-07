@@ -373,8 +373,8 @@ class WildlandFS(fuse.Fuse):
     def mkdir(self, path, mode):
         return self.proxy('mkdir', path, mode, parent=True, modify=True)
 
-    def mknod(self, *args):
-        return -errno.ENOSYS
+    def mknod(self, path, mode, dev):
+        return self.proxy('mknod', path, mode, dev, parent=True, modify=True)
 
     def readlink(self, *args):
         return -errno.ENOSYS
