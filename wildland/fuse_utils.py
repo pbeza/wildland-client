@@ -66,40 +66,6 @@ def start_coverage():
     fuse_thread_local.coverage_started = True
 
 
-def debug_handler(func, bound=False):
-    '''A decorator for wrapping FUSE API.
-
-    Helpful for debugging.
-    '''
-    @functools.wraps(func)
-    def wrapper(*args, **kwds):
-        start_coverage()
-
-        try:
-            args_to_display = args if bound else args[1:]
-
-            logger.debug('%s(%s)', func.__name__, ', '.join(itertools.chain(
-                (debug_repr(i) for i in args_to_display),
-                (f'{k}={v!r}' for k, v in kwds.items()))))
-
-            ret = func(*args, **kwds)
-            ret_repr = debug_repr(ret)
-            if isinstance(ret, int) and ret < 0:
-                logger.warning('%s → %s', func.__name__, ret_repr)
-            else:
-                logger.debug('%s → %s', func.__name__, ret_repr)
-            return ret
-        except OSError as err:
-            logger.warning('%s !→ %s %s', func.__name__,
-                           errno.errorcode[err.errno],
-                           err.strerror)
-            raise
-        except Exception:
-            logger.exception('error while handling %s', func.__name__)
-            return -errno.EINVAL
-    return wrapper
-
-
 def async_debug_handler(func):
     '''A decorator for wrapping FUSE API.
 

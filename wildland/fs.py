@@ -33,6 +33,7 @@ import json
 import fuse
 import pyfuse3
 import pyfuse3_asyncio
+import daemon
 
 from .log import init_logging
 from .storage_backends.base import StorageBackend
@@ -50,10 +51,11 @@ class WildlandFS(pyfuse3.Operations):
     '''A FUSE implementation of Wildland'''
     # pylint: disable=no-self-use,too-many-public-methods
 
-    def __init__(self, mnt_dir):
+    def __init__(self, mnt_dir, fuse_options):
         super().__init__()
 
         self.mnt_dir = mnt_dir
+        self.fuse_options = fuse_options
 
         self.uid = os.getuid()
         self.gid = os.getgid()
@@ -79,6 +81,23 @@ class WildlandFS(pyfuse3.Operations):
         self.resolver = WildlandFSConflictResolver(self)
         self.control = ControlStorageBackend(fs=self)
         self._mount_storage([PurePosixPath('/.control')], self.control)
+
+    def run(self):
+        '''
+        Enter service loop
+        '''
+
+        pyfuse3.init(self, self.mnt_dir, self.fuse_options)
+        loop = asyncio.get_event_loop()
+        try:
+            loop.run_until_complete(pyfuse3.main())
+        except:
+            pyfuse3.close()
+            raise
+        finally:
+            loop.close()
+
+        pyfuse3.close()
 
     def _mount_storage(self, paths: List[PurePosixPath], storage: StorageBackend,
                       remount=False):
@@ -501,38 +520,42 @@ def parse_args():
                         help='Where to mount the file system')
     parser.add_argument('--debug-fuse', action='store_true', default=False,
                         help='Enable FUSE debugging output')
-    parser.add_argument('--log', metavar='PATH',
+    parser.add_argument('--log', metavar='PATH', default='/tmp/wlfuse.log',
                         help='path to log file, use - for stderr')
+    parser.add_argument('-o', metavar='OPTIONS', dest='fuse_options',
+                        default='',
+                        help='FUSE options')
+    parser.add_argument('--breakpoint', action='store_true',
+                        help='enable .control/breakpoint')
+    parser.add_argument('--daemon', action='store_true',
+                        help='Run in background')
     return parser.parse_args()
 
 
 def main():
-    '''FUE driver entry point'''
-
+    '''FUSE driver entry point'''
     args = parse_args()
     if args.log == '-':
         init_logging(console=True)
     else:
         init_logging(console=False, file_path=args.log)
 
-    fs = WildlandFS(args.mountpoint)
-    fuse_options = set(pyfuse3.default_options)
+    fuse_options = set(args.fuse_options.split(','))
     fuse_options.add('fsname=wildland-fuse')
     if args.debug_fuse:
         fuse_options.add('debug')
 
-    pyfuse3.init(fs, args.mountpoint, fuse_options)
-    loop = asyncio.get_event_loop()
-    try:
-        loop.run_until_complete(pyfuse3.main())
-    except:
-        pyfuse3.close()
-        raise
-    finally:
-        loop.close()
+    fs = WildlandFS(args.mountpoint, fuse_options)
 
-    pyfuse3.close()
+    if not args.breakpoint:
+        # pylint: disable=attribute-defined-outside-init
+        fs.breakpoint = None
 
+    if args.daemon:
+        with daemon.DaemonContext():
+            fs.run()
+    else:
+        fs.run()
 
 if __name__ == '__main__':
     main()

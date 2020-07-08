@@ -63,7 +63,7 @@ class WildlandFSClient:
         self.path_cache = None
         self.manifest_cache.clear()
 
-    def mount(self, foreground=False, debug=False, single_thread=False) -> subprocess.Popen:
+    def mount(self, foreground=False, debug=False) -> subprocess.Popen:
         '''
         Mount the Wildland filesystem and wait until it is mounted.
 
@@ -72,27 +72,20 @@ class WildlandFSClient:
         Args:
             foreground: Run in foreground instead of daemonizing
             debug: Enable debug logs (only in case of foreground)
-            single_thread: Run single-threaded
         '''
         self.clear_cache()
 
         cmd = [sys.executable, '-m', 'wildland.fs', str(self.mount_dir)]
-        options = []
 
         if foreground:
-            options.append('log=-')
-            cmd.append('-f')
+            cmd.append('--log=-')
             if debug:
-                cmd.append('-d')
+                cmd.append('--debug-fuse')
+        else:
+            cmd.append('--daemon')
 
-        if single_thread:
-            options.append('single_thread')
-
-        if foreground and single_thread:
-            options.append('breakpoint')
-
-        if options:
-            cmd += ['-o', ','.join(options)]
+        if foreground:
+            cmd.append('--breakpoint')
 
         logger.info('running mount command: %s', cmd)
 

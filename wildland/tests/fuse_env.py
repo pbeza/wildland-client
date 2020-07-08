@@ -63,7 +63,7 @@ class FuseEnv:
         mnt_dir = self.test_dir / 'mnt'
 
         self.proc = subprocess.Popen([
-            sys.executable, '-m', 'wildland.fs2',
+            sys.executable, '-m', 'wildland.fs',
             mnt_dir,
             '--debug',
             '--log=-',

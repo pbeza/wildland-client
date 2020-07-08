@@ -5,6 +5,7 @@ jsonschema
 pyyaml
 click
 entrypoints
+python-daemon
 
 # Storage
 boto3
