@@ -1,5 +1,6 @@
 # Core
 fuse-python>=1.0.0
+pyfuse3
 jsonschema
 pyyaml
 click
