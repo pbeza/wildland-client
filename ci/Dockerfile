@@ -17,13 +17,13 @@ RUN apt-get install -y \
       signify-openbsd \
       python3-dev \
       python3-venv \
-      fuse \
       libfuse-dev \
+      fuse3 \
+      libfuse3-dev \
       pkg-config \
       time \
       tree \
-      moreutils \
-      libfuse3-dev
+      moreutils
 
 RUN useradd --create-home user
 
