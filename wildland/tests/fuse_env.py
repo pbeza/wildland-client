@@ -27,11 +27,11 @@ from pathlib import Path
 import traceback
 import time
 import json
+import sys
 
 import pytest
 
 PROJECT_PATH = Path(__file__).resolve().parents[2]
-ENTRY_POINT = PROJECT_PATH / 'wildland-fuse'
 
 
 class FuseEnv:
@@ -62,12 +62,11 @@ class FuseEnv:
         assert not self.mounted, 'only one mount() at a time'
         mnt_dir = self.test_dir / 'mnt'
 
-        options = ['log=-']
-
         self.proc = subprocess.Popen([
-            ENTRY_POINT, mnt_dir,
-            '-f', '-d',
-            '-o', ','.join(options),
+            sys.executable, '-m', 'wildland.fs2',
+            mnt_dir,
+            '--debug',
+            '--log=-',
         ], cwd=PROJECT_PATH)
         try:
             self.wait_for_mount()

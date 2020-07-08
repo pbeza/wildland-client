@@ -173,6 +173,7 @@ def storage_manifest(env, path, storage_type, read_only=False):
 
 
 def test_cmd_mount(env, container, storage_type):
+    env.create_dir('storage/storage2')
     storage = storage_manifest(env, 'storage/storage2', storage_type)
     env.mount_storage(['/container2'], storage)
     assert sorted(os.listdir(env.mnt_dir / '.control/storage')) == [
@@ -185,6 +186,7 @@ def test_cmd_mount(env, container, storage_type):
     ]
 
 def test_cmd_mount_already_mounted(env, container, storage_type):
+    env.create_dir('storage/storage2')
     storage = storage_manifest(env, 'storage/storage2', storage_type)
     env.mount_storage(['/.uuid/XYZ', '/container2'], storage)
     with pytest.raises(IOError):
@@ -192,9 +194,11 @@ def test_cmd_mount_already_mounted(env, container, storage_type):
 
 
 def test_cmd_mount_remount(env, container, storage_type):
+    env.create_dir('storage/storage2')
     storage = storage_manifest(env, 'storage/storage2', storage_type)
     env.mount_storage(['/.uuid/XYZ', '/container2'], storage)
 
+    env.create_dir('storage/storage3')
     storage = storage_manifest(env, 'storage/storage3', storage_type)
     env.mount_storage(['/.uuid/XYZ', '/container3'], storage, remount=True)
     assert sorted(os.listdir(env.mnt_dir / '.control/storage')) == [
@@ -225,22 +229,22 @@ def test_cmd_unmount_error(env, container):
 
 
 def test_mount_no_directory(env, container, storage_type):
+    if storage_type == 'local-dir-cached':
+        pytest.skip('local-dir-cached behaviour is different')
+
     # Mount should still work if them backing directory does not exist
     storage = storage_manifest(env, 'storage/storage2', storage_type)
 
-    # The container should mount, with the directory visible but empty
+    # The container should mount, but the directory will not be visible
     env.mount_storage(['/container2'], storage)
     assert sorted(os.listdir(env.mnt_dir)) == [
         '.control',
         'container1',
-        'container2',
     ]
 
-    # It's not possible to list the directory (except local-dir-cached),
-    # or create a file...
-    if storage_type != 'local-dir-cached':
-        with pytest.raises(IOError):
-            os.listdir(env.mnt_dir / 'container2')
+    # It's not possible to list the directory, or create a file...
+    with pytest.raises(IOError):
+        os.listdir(env.mnt_dir / 'container2')
     with pytest.raises(IOError):
         open(env.mnt_dir / 'container2/file1', 'w')
 
