@@ -68,6 +68,7 @@ class WildlandFS(pyfuse3.Operations):
         self.fh_counter = 1
         self.dirs = {}
         self.fh_map = {}
+        self.inode_file_map = {}
 
         self._add_path(pyfuse3.ROOT_INODE, PurePosixPath('/'))
 
@@ -237,6 +238,13 @@ class WildlandFS(pyfuse3.Operations):
 
     @async_debug_handler
     async def getattr(self, inode, ctx=None):
+        if inode in self.inode_file_map:
+            f = next(iter(self.inode_file_map[inode]))
+            st = f.fgetattr()
+            attr = self._entry(st, inode)
+            # TODO add readonly permission
+            return attr
+
         path = self._path(inode)
 
         return await self._getattr(path, inode)
@@ -337,7 +345,9 @@ class WildlandFS(pyfuse3.Operations):
 
         fh = self.fh_counter
         self.fh_counter += 1
-        self.fh_map[fh] = f
+        self.fh_map[fh] = f, inode
+        self.inode_file_map.setdefault(inode, set()).add(f)
+
         fi = pyfuse3.FileInfo()
         fi.fh = fh
         fi.direct_io = True  # TODO only if necessary
@@ -352,7 +362,6 @@ class WildlandFS(pyfuse3.Operations):
 
         fh = self.fh_counter
         self.fh_counter += 1
-        self.fh_map[fh] = f
         fi = pyfuse3.FileInfo()
         fi.fh = fh
         fi.direct_io = True  # TODO only if necessary
@@ -363,6 +372,8 @@ class WildlandFS(pyfuse3.Operations):
         self._add_path(inode, path)
         try:
             attr = await self._getattr(path, inode)
+            self.inode_file_map.setdefault(inode, set()).add(f)
+            self.fh_map[fh] = f, inode
             return (fi, attr)
         except:
             self._remove_path(inode, path)
@@ -370,24 +381,28 @@ class WildlandFS(pyfuse3.Operations):
 
     @async_debug_handler
     async def read(self, fh, off, size):
-        f = self.fh_map[fh]
+        f, _inode = self.fh_map[fh]
         return f.read(size, off)
 
     @async_debug_handler
     async def write(self, fh, off, buf):
-        f = self.fh_map[fh]
+        f, _inode = self.fh_map[fh]
         return f.write(buf, off)
 
     @async_debug_handler
     async def flush(self, fh):
-        f = self.fh_map[fh]
+        f, _inode = self.fh_map[fh]
         return f.flush()
 
     @async_debug_handler
     async def release(self, fh):
-        f = self.fh_map[fh]
-        del self.fh_map[fh]
+        f, inode = self.fh_map[fh]
         f.release(0)
+
+        del self.fh_map[fh]
+        self.inode_file_map[inode].remove(f)
+        if not self.inode_file_map[inode]:
+            del self.inode_file_map[inode]
 
     @async_debug_handler
     async def fsync(self, fh, datasync):
