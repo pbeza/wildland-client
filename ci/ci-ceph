@@ -36,9 +36,21 @@ sudo -u ceph ceph-mon --mkfs -i "$HOST" --monmap /tmp/monmap --keyring /tmp/ceph
 
 systemctl restart ceph-mon@"$HOST"
 
-truncate -s "$BLOCK_SIZE" "$BLOCK_PATH"
+#truncate -s "$BLOCK_SIZE" "$BLOCK_PATH"
+dd if=/dev/zero of="$BLOCK_PATH" bs=1024 count=$((1000 * 1000))
 BLOCK_LOOP="$(losetup -f --show "$BLOCK_PATH")"
 
-ceph-volume lvm prepare --bluestore --data "$BLOCK_LOOP"
-ceph-volume lvm activate 0 "$FSID"
+#pvcreate "$BLOCK_LOOP"
+#vgcreate ceph "$BLOCK_LOOP"
+#lvcreate -l 100%FREE ceph -n data
+
+# https://www.netways.de/en/blog/2018/11/14/ceph-mimic-using-loop-devices-as-osd/
+sed -i \
+    -e "s:\\s*return TYPE == 'disk':& or TYPE == 'loop':" \
+    -e 's:skip_loop=True:skip_loop=False:' \
+    /usr/lib/python2.7/dist-packages/ceph_volume/util/disk.py
+
+ceph-volume lvm create --bluestore --data "$BLOCK_LOOP" #"/dev/ceph/data"
 systemctl restart ceph-osd@0
+
+systemctl restart ceph-radosgw@rgw."$HOST"

@@ -10,4 +10,7 @@ mon initial members = @HOST@
 osd pool default size = 1
 osd pool default min size = 1
 
+[client.rgw.@HOST@]
+rgw_frontends = civetweb port=80
+
 # vim: ft=cfg
