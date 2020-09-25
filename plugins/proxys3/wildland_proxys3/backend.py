@@ -1,0 +1,453 @@
+# Wildland Project
+#
+# Copyright (C) 2020 Golem Foundation,
+#                    Paweł Marczewski <pawel@invisiblethingslab.com>,
+#                    Wojtek Porczyk <woju@invisiblethingslab.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+'''
+ProxyS3 storage backend
+'''
+
+import errno
+import logging
+import mimetypes
+import os
+import threading
+import time
+from io import BytesIO
+from pathlib import PurePosixPath
+from typing import Iterable, Tuple, Set, List
+from urllib.parse import urlparse
+
+from botocore.config import Config
+import click
+
+from wildland.storage_backends.base import StorageBackend, Attr
+from wildland.storage_backends.buffered import File, FullBufferedFile, PagedFile
+from wildland.storage_backends.cached import CachedStorageMixin
+from wildland.manifest.schema import Schema
+
+from .reauth_session import Session
+
+
+logger = logging.getLogger('storage-proxys3')
+
+
+class S3File(FullBufferedFile):
+    '''
+    A buffered S3 file.
+    '''
+
+    def __init__(self, client, bucket, key, content_type, attr):
+        super().__init__(attr)
+        self.client = client
+        self.bucket = bucket
+        self.key = key
+        self.content_type = content_type
+
+    def read_full(self) -> bytes:
+        response = self.client.get_object(
+            Bucket=self.bucket,
+            Key=self.key,
+        )
+        return response['Body'].read()
+
+    def write_full(self, data: bytes) -> int:
+        # Set the Content-Type again, otherwise it will get overwritten with
+        # application/octet-stream.
+        self.client.put_object(
+            Bucket=self.bucket,
+            Key=self.key,
+            Body=BytesIO(data),
+            ContentType=self.content_type)
+        return len(data)
+
+
+class PagedS3File(PagedFile):
+    '''
+    A read-only paged S3 file.
+    '''
+
+    def __init__(self, client, bucket, key, attr):
+        super().__init__(attr)
+        self.client = client
+        self.bucket = bucket
+        self.key = key
+
+    def read_range(self, length, start) -> bytes:
+        range_header = 'bytes={}-{}'.format(start, start+length-1)
+        response = self.client.get_object(
+            Bucket=self.bucket,
+            Key=self.key,
+            Range=range_header,
+        )
+        return response['Body'].read()
+
+
+class ProxyS3StorageBackend(CachedStorageMixin, StorageBackend):
+    '''
+    Amazon S3 stroage accesssed via reseller proxy.
+    No direct access is possible.
+    '''
+
+    SCHEMA = Schema({
+        "title": "Storage manifest (S3 via reseller proxy)",
+        "type": "object",
+        "required": ["proxy_address", "ssl_cert", "credentials"],
+        "properties": {
+            "proxy_address": {
+                "type": "string",
+                "description": "ProxyS3 IP address with port number"
+            },
+            "ssl_cert": {
+                "type": "string",
+                "description": "Path to public SSL cert file",
+            },
+            "credentials": {
+                "type": "object",
+                "required": ["username", "password"],
+                "properties": {
+                    "username": {"type": "string"},
+                    "password": {"type": "string"}
+                },
+                "additionalProperties": False
+            },
+            "with-index": {
+                "type": "boolean",
+                "description": "Maintain index.html files with directory listings",
+            }
+        }
+    })
+    TYPE = 'proxys3'
+
+    INDEX_NAME = 'index.html'
+
+    def __init__(self, **kwds) -> None:
+        super().__init__(**kwds)
+
+        self.with_index = self.params.get('with-index', False)
+
+        proxy = self.params['proxy_address']
+        cert = self.params['ssl_cert']
+        credentials = self.params['credentials']
+        session = Session(
+            username=credentials['username'],
+            password=credentials['password']
+        )
+        config = Config(
+            region_name='proxys3',
+            signature_version='proxy-basic',
+            proxies={'https': proxy}
+        )
+        self.client = session.client('s3', verify=cert, config=config)
+
+        # pylint: disable=no-member
+        self.bucket = 'dummy-bucket'
+        self.base_path = PurePosixPath('/') / credentials['username']
+
+        # Persist created directories. This is because S3 doesn't have
+        # information about directories, and we might want to create/remove
+        # them manually.
+        self.s3_dirs_lock = threading.Lock()
+        self.s3_dirs: Set[PurePosixPath] = {PurePosixPath('.')}
+
+        mimetypes.init()
+
+    @classmethod
+    def cli_options(cls):
+        return [
+            click.Option(
+                ['--proxy'],
+                metavar='PROXY',
+                help="ProxyS3 IP address with port number in format <IP>:<PORT>",
+                required=True),
+            click.Option(['--cert'],
+                        metavar='CERT',
+                        help="Path to public SSL cert file",
+                        required=True),
+            click.Option(['--username'], metavar='USERNAME', required=True),
+            click.Option(['--password'], metavar='PASSWORD', required=True),
+            click.Option(['--with-index'], is_flag=True,
+                         help='Maintain index.html files with directory listings'),
+        ]
+
+    @classmethod
+    def cli_create(cls, data):
+        return {
+            'proxy_address': data['proxy'],
+            'ssl_cert': data['cert'],
+            'credentials': {
+                'username': data['username'],
+                'password': data['password']
+            },
+            'with-index': data['with_index'],
+        }
+
+    def mount(self):
+        '''
+        Regenerate index files on mount.
+        '''
+
+        if self.with_index and not self.read_only:
+            self.refresh()
+            with self.s3_dirs_lock:
+                s3_dirs = list(self.s3_dirs)
+            for path in s3_dirs:
+                self._update_index(path)
+
+    def key(self, path: PurePosixPath) -> str:
+        '''
+        Convert path to S3 object key.
+        '''
+
+        return str((self.base_path / path).relative_to('/'))
+
+    def url(self, path: PurePosixPath) -> str:
+        '''
+        Convert path to relative S3 URL.
+        '''
+        
+        return str(self.base_path / path)
+
+    @staticmethod
+    def _stat(obj) -> Attr:
+        '''
+        Convert Amazon's object summary, as returned by list_objects_v2 or
+        head_object.
+        '''
+        timestamp = int(obj['LastModified'].timestamp())
+        if 'Size' in obj:
+            size = obj['Size']
+        else:
+            size = obj['ContentLength']
+        return Attr.file(size, timestamp)
+
+    def info_all(self) -> Iterable[Tuple[PurePosixPath, Attr]]:
+        new_s3_dirs = set()
+
+        token = None
+        while True:
+            if token:
+                resp = self.client.list_objects_v2(
+                    Bucket=self.bucket,
+                    Prefix=self.base_path.relative_to('/').as_posix(),
+                    ContinuationToken=token,
+                )
+            else:
+                resp = self.client.list_objects_v2(
+                    Bucket=self.bucket,
+                    Prefix=self.base_path.relative_to('/').as_posix()
+                )
+
+            if 'Contents' in resp:
+                for summary in resp['Contents']:
+
+                    full_path = PurePosixPath('/') / summary['Key']
+                    try:
+                        obj_path = full_path.relative_to(self.base_path)
+                    except ValueError:
+                        continue
+
+                    if not (self.with_index and obj_path.name == self.INDEX_NAME):
+                        yield obj_path, self._stat(summary)
+                    
+                    # Add path to s3_dirs even if we just see index.html.
+                    for parent in obj_path.parents:
+                        new_s3_dirs.add(parent)
+
+            if resp['IsTruncated']:
+                token = resp['NextContinuationToken']
+            else:
+                break
+
+        # In case we haven't found any files
+        new_s3_dirs.add(PurePosixPath('.'))
+
+        with self.s3_dirs_lock:
+            self.s3_dirs.update(new_s3_dirs)
+            all_s3_dirs = list(self.s3_dirs)
+
+        for dir_path in all_s3_dirs:
+            yield dir_path, Attr.dir()
+
+    @staticmethod
+    def get_content_type(path: PurePosixPath) -> str:
+        '''
+        Guess the right content type for given path.
+        '''
+
+        content_type, _encoding = mimetypes.guess_type(path.name)
+        return content_type or 'application/octet-stream'
+
+    def open(self, path: PurePosixPath, flags: int) -> File:
+        if self.with_index and path.name == self.INDEX_NAME:
+            raise IOError(errno.ENOENT, str(path))
+
+        head = self.client.head_object(
+            Bucket=self.bucket,
+            Key=self.key(path),
+        )
+        attr = self._stat(head)
+        if flags & (os.O_WRONLY | os.O_RDWR):
+            content_type = self.get_content_type(path)
+            return S3File(
+                self.client, self.bucket, self.key(path),
+                content_type, attr)
+
+        return PagedS3File(self.client, self.bucket, self.key(path), attr)
+
+    def create(self, path: PurePosixPath, _flags: int, _mode: int) -> File:
+        if self.with_index and path.name == self.INDEX_NAME:
+            raise IOError(errno.EPERM, str(path))
+
+        content_type = self.get_content_type(path)
+        logger.debug('creating %s with content type %s', path, content_type)
+        self.client.put_object(
+            Bucket=self.bucket,
+            Key=self.key(path),
+            ContentType=content_type)
+        attr = Attr.file(size=0, timestamp=int(time.time()))
+        self.clear_cache()
+        self._update_index(path.parent)
+        return S3File(self.client, self.bucket, self.key(path),
+                      content_type, attr)
+
+    def unlink(self, path: PurePosixPath):
+        if self.with_index and path.name == self.INDEX_NAME:
+            raise IOError(errno.EPERM, str(path))
+
+        self.client.delete_object(
+            Bucket=self.bucket,
+            Key=self.key(path))
+        self.clear_cache()
+
+    def mkdir(self, path: PurePosixPath, _mode: int):
+        if self.with_index and path.name == self.INDEX_NAME:
+            raise IOError(errno.EPERM, str(path))
+
+        self.s3_dirs.add(path)
+        self.clear_cache()
+        self._update_index(path)
+        self._update_index(path.parent)
+
+    def rmdir(self, path: PurePosixPath):
+        if not path.parts:
+            raise IOError(errno.EPERM, str(path))
+
+        self.s3_dirs.remove(path)
+        self.clear_cache()
+        self._remove_index(path)
+        self._update_index(path.parent)
+
+    def truncate(self, path: PurePosixPath, length: int):
+        if self.with_index and path.name == self.INDEX_NAME:
+            raise IOError(errno.EPERM, str(path))
+
+        if length > 0:
+            raise NotImplementedError()
+        self.client.put_object(
+            Bucket=self.bucket,
+            Key=self.key(path),
+            ContentType=self.get_content_type(path))
+        self.clear_cache()
+
+    def _remove_index(self, path):
+        if self.read_only or not self.with_index:
+            return
+
+        self.client.delete_object(
+            Bucket=self.bucket,
+            Key=self.key(path / self.INDEX_NAME))
+
+    def _update_index(self, path):
+        if self.read_only or not self.with_index:
+            return
+
+        entries = self._get_index_entries(path)
+        data = self._generate_index(path, entries)
+
+        self.client.put_object(
+            Bucket=self.bucket,
+            Key=self.key(path / self.INDEX_NAME),
+            Body=BytesIO(data.encode()),
+            ContentType='text/html')
+
+    def _get_index_entries(self, path):
+        # (name, url, is_dir)
+        entries: List[Tuple[str, str, bool]] = []
+        if path != PurePosixPath('.'):
+            entries.append(('..', self.url(path.parent), Attr.dir()))
+
+        try:
+            names = list(self.readdir(path))
+        except IOError:
+            return entries
+
+        for name in names:
+            try:
+                attr = self.getattr(path / name)
+            except IOError:
+                continue
+            entry = (name, self.url(path / name), attr)
+            entries.append(entry)
+
+        # Sort directories first
+        def key(entry):
+            name, _url, attr = entry
+            return (0 if attr.is_dir() else 1), name
+
+        entries.sort(key=key)
+        return entries
+
+    @staticmethod
+    def _generate_index(path, entries) -> str:
+        title = str(PurePosixPath('/') / path)
+
+        data = '''\
+<!DOCTYPE html>
+<style>
+  main {
+    font-size: 16px;
+    font-family: monospace;
+  }
+  a { text-decoration: none; }
+</style>'''
+        data += '<title>Directory: {}</title>\n'.format(html.escape(title))
+        data += '<h1>Directory: {}</h1>\n'.format(html.escape(title))
+        data += '<main>\n'
+
+        for name, url, attr in entries:
+            if attr.is_dir():
+                icon = '&#x1F4C1;'
+                name += '/'
+                if url != '/':
+                    url += '/'
+            else:
+                icon = '&#x1F4C4;'
+
+            data += (
+                '<a data-size="{size}" data-timestamp="{timestamp}" '
+                'href="{href}">{icon} {name}</a><br>\n'
+            ).format(
+                size=attr.size,
+                timestamp=attr.timestamp,
+                href=html.escape(url, quote=True),
+                icon=icon,
+                name=html.escape(name),
+            )
+        data += '</main>\n'
+
+        return data

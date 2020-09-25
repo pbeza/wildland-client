@@ -31,6 +31,7 @@ import threading
 
 from typing import Dict, Callable
 
+import botocore
 import fuse
 
 
@@ -96,6 +97,12 @@ def debug_handler(func, bound=False):
         except NotImplementedError:
             logger.warning('%s !→ ENOSYS (NotImplementedError)', func.__name__)
             return -errno.ENOSYS
+        except botocore.exceptions.ClientError as err:
+            if "QuotaExceeded" in str(err):
+                logger.exception('error while handling %s', func.__name__)
+                return -errno.ENOSPC
+            else:
+                raise Exception
         except Exception:
             logger.exception('error while handling %s', func.__name__)
             return -errno.EINVAL
