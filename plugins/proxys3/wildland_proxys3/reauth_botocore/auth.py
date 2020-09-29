@@ -40,8 +40,8 @@ class SigProxyBasicAuth(BaseSigner):
 
     def payload(self, request: AWSRequest) -> str:
         if not self._should_sha256_sign_payload(request):
-            # When payload signing is disabled, we use this static string in
-            # place of the payload checksum.
+            # When payload signing is disabled, we use this static 
+            # string in place of the payload checksum.
             return UNSIGNED_PAYLOAD
         request_body = request.body
         if request_body and hasattr(request_body, 'seek'):
@@ -62,14 +62,14 @@ class SigProxyBasicAuth(BaseSigner):
             return EMPTY_SHA256_HASH
 
     def _should_sha256_sign_payload(self, request: AWSRequest) -> bool:
-        # S3 allows optional body signing, so to minimize the performance
-        # impact, we opt to not SHA256 sign the body on streaming uploads,
-        # provided that we're on https.
+        # S3 allows optional body signing, so to minimize the 
+        # performance impact, we opt to not SHA256 sign the body on 
+        # streaming uploads, provided that we're on https.
         client_config = request.context.get('client_config')
         s3_config = getattr(client_config, 's3', None)
 
-        # The config could be None if it isn't set, or if the customer sets it
-        # to None.
+        # The config could be None if it isn't set, or if the customer 
+        # sets it to None.
         if s3_config is None:
             s3_config = {}
 
@@ -79,10 +79,10 @@ class SigProxyBasicAuth(BaseSigner):
         if sign_payload is not None:
             return sign_payload
 
-        # We require that both content-md5 be present and https be enabled
-        # to implicitly disable body signing. The combination of TLS and
-        # content-md5 is sufficiently secure and durable for us to be
-        # confident in the request without body signing.
+        # We require that both content-md5 be present and https be 
+        # enabled to implicitly disable body signing. The combination of
+        # TLS and content-md5 is sufficiently secure and durable for us 
+        # to be confident in the request without body signing.
         if not request.url.startswith('https') or \
                 'Content-MD5' not in request.headers:
             return True
@@ -91,9 +91,9 @@ class SigProxyBasicAuth(BaseSigner):
         if request.context.get('has_streaming_input', False):
             return False
 
-        # Certain operations may have payload signing disabled by default.
-        # Since we don't have access to the operation model, we pass in this
-        # bit of metadata through the request context.
+        # Certain operations may have payload signing disabled by 
+        # default. Since we don't have access to the operation model, we
+        #  pass in this bit of metadata through the request context.
         return request.context.get('payload_signing_enabled', True)
 
     def add_auth(self, request: AWSRequest) -> None:
@@ -104,15 +104,9 @@ class SigProxyBasicAuth(BaseSigner):
         # authorization header is removed first.
         self._modify_request_before_signing(request)
 
-        logger.debug("Calculating signature using basic access auth.")
-        logger.debug(f"request = {request.url}")
-
         username = self.credentials.username
         password = self.credentials.password
-
         signature = b64encode(f'{username}:{password}'.encode()).decode()
-
-        logger.debug(f'Signature: {signature}')
 
         self._inject_signature_to_request(request, signature)
 

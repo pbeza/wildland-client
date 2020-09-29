@@ -12,8 +12,8 @@
 # language governing permissions and limitations under the License.
 
 '''
-Username and password variant of boto3 Session for use with re-authorizing 
-proxy.
+Username and password variant of boto3 Session for use with 
+re-authorizing proxy.
 '''
 
 import copy

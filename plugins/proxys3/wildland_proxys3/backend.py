@@ -2,7 +2,8 @@
 #
 # Copyright (C) 2020 Golem Foundation,
 #                    Paweł Marczewski <pawel@invisiblethingslab.com>,
-#                    Wojtek Porczyk <woju@invisiblethingslab.com>
+#                    Wojtek Porczyk <woju@invisiblethingslab.com>,
+#                    Mateusz Koczan <mateusz@wildland.io.com>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -197,7 +198,7 @@ class ProxyS3StorageBackend(S3StorageBackend):
                 Bucket=self.bucket,
                 Key=self.key(path),
                 ContentType=content_type)
-        # In case a quota has been exceeded
+        # In case the quota has been exceeded
         except botocore.exceptions.ClientError as err:
             raise IOError(errno.ENOSPC, str(err))
 
@@ -206,3 +207,21 @@ class ProxyS3StorageBackend(S3StorageBackend):
         self._update_index(path.parent) 
         return S3File(self.client, self.bucket, self.key(path),
                       content_type, attr)
+
+    def truncate(self, path: PurePosixPath, length: int):
+        if self.with_index and path.name == self.INDEX_NAME:
+            raise IOError(errno.EPERM, str(path))
+
+        if length > 0:
+            raise NotImplementedError()
+
+        try:
+            self.client.put_object(
+                Bucket=self.bucket,
+                Key=self.key(path),
+                ContentType=self.get_content_type(path))
+        # In case the quota has been exceeded
+        except botocore.exceptions.ClientError as err:
+            raise IOError(errno.ENOSPC, str(err))
+
+        self.clear_cache()

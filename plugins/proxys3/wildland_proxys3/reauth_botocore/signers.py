@@ -32,8 +32,8 @@ class RequestSigner(BotocoreRequestSigner):
                           signature_version: str = None,
                           **kwargs) -> BaseSigner:
         '''
-        Get an auth instance which can be used to sign a request using the given
-        signature version.
+        Get an auth instance which can be used to sign a request using 
+        the given signature version.
 
         Augments to handle the proxy signature version.
         '''

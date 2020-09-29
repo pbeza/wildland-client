@@ -27,8 +27,8 @@ ReadOnlyCredentials = namedtuple('ReadOnlyCredentials',
 
 class Credentials:
     '''
-    Holds the credentials needed to authenticate requests to re-authorizing
-    proxy.
+    Holds the credentials needed to authenticate requests to 
+    re-authorizing proxy.
     '''
 
     def __init__(self,
@@ -45,12 +45,12 @@ class Credentials:
         self._normalize()
     
     def _normalize(self) -> None:
-        # Keys would sometimes (accidentally) contain non-ascii characters.
-        # It would cause a confusing UnicodeDecodeError in Python 2.
-        # We explicitly convert them into unicode to avoid such error.
+        # Keys would sometimes (accidentally) contain non-ascii 
+        # characters. It would cause a confusing UnicodeDecodeError in 
+        # Python 2. We explicitly convert them into unicode to avoid such error.
         #
-        # Eventually the service will decide whether to accept the credential.
-        # This also complies with the behavior in Python 3.
+        # Eventually the service will decide whether to accept the 
+        # credential. This also complies with the behavior in Python 3.
         self.username = ensure_unicode(self.username)
         self.password = ensure_unicode(self.password)
 

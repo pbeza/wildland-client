@@ -36,8 +36,8 @@ class Session(BotocoreSession):
 
     def set_credentials(self, username: str, password: str) -> None:
         '''
-        Ignores aws_access_key_id, aws_secret_access_key, aws_session_token
-        and use proxy_username and proxy_password instead.
+        Ignores aws_access_key_id, aws_secret_access_key, 
+        aws_session_token and use username and password instead.
         '''
 
         self._credentials = Credentials(username, password)
