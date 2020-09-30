@@ -10,10 +10,9 @@
 # distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
-
 '''
-Username and password variant of botocore ClientArgsCreator for use with
-re-authorizing proxy.
+This module extends botocore.args module for use with re-authorizing
+proxy.
 '''
 
 import copy
@@ -21,7 +20,8 @@ from typing import Union
 
 import botocore
 from botocore.args import ClientArgsCreator as BotocoreClientArgsCreator
-from botocore.client import Config, ClientEndpointBridge
+from botocore.client import ClientEndpointBridge
+from botocore.config import Config
 from botocore.endpoint import EndpointCreator
 from botocore.model import ServiceModel
 
@@ -30,6 +30,10 @@ from .signers import RequestSigner
 
 
 class ClientArgsCreator(BotocoreClientArgsCreator):
+    '''
+    Username and password variant of botocore.args.ClientArgsCreator for
+    use with re-authorizing proxy.
+    '''
 
     def get_client_args(self,
                         service_model: ServiceModel,
@@ -45,7 +49,6 @@ class ClientArgsCreator(BotocoreClientArgsCreator):
             service_model, client_config, endpoint_bridge, region_name,
             endpoint_url, is_secure, scoped_config)
 
-        service_name = final_args['service_name']
         parameter_validation = final_args['parameter_validation']
         endpoint_config = final_args['endpoint_config']
         protocol = final_args['protocol']
@@ -69,6 +72,8 @@ class ClientArgsCreator(BotocoreClientArgsCreator):
         new_config = Config(**config_kwargs)
         endpoint_creator = EndpointCreator(event_emitter)
 
+        # To pass generated members of botocore.config.Config
+        # pylint: disable=no-member
         endpoint = endpoint_creator.create_endpoint(
             service_model, region_name=endpoint_region_name,
             endpoint_url=endpoint_config['endpoint_url'], verify=verify,
@@ -79,10 +84,9 @@ class ClientArgsCreator(BotocoreClientArgsCreator):
             socket_options=socket_options,
             client_cert=new_config.client_cert)
 
-        serializer = botocore.serialize.create_serializer(protocol,
-                                                          parameter_validation)
+        serializer = botocore.serialize.create_serializer(
+            protocol, parameter_validation)
         response_parser = botocore.parsers.create_parser(protocol)
-
         return {
             'serializer': serializer,
             'endpoint': endpoint,

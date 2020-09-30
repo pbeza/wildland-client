@@ -10,10 +10,9 @@
 # distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
-
 '''
-Username and password variant of boto3 Session for use with 
-re-authorizing proxy.
+This module extends boto3.session module for use with re-authorizing
+proxy.
 '''
 
 import copy
@@ -26,11 +25,11 @@ from boto3.utils import LazyLoadedWaiterModel, ServiceContext
 from botocore.exceptions import DataNotFoundError, UnknownServiceError
 from botocore.client import BaseClient, Config
 
-from .reauth_botocore.session import Session, get_session
+from .reauth_botocore.session import Session as BotocoreSession, get_session
 from .reauth_resources.factory import ResourceFactory
 
 
-class Session(BotoSession):
+class ReauthSession(BotoSession):
     '''
     Augments boto3 Session object to use the username and password based
     authentication.
@@ -40,7 +39,7 @@ class Session(BotoSession):
                  username: str,
                  password: str,
                  region_name: str = None,
-                 botocore_session: Session = None) -> None:
+                 botocore_session: BotocoreSession = None) -> None:
         if not botocore_session:
             # Create a new default session
             botocore_session = get_session()
@@ -52,6 +51,10 @@ class Session(BotoSession):
 
         self.resource_factory = ResourceFactory(
             self._session.get_component('event_emitter'))
+
+    # It is used to override boto3.session.Session to use the username
+    # and password based authentication
+    # pylint: disable=arguments-differ
 
     def client(self,
                service_name: str,
@@ -132,9 +135,10 @@ class Session(BotoSession):
         else:
             config = Config(user_agent_extra='Resource')
 
-        client = self.client(service_name, region_name=region_name, api_version=api_version, use_ssl=use_ssl,
-                             verify=verify, endpoint_url=endpoint_url, username=username, password=password,
-                             config=config)
+        client = self.client(
+            service_name, region_name=region_name, api_version=api_version,
+            use_ssl=use_ssl, verify=verify, endpoint_url=endpoint_url,
+            username=username, password=password, config=config)
         service_model = client.meta.service_model
 
         # Create a ServiceContext object to serve as a reference to

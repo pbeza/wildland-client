@@ -10,9 +10,8 @@
 # distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
-
 '''
-Username and password variant of botocore Session for use with re-authorizing 
+This module extends botocore.session module for use with re-authorizing
 proxy.
 '''
 
@@ -30,13 +29,17 @@ from .credentials import Credentials
 
 class Session(BotocoreSession):
     '''
-    Augments botocore Session object to use the username and password based
-    authentication.
+    Username and password variant of botocore.session.Session for use
+    with re-authorizing proxy.
     '''
+
+    # It is used to override botocore.session.Session to use
+    # the username and password based authentication
+    # pylint: disable=arguments-differ
 
     def set_credentials(self, username: str, password: str) -> None:
         '''
-        Ignores aws_access_key_id, aws_secret_access_key, 
+        Ignores aws_access_key_id, aws_secret_access_key,
         aws_session_token and use username and password instead.
         '''
 

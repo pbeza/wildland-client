@@ -10,10 +10,9 @@
 # distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
-
 '''
-Username and password variant of botocore RequestSigner for use with
-re-authorizing proxy.
+This module extends botocore.signers module for use with re-authorizing
+proxy.
 '''
 
 from botocore.auth import BaseSigner
@@ -25,6 +24,10 @@ from .auth import AUTH_TYPE_MAPS
 
 
 class RequestSigner(BotocoreRequestSigner):
+    '''
+    Username and password variant of botocore.signers.RequestSigner for
+    use with re-authorizing proxy.
+    '''
 
     def get_auth_instance(self,
                           signing_name: str,
@@ -32,10 +35,8 @@ class RequestSigner(BotocoreRequestSigner):
                           signature_version: str = None,
                           **kwargs) -> BaseSigner:
         '''
-        Get an auth instance which can be used to sign a request using 
+        Get an auth instance which can be used to sign a request using
         the given signature version.
-
-        Augments to handle the proxy signature version.
         '''
         if signature_version is None:
             signature_version = self._signature_version

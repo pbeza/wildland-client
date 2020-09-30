@@ -10,16 +10,15 @@
 # distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
-
 '''
-Username and password variant of botocore ClientCreator for use with
-re-authorizing proxy.
+This module extends botocore.client module for use with re-authorizing
+proxy.
 '''
 
 from typing import Union
 
-from botocore.client import ClientCreator as BotocoreClientCreator
-from botocore.client import ClientEndpointBridge, Config
+from botocore.client import (ClientCreator as BotocoreClientCreator,
+                             ClientEndpointBridge, Config)
 from botocore.model import ServiceModel
 
 from .args import ClientArgsCreator
@@ -27,6 +26,10 @@ from .credentials import Credentials
 
 
 class ClientCreator(BotocoreClientCreator):
+    '''
+    Username and password variant of botocore.client.ClientCreator for use with
+    re-authorizing proxy.
+    '''
 
     def _get_client_args(self,
                          service_model: ServiceModel,

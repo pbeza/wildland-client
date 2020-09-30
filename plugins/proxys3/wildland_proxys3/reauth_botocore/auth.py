@@ -10,10 +10,9 @@
 # distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
-
 '''
-Username and password variant of botocore S3SigV4Auth for use with
-re-authorizing proxy.
+This module extends botocore.auth module for use with re-authorizing
+proxy.
 '''
 
 import functools
@@ -34,13 +33,20 @@ logger = logging.getLogger(__name__)
 
 
 class SigProxyBasicAuth(BaseSigner):
-
+    '''
+    Username and password variant of botocore.auth.S3SigV4Auth for use
+    with re-authorizing proxy.
+    '''
     def __init__(self, credentials: Credentials) -> None:
         self.credentials = credentials
 
+    # There are also missing docstrings and no ``self`` argument in
+    # botocore implementation
+    # pylint: disable=missing-function-docstring, no-self-use
+
     def payload(self, request: AWSRequest) -> str:
         if not self._should_sha256_sign_payload(request):
-            # When payload signing is disabled, we use this static 
+            # When payload signing is disabled, we use this static
             # string in place of the payload checksum.
             return UNSIGNED_PAYLOAD
         request_body = request.body
@@ -54,21 +60,20 @@ class SigProxyBasicAuth(BaseSigner):
             hex_checksum = checksum.hexdigest()
             request_body.seek(position)
             return hex_checksum
-        elif request_body:
+        if request_body:
             # The request serialization has ensured that
             # request.body is a bytes() type.
             return sha256(request_body).hexdigest()
-        else:
-            return EMPTY_SHA256_HASH
+        return EMPTY_SHA256_HASH
 
     def _should_sha256_sign_payload(self, request: AWSRequest) -> bool:
-        # S3 allows optional body signing, so to minimize the 
-        # performance impact, we opt to not SHA256 sign the body on 
+        # S3 allows optional body signing, so to minimize the
+        # performance impact, we opt to not SHA256 sign the body on
         # streaming uploads, provided that we're on https.
         client_config = request.context.get('client_config')
         s3_config = getattr(client_config, 's3', None)
 
-        # The config could be None if it isn't set, or if the customer 
+        # The config could be None if it isn't set, or if the customer
         # sets it to None.
         if s3_config is None:
             s3_config = {}
@@ -79,9 +84,9 @@ class SigProxyBasicAuth(BaseSigner):
         if sign_payload is not None:
             return sign_payload
 
-        # We require that both content-md5 be present and https be 
+        # We require that both content-md5 be present and https be
         # enabled to implicitly disable body signing. The combination of
-        # TLS and content-md5 is sufficiently secure and durable for us 
+        # TLS and content-md5 is sufficiently secure and durable for us
         # to be confident in the request without body signing.
         if not request.url.startswith('https') or \
                 'Content-MD5' not in request.headers:
@@ -91,7 +96,7 @@ class SigProxyBasicAuth(BaseSigner):
         if request.context.get('has_streaming_input', False):
             return False
 
-        # Certain operations may have payload signing disabled by 
+        # Certain operations may have payload signing disabled by
         # default. Since we don't have access to the operation model, we
         #  pass in this bit of metadata through the request context.
         return request.context.get('payload_signing_enabled', True)

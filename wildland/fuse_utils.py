@@ -31,7 +31,6 @@ import threading
 
 from typing import Dict, Callable
 
-import botocore
 import fuse
 
 

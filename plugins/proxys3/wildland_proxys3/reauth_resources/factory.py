@@ -10,9 +10,8 @@
 # distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
-
 '''
-Username and password variant of boto3 ResourceFactory for use with 
+This module extends boto3.resources.factory module for use with
 re-authorizing proxy.
 '''
 
@@ -22,15 +21,24 @@ from boto3.resources.factory import ResourceFactory as BotoResourceFactory
 
 
 class ResourceFactory(BotoResourceFactory):
+    '''
+    Username and password variant of
+    boto3.resources.factory.ResourceFactory for use with re-authorizing
+    proxy.
+    '''
+
+    # There is also no ``self`` argument in boto3 implementation
+    # pylint: disable=no-self-argument
+
     def _create_action(factory_self, action_model, resource_name,
                        service_context, is_load: bool = False):
-        """
+        '''
         Creates a new method which makes a request to the underlying
         AWS service.
-        """
-        # Create the action in in this closure but before the ``do_action``
-        # method below is invoked, which allows instances of the resource
-        # to share the ServiceAction instance.
+        '''
+        # Create the action in in this closure but before the
+        # ``do_action`` method below is invoked, which allows instances
+        # of the resource to share the ServiceAction instance.
 
         action = ServiceAction(
             action_model, factory=factory_self,

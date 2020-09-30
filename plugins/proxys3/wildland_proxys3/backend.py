@@ -17,7 +17,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 '''
 ProxyS3 storage backend
 '''
@@ -25,7 +24,6 @@ ProxyS3 storage backend
 import errno
 import logging
 import mimetypes
-import os
 import threading
 import time
 from pathlib import PurePosixPath
@@ -37,9 +35,10 @@ import click
 from wildland.manifest.schema import Schema
 from wildland.storage_backends.base import Attr
 from wildland.storage_backends.buffered import File
+# It is used to inherit S3 plugin that is loaded during installation
+# pylint: disable=import-error
 from wildland_s3.backend import S3StorageBackend, S3File
-
-from .reauth_session import Session
+from .reauth_session import ReauthSession
 
 
 logger = logging.getLogger('storage-proxys3')
@@ -80,6 +79,8 @@ class ProxyS3StorageBackend(S3StorageBackend):
     INDEX_NAME = 'index.html'
 
     def __init__(self, **kwds) -> None:
+        # It is used to call the grandparent class
+        # pylint: disable=bad-super-call
         super(S3StorageBackend, self).__init__(**kwds)
 
         self.with_index = self.params.get('with-index', False)
@@ -87,7 +88,7 @@ class ProxyS3StorageBackend(S3StorageBackend):
         proxy = self.params['proxy_address']
         cert = self.params['ssl_cert']
         credentials = self.params['credentials']
-        session = Session(
+        session = ReauthSession(
             username=credentials['username'],
             password=credentials['password']
         )
@@ -96,9 +97,8 @@ class ProxyS3StorageBackend(S3StorageBackend):
             signature_version='proxy-basic',
             proxies={'https': proxy}
         )
-        self.client = session.client('s3', verify=cert, config=config)
 
-        # pylint: disable=no-member
+        self.client = session.client('s3', verify=cert, config=config)
         self.bucket = 'dummy-bucket'
         self.base_path = PurePosixPath('/') / credentials['username']
 
@@ -112,6 +112,10 @@ class ProxyS3StorageBackend(S3StorageBackend):
 
     @classmethod
     def cli_options(cls):
+        '''
+        Provide a list of command-line options needed to create this storage.
+        '''
+
         return [
             click.Option(
                 ['--proxy'],
@@ -123,12 +127,18 @@ class ProxyS3StorageBackend(S3StorageBackend):
                 required=True),
             click.Option(['--username'], required=True),
             click.Option(['--password'], required=True),
-            click.Option(['--with-index'], is_flag=True,
-                         help='Maintain index.html files with directory listings')
+            click.Option(
+                ['--with-index'],
+                is_flag=True,
+                help='Maintain index.html files with directory listings')
         ]
 
     @classmethod
     def cli_create(cls, data):
+        '''
+        Convert provided command-line arguments to a list of storage parameters.
+        '''
+
         return {
             'proxy': data['proxy'],
             'ssl_cert': data['cert'],
@@ -140,6 +150,10 @@ class ProxyS3StorageBackend(S3StorageBackend):
         }
 
     def info_all(self) -> Iterable[Tuple[PurePosixPath, Attr]]:
+        '''
+        Retrieve information about all files in the storage.
+        '''
+
         new_s3_dirs = set()
 
         token = None
@@ -166,7 +180,7 @@ class ProxyS3StorageBackend(S3StorageBackend):
 
                 if not (self.with_index and obj_path.name == self.INDEX_NAME):
                     yield obj_path, self._stat(summary)
-                
+
                 # Add path to s3_dirs even if we just see index.html.
                 for parent in obj_path.parents:
                     new_s3_dirs.add(parent)
@@ -186,25 +200,27 @@ class ProxyS3StorageBackend(S3StorageBackend):
         for dir_path in all_s3_dirs:
             yield dir_path, Attr.dir()
 
+    # pylint: disable=missing-docstring, no-self-use
+
     def create(self, path: PurePosixPath, _flags: int, _mode: int) -> File:
-        if self.with_index and path_name == self.INDEX_NAME:
+        if self.with_index and path.name == self.INDEX_NAME:
             raise IOError(errno.EPERM, str(path))
 
         content_type = self.get_content_type(path)
         logger.debug('creating %s with content type %s', path, content_type)
-        
+
         try:
             self.client.put_object(
                 Bucket=self.bucket,
                 Key=self.key(path),
                 ContentType=content_type)
-        # In case the quota has been exceeded
+        # In case quota has been exceeded
         except botocore.exceptions.ClientError as err:
             raise IOError(errno.ENOSPC, str(err))
 
         attr = Attr.file(size=0, timestamp=int(time.time()))
         self.clear_cache()
-        self._update_index(path.parent) 
+        self._update_index(path.parent)
         return S3File(self.client, self.bucket, self.key(path),
                       content_type, attr)
 
@@ -220,7 +236,7 @@ class ProxyS3StorageBackend(S3StorageBackend):
                 Bucket=self.bucket,
                 Key=self.key(path),
                 ContentType=self.get_content_type(path))
-        # In case the quota has been exceeded
+        # In case quota has been exceeded
         except botocore.exceptions.ClientError as err:
             raise IOError(errno.ENOSPC, str(err))
 
