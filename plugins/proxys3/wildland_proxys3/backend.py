@@ -85,8 +85,8 @@ class ProxyS3StorageBackend(S3StorageBackend):
 
         self.with_index = self.params.get('with-index', False)
 
-        proxy = self.params['proxy_address']
-        cert = self.params['ssl_cert']
+        proxy = self.params['proxy']
+        cert = self.params['cert']
         credentials = self.params['credentials']
         session = ReauthSession(
             username=credentials['username'],
@@ -123,7 +123,7 @@ class ProxyS3StorageBackend(S3StorageBackend):
                 required=True),
             click.Option(
                 ['--cert'],
-                help="Path to public SSL cert file",
+                help="Absolute path to public SSL cert file",
                 required=True),
             click.Option(['--username'], required=True),
             click.Option(['--password'], required=True),
@@ -141,7 +141,7 @@ class ProxyS3StorageBackend(S3StorageBackend):
 
         return {
             'proxy': data['proxy'],
-            'ssl_cert': data['cert'],
+            'cert': data['cert'],
             'credentials': {
                 'username': data['username'],
                 'password': data['password']

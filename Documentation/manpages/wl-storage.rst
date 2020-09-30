@@ -139,6 +139,37 @@ This is a HTTP storage that relies on directory listings. Currently used for buc
    will be invisible in the mounted filesystem, but they can be used to browse
    the S3 bucket when it's exposed using public HTTP.
 
+.. program:: wl-storage-create-proxys3
+.. _wl-storage-create-proxys3:
+
+:command:`wl storage create proxys3 --container <container> [-u] [--user <user>] --proxy <ip>:<port> --cert <path> --username <username> --password <password> <storage>`
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+.. include:: include/wl-storage-create.rsti
+
+.. option:: --proxy <ip>:<port>
+
+   ProxyS3 IP address with port number. Required.
+
+.. option:: --cert <path>
+
+   Absolute path to public SSL cert file. Required.
+
+.. option:: --username <username>
+
+   Username. Required.
+
+.. option:: --password <password>
+
+   Password. Required.
+
+.. option:: --with-index
+
+   Generate index pages. When this option is enabled, Wildland will maintain an
+   `index.html` file with directory listing in every directory. These files
+   will be invisible in the mounted filesystem, but they can be used to browse
+   the S3 bucket when it's exposed using public HTTP.
+
 .. program:: wl-storage-create-webdav
 .. _wl-storage-create-webdav:
 
