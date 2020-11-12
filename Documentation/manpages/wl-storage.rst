@@ -153,7 +153,7 @@ This is a HTTP storage that relies on directory listings. Currently used for buc
 
 .. option:: --cert <path>
 
-   Absolute path to public SSL cert file. Required.
+   Path to public SSL cert file. Required.
 
 .. option:: --username <username>
 

@@ -24,9 +24,11 @@ ProxyS3 storage backend
 import errno
 import logging
 import mimetypes
+import tempfile
 import threading
 import time
-from pathlib import PurePosixPath
+from io import BytesIO
+from pathlib import Path, PurePosixPath
 from typing import Iterable, Tuple, Set
 
 import botocore
@@ -61,7 +63,7 @@ class ProxyS3StorageBackend(S3StorageBackend):
             },
             "cert": {
                 "type": "string",
-                "description": "Absolute path to public SSL cert file",
+                "description": "Path to public SSL cert file",
             },
             "credentials": {
                 "type": "object",
@@ -98,7 +100,11 @@ class ProxyS3StorageBackend(S3StorageBackend):
             proxies={'https': proxy}
         )
 
-        self.client = session.client('s3', verify=cert, config=config)
+        self.cert_file = tempfile.NamedTemporaryFile(mode='w+')
+        self.cert_file.write(cert)
+        self.cert_file.seek(0)
+
+        self.client = session.client('s3', verify=self.cert_file.name, config=config)
         self.bucket = 'dummy-bucket'
         self.base_path = PurePosixPath('/') / credentials['username']
 
@@ -123,7 +129,7 @@ class ProxyS3StorageBackend(S3StorageBackend):
                 required=True),
             click.Option(
                 ['--cert'],
-                help="Absolute path to public SSL cert file",
+                help="Path to public SSL cert file",
                 required=True),
             click.Option(['--username'], required=True),
             click.Option(['--password'], required=True),
@@ -139,9 +145,10 @@ class ProxyS3StorageBackend(S3StorageBackend):
         Convert provided command-line arguments to a list of storage parameters.
         '''
 
+        cert = Path(data['cert']).read_text()
         return {
             'proxy': data['proxy'],
-            'cert': data['cert'],
+            'cert': cert,
             'credentials': {
                 'username': data['username'],
                 'password': data['password']
@@ -224,6 +231,13 @@ class ProxyS3StorageBackend(S3StorageBackend):
         return S3File(self.client, self.bucket, self.key(path),
                       content_type, attr)
 
+    def release(self, _path: PurePosixPath, flags: int, obj: File) -> None:
+        try:
+            super().release(_path, flags, obj)
+        # In case quota has been exceeded
+        except botocore.exceptions.ClientError as err:
+            raise OSError(errno.ENOSPC, str(err))
+
     def truncate(self, path: PurePosixPath, length: int):
         if self.with_index and path.name == self.INDEX_NAME:
             raise IOError(errno.EPERM, str(path))
@@ -241,3 +255,20 @@ class ProxyS3StorageBackend(S3StorageBackend):
             raise IOError(errno.ENOSPC, str(err))
 
         self.clear_cache()
+
+    def _update_index(self, path):
+        if self.read_only or not self.with_index:
+            return
+
+        entries = self._get_index_entries(path)
+        data = self._generate_index(path, entries)
+
+        try:
+            self.client.put_object(
+                Bucket=self.bucket,
+                Key=self.key(path / self.INDEX_NAME),
+                Body=BytesIO(data.encode()),
+                ContentType='text/html')
+        # In case quota has been exceeded
+        except botocore.exceptions.ClientError as err:
+            raise IOError(errno.ENOSPC, str(err))
