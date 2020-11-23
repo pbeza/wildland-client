@@ -277,6 +277,9 @@ def _add_field(fields: dict, field: str, values: List[str]) -> dict:
 
 
 def _del_field(fields: dict, field: str, values: List[str]) -> dict:
+    if fields.get(field) is None:
+        fields[field] = []
+
     for value in values:
         if value in fields[field]:
             fields[field].remove(value)
@@ -318,6 +321,7 @@ def add_pubkey(ctx, input_file, pubkey):
     Add a public key to the manifest.
     '''
     # TODO: validate values, schema is not enough
+    # TODO: restrict to user
     _edit_manifest(ctx, input_file, _add_field, 'pubkeys', pubkey)
 
 
