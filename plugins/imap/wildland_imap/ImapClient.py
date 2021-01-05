@@ -9,6 +9,7 @@ import time
 
 from dataclasses import dataclass
 from threading import Thread, Lock
+from typing import Iterable, Dict
 from email.header import decode_header
 from email.parser import BytesParser
 from email import policy
@@ -17,11 +18,12 @@ from imapclient import IMAPClient
 from .TimelineDate import TimelineDate, DatePart
 
 @dataclass
-class MessageHeader:
+class MessageEnvelopeData:
     '''
     Compact representation of e-mail header, as we use it
     for processing internally.
     '''
+    msg_uid: int
     sender: str
     subject: str
     recv_t: datetime
@@ -41,6 +43,7 @@ class ImapClient:
         self.login = login
         self.password = password
         self.folder = folder
+        self._envelope_cache = dict()
         # sender is a dictionary where key is sender e-mail and
         # value is a list of (message id, message header) tuples.
         self._senders = dict()
@@ -76,6 +79,7 @@ class ImapClient:
         self.logger.debug('connecting to IMAP server')
         self.imap.login(self.login, self.password)
         self.imap.select_folder(self.folder)
+        self._envelope_cache = dict()
         self._senders = dict()
         self._timeline = dict()
         self._message_cache = dict()
@@ -96,9 +100,19 @@ class ImapClient:
         with self._imap_lock:
             self.imap.logout()
 
+    def all_messages_env(self) -> Iterable[MessageEnvelopeData]:
+        self._load_messages_if_needed()
+        self.logger.debug(f'here is what ecache is: {self._envelope_cache}')
+
+        ## ?
+        with self._local_lock: 
+            for msgid, envelope in self._envelope_cache.items():
+                yield envelope
+
     def all_senders(self):
         '''
-        return list of all sender emails currently received from server.
+        return list of all sender emails currently received from 
+        server.
         '''
         self._load_messages_if_needed()
         with self._local_lock:
@@ -246,13 +260,22 @@ class ImapClient:
         Create sender and timeline cache entries, based on
         raw envelope of received message.
         '''
-        sender = f'{env.sender[0].mailbox.decode()}@{env.sender[0].host.decode()}'
+
+        if env.sender:
+            saddr = env.sender[0]
+        else:
+            saddr = env.from_[0]
+
+        sender = f'{saddr.mailbox.decode()}@{saddr.host.decode()}'
         sub = decode_header(env.subject.decode())
         subject = _decode_subject(sub)
 
-        hdr = MessageHeader(sender=sender, subject=subject,
-                            recv_t=env.date)
-
+        # TODO: MessageEnvelopeData needs refactor, represent all senders
+        # and receipients!
+        hdr = MessageEnvelopeData(msg_uid=msgid, sender=sender, 
+                                  subject=subject, 
+                                  recv_t=env.date)
+        self._envelope_cache[msgid] = hdr
         self._all_ids.append(msgid)
         if sender not in self._senders:
             self._senders[sender] = [(msgid, hdr)]
@@ -264,7 +287,7 @@ class ImapClient:
                                    DatePart.EPOCH, (msgid, hdr))
 
     def _register_in_timeline(self, tdata: dict, level: DatePart,
-                              what: (int, MessageHeader)):
+                              what: (int, MessageEnvelopeData)):
         '''
         Create a timeline entry for message header. The parameter
         meaning is as follows:
@@ -294,7 +317,7 @@ class ImapClient:
 
     def _invalidate_and_reread(self):
         '''
-        ivalidate local message list. Reread and update index.
+        invalidate local message list. Reread and update index.
         '''
         with self._local_lock:
             srv_msg_ids = self.imap.search('ALL')
