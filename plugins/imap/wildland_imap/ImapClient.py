@@ -86,8 +86,9 @@ class ImapClient:
         self._all_ids = list()
 
         self._connected = True
-        self._monitor_thread = Thread(target=self._monitor_main)
-        self._monitor_thread.start()
+
+        # self._monitor_thread = Thread(target=self._monitor_main)
+        # self._monitor_thread.start()
 
     def disconnect(self):
         '''
