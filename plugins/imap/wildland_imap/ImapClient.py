@@ -6,10 +6,10 @@ update-sensitive and includes primitive caching support.
 
 import logging
 import time
-
+import mimetypes
 from dataclasses import dataclass
 from threading import Thread, Lock
-from typing import Iterable, Dict
+from typing import Iterable, Dict, List
 from email.header import decode_header
 from email.parser import BytesParser
 from email import policy
@@ -17,7 +17,7 @@ from datetime import datetime
 from imapclient import IMAPClient
 from .TimelineDate import TimelineDate, DatePart
 
-@dataclass
+@dataclass(eq=True, frozen=True)
 class MessageEnvelopeData:
     '''
     Compact representation of e-mail header, as we use it
@@ -27,6 +27,15 @@ class MessageEnvelopeData:
     sender: str
     subject: str
     recv_t: datetime
+ 
+@dataclass(eq=True, frozen=True)
+class MessagePart:
+    '''
+    DTO for message attachement / mime part of the message.
+    '''
+    attachment_name: str # can be None
+    mime_type: str
+    content: bytes
 
 class ImapClient:
     '''
@@ -44,14 +53,6 @@ class ImapClient:
         self.password = password
         self.folder = folder
         self._envelope_cache = dict()
-        # sender is a dictionary where key is sender e-mail and
-        # value is a list of (message id, message header) tuples.
-        self._senders = dict()
-
-        # timeline is a tree implemented using dictionaries. Key
-        # on every level is of TimelineDate type set to relevant
-        # accuracy (i.e. year on fist level, month on second...).
-        self._timeline = dict()
 
         # message id: message contents (only populated, when
         # messge content is requested)
@@ -80,8 +81,6 @@ class ImapClient:
         self.imap.login(self.login, self.password)
         self.imap.select_folder(self.folder)
         self._envelope_cache = dict()
-        self._senders = dict()
-        self._timeline = dict()
         self._message_cache = dict()
         self._all_ids = list()
 
@@ -109,69 +108,21 @@ class ImapClient:
         with self._local_lock: 
             for msgid, envelope in self._envelope_cache.items():
                 yield envelope
+ 
 
-    def all_senders(self):
-        '''
-        return list of all sender emails currently received from 
-        server.
-        '''
-        self._load_messages_if_needed()
-        with self._local_lock:
-            rv = self._senders.keys()
-        return rv
-
-    def sender_messages(self, sender_email):
-        '''
-        Return list of messages of single sender.
-        '''
-        self._load_messages_if_needed()
-        with self._local_lock:
-            self.logger.debug('sender %s{sender_email} has %d  messages',
-                          sender_email, self._senders[sender_email])
-            rv = self._senders[sender_email]
-        return rv
-
-    def get_message(self, msg_id) -> bytes:
+    def get_message(self, msg_id) -> List[MessagePart]:
         '''
         Read and return single message (basic headers and
         main contents) as byte array.
         '''
+        self.logger.debug(f'get_message called for: {msg_id}')
         with self._local_lock:
             if msg_id not in self._message_cache:
-                self._message_cache[msg_id] = self._load_msg(msg_id).encode('utf-8')
+                self._message_cache[msg_id] = self._load_msg(msg_id)
             rv = self._message_cache[msg_id]
 
+        self.logger.debug(f'now leaving get_message')
         return rv
-
-    def timeline_children(self, parent: TimelineDate):
-        '''
-        generates list of direct childern entries
-        for given date constraint.
-        '''
-        self._load_messages_if_needed()
-        with self._local_lock:
-            rv = self._resolve_timeline(parent).keys()
-        return rv
-
-    def mails_at_date(self, day: TimelineDate):
-        '''
-        generates list of emails received at given date.
-        '''
-        with self._local_lock:
-            rv = self._resolve_timeline(day)
-        return rv
-
-
-    def _resolve_timeline(self, parent: TimelineDate):
-        base = DatePart.EPOCH
-        rv = self._timeline[parent.up_to(base)]
-
-        while base < parent.accuracy:
-            base = base.advance()
-            rv = rv[parent.up_to(base)]
-
-        return rv
-
 
     def _load_messages_if_needed(self):
         '''
@@ -184,7 +135,7 @@ class ImapClient:
 
         self.logger.debug('entering _load_messages_if_needed')
         with self._local_lock:
-            if self._senders:
+            if self._envelope_cache:
                 self.logger.debug('fast-leaving _load_messages_if_needed')
                 return
 
@@ -197,12 +148,13 @@ class ImapClient:
                 self._register_envelope(msgid, env)
         self.logger.debug('leaving _load_messages_if_needed')
 
-    def _load_msg(self, mid) -> str:
+    def _load_msg(self, mid) -> List[MessagePart]:
         '''
         Load a message with given identifier from IMAP server and
         return it as a "pretty string".
         '''
         self.logger.debug('fetching message %d', mid)
+        rv = list()
         with self._imap_lock:
             data = self.imap.fetch([mid], 'RFC822')
         parser = BytesParser(policy=policy.default)
@@ -213,15 +165,31 @@ class ImapClient:
 
         recv = msg['Date']
 
-        body = msg.get_body(('plain', 'related', 'html'))
+
+        body = msg.get_body(('html', 'plain'))
         content = body.get_payload(decode=True)
         charset = body.get_content_charset()
         if not charset:
             charset = 'utf-8'
         content = content.decode(charset)
+        content = bytes(content, charset)
+        ctype = body.get_content_type()
+        rv.append(MessagePart(subj +
+                              mimetypes.guess_extension(ctype),
+                              ctype, content))
 
-        return 'From: %s\nReceived: %s\nSubject: %s\n\n%s' % \
-            (sender, recv, subj, content)
+        for att in msg.iter_attachments():
+            content = att.get_payload(decode=True)
+            charset = att.get_content_charset()
+            if not charset:
+                charset = 'utf-8'
+            if content is str:
+                content = bytes(content, 'utf-8')
+            part = MessagePart(att.get_filename(), 
+                               att.get_content_type(),
+                               content)
+            rv.append(part)
+        return rv
 
     def _del_msg(self, msg_id):
         '''
@@ -278,43 +246,8 @@ class ImapClient:
                                   recv_t=env.date)
         self._envelope_cache[msgid] = hdr
         self._all_ids.append(msgid)
-        if sender not in self._senders:
-            self._senders[sender] = [(msgid, hdr)]
-        else:
-            self._senders[sender].append((msgid, hdr))
         self.logger.debug('message %d added to sender %s', msgid, sender)
 
-        self._register_in_timeline(self._timeline,
-                                   DatePart.EPOCH, (msgid, hdr))
-
-    def _register_in_timeline(self, tdata: dict, level: DatePart,
-                              what: (int, MessageEnvelopeData)):
-        '''
-        Create a timeline entry for message header. The parameter
-        meaning is as follows:
-        - tdata is a "top-level" dictionary, holding the entries
-          AT278 given time 'level'
-        - 'level' is the level we are currently working at
-        - 'date' is a receive date of a message
-        - 'what' is message id and header which we ultimately need
-          to store
-        '''
-        date = TimelineDate(level, what[1].recv_t)
-        if level == DatePart.DAY:
-            # We are at "leaf" so just store the message and
-            # one.
-            if date in tdata:
-                tdata[date].append(what)
-            else:
-                tdata[date] = [what]
-            self.logger.debug('message %d added in timeline %s', what[0],
-                              date)
-        else:
-            if date not in tdata:
-                tdata[date] = dict()
-            self._register_in_timeline(tdata[date],
-                                       level.advance(),
-                                       what)
 
     def _invalidate_and_reread(self):
         '''
