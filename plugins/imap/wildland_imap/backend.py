@@ -43,11 +43,12 @@ class ImapStorageBackend(GeneratedStorageMixin, StorageBackend):
         self.client.connect()
         logger.debug('backend is mounted')
 
-    def umount(self):
+    def unmount(self):
         '''
         unmounts the filesystem
         '''
         self.client.disconnect()
+        logger.debug('backend is unmounted')
 
     def _make_msg_container(self, env: MessageEnvelopeData) -> dict:
         '''
