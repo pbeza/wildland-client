@@ -9,7 +9,7 @@ import time
 import mimetypes
 from dataclasses import dataclass
 from threading import Thread, Lock
-from typing import Iterable, Dict, List
+from typing import Iterable, Dict, List, Set
 from email.header import decode_header
 from email.parser import BytesParser
 from email import policy
@@ -24,7 +24,13 @@ class MessageEnvelopeData:
     for processing internally.
     '''
     msg_uid: int
-    sender: str
+    # Note, that here a simplified approach is used, compared to
+    # RFC5322, which assigns slightly different semantics to From
+    # and Sender headers. Here we just collect every Sender/From
+    # element and expose it as part of sender list.
+    senders: List[str]
+    # Again, we do not differentiate between To and Cc fields.
+    receipients: List[str]
     subject: str
     recv_t: datetime
  
@@ -95,7 +101,7 @@ class ImapClient:
         '''
         self.logger.debug('disconnecting from IMAP server')
         self._connected = False
-        self._monitor_thread.join()
+        # self._monitor_thread.join()
         self._monitor_thread = None
         with self._imap_lock:
             self.imap.logout()
@@ -224,29 +230,51 @@ class ImapClient:
         env = data[msg_id][b'ENVELOPE']
         self._register_envelope(msg_id, env)
 
+    def _parse_address(self, addr) -> Set[str]:
+        '''
+        Parse address object tuple (as described in
+        https://imapclient.readthedocs.io/en/2.1.0/api.html#imapclient.response_types.Address)
+        and return a string suitable for usage as a path element.
+        '''
+        rv = set()
+
+        if addr is None: return rv
+
+        for a in addr:
+            txt = None
+            if a.mailbox:
+                txt = a.mailbox.decode()
+                if a.host:
+                    txt += '@' + a.host.decode()
+            elif a.name:
+                txt = a.name.decode()
+            if txt:
+                rv.add(txt)
+        return rv
+
     def _register_envelope(self, msgid, env):
         '''
         Create sender and timeline cache entries, based on
         raw envelope of received message.
         '''
 
-        if env.sender:
-            saddr = env.sender[0]
-        else:
-            saddr = env.from_[0]
+        senders = set()
+        for addr in [ env.sender, env.from_ ]:
+            senders |= self._parse_address(addr)
 
-        sender = f'{saddr.mailbox.decode()}@{saddr.host.decode()}'
         sub = decode_header(env.subject.decode())
         subject = _decode_subject(sub)
 
+        receipients = set()
+        for addr in [ env.to, env.cc, env.bcc ]:
+            receipients |= self._parse_address(addr)
+
         # TODO: MessageEnvelopeData needs refactor, represent all senders
         # and receipients!
-        hdr = MessageEnvelopeData(msg_uid=msgid, sender=sender, 
-                                  subject=subject, 
-                                  recv_t=env.date)
+        hdr = MessageEnvelopeData(msgid, list(senders), list(receipients),
+                                  subject, env.date)
         self._envelope_cache[msgid] = hdr
         self._all_ids.append(msgid)
-        self.logger.debug('message %d added to sender %s', msgid, sender)
 
 
     def _invalidate_and_reread(self):

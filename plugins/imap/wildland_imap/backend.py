@@ -4,6 +4,7 @@ Wildland storage backend exposing read only IMAP mailbox
 import logging
 import mimetypes
 from functools import partial
+from pathlib import PurePosixPath
 from typing import Iterable, List, Dict
 from datetime import timezone
 
@@ -50,25 +51,6 @@ class ImapStorageBackend(GeneratedStorageMixin, StorageBackend):
         self.client.disconnect()
         logger.debug('backend is unmounted')
 
-    def _make_msg_container(self, env: MessageEnvelopeData) -> dict:
-        '''
-        Create a container manifest for a single mail message.
-        '''
-        logger.info(f'making msg container for msg {env.msg_uid}')
-        ns = uuid.UUID(self.backend_id[:32])
-        ident = str(env.msg_uid)
-        paths = ['/.uuid/{!s}'.format(uuid.uuid3(ns, ident))]
-        #        categories = get_message_categories
-        return {
-            'title': env.subject,
-            'paths': paths,
-            'backends': {'storage': [{
-                'type': 'delegate',
-                'reference-container': 'wildland:@default:@parent-container:',
-                'subdirectory': '/' + ident
-                }]}
-        }
-
     def list_subcontainers(self) -> Iterable[dict]:
         for msg in self.client.all_messages_env():
             yield self._make_msg_container(msg)
@@ -83,8 +65,7 @@ class ImapStorageBackend(GeneratedStorageMixin, StorageBackend):
     def _root(self):
         logger.info("_root() requested")
         for envelope in self.client.all_messages_env():
-            yield FuncDirEntry(str(envelope.msg_uid) + ": " +
-                               envelope.subject, 
+            yield FuncDirEntry(self._id_for_message(envelope), 
                                partial(self._msg_contents, 
                                        envelope))
 
@@ -99,6 +80,61 @@ class ImapStorageBackend(GeneratedStorageMixin, StorageBackend):
 
     def _read_part(self, msg_part: MessagePart) -> bytes:
         return msg_part.content
+
+    def _get_message_categories(self, e: MessageEnvelopeData) -> List[str]:
+        '''
+        Generate the list of category paths that the message will 
+        appear under.
+        '''
+        rv: Set[PurePosixPath] = set()
+        
+        # entry in timeline
+        rv.add(PurePosixPath('/timeline') / 
+               PurePosixPath('%04d' % e.recv_t.year) /
+               PurePosixPath('%02d' % e.recv_t.month) /
+               PurePosixPath('%02d' % e.recv_t.day))
+
+        # (static) entry in folder path
+        rv.add(PurePosixPath('/folder') / 
+               PurePosixPath(self.params['folder']))
+
+        # email address tagging
+        bp = PurePosixPath('/users')
+        for s in e.senders:
+            rv.add(bp / PurePosixPath(s) / PurePosixPath('sender'))
+        for r in e.receipients:
+            rv.add(bp / PurePosixPath(r) / PurePosixPath('receipient'))
+
+        return sorted(str(p) for p in rv)
+
+    def _id_for_message(self, env: MessageEnvelopeData) -> str:
+        '''
+        returns a string representation of stable uuid identifying
+        email message of which the envelope is given.
+        '''
+        ns = uuid.UUID(self.backend_id[:32])
+        return str(uuid.uuid3(ns, str(env.msg_uid)))
+        
+
+    def _make_msg_container(self, env: MessageEnvelopeData) -> dict:
+        '''
+        Create a container manifest for a single mail message.
+        '''
+        ident = self._id_for_message(env)
+        paths = [f'/.uuid/{ident}']
+        logger.debug(f'making msg container for msg {env.msg_uid} as {ident}')
+        categories = self._get_message_categories(env)
+        return {
+            'title': env.subject,
+            'paths': paths,
+            'categories': categories,
+            'backends': {'storage': [{
+                'type': 'delegate',
+                'reference-container': 'wildland:@default:@parent-container:',
+                'subdirectory': '/' + ident
+                }]}
+        }
+
 
     @classmethod
     def cli_options(cls):
