@@ -2,23 +2,19 @@
 Wildland storage backend exposing read only IMAP mailbox
 '''
 import logging
-import mimetypes
 from functools import partial
 from pathlib import PurePosixPath
-from typing import Iterable, List, Dict
+from typing import Iterable, List, Set
 from datetime import timezone
 
-import click
 import uuid
+import click
 
 from wildland.storage_backends.base import StorageBackend
 from wildland.storage_backends.generated import \
     GeneratedStorageMixin, FuncFileEntry, FuncDirEntry
 from .ImapClient import ImapClient, MessageEnvelopeData, \
     MessagePart
-from .name_helpers import FileNameFormatter, TimelineFormatter
-from .TimelineDate import TimelineDate, DatePart
-
 
 logger = logging.getLogger('storage-imap')
 
@@ -59,43 +55,44 @@ class ImapStorageBackend(GeneratedStorageMixin, StorageBackend):
         '''
         returns wildland entry to the root directory
         '''
-        logger.info(f'get_root() for {self.backend_id}')
+        logger.info('get_root() for %s', self.backend_id)
         return FuncDirEntry('.', self._root)
 
     def _root(self):
         logger.info("_root() requested")
         for envelope in self.client.all_messages_env():
-            yield FuncDirEntry(self._id_for_message(envelope), 
-                               partial(self._msg_contents, 
+            yield FuncDirEntry(self._id_for_message(envelope),
+                               partial(self._msg_contents,
                                        envelope))
 
     def _msg_contents(self, e: MessageEnvelopeData):
         # This little method should populate the message directory
         # with message parts decomposed into MIME attachements.
         for part in self.client.get_message(e.msg_uid):
-            yield FuncFileEntry(part.attachment_name, 
-                                on_read=partial(self._read_part, 
+            yield FuncFileEntry(part.attachment_name,
+                                on_read=partial(self._read_part,
                                                 part),
                                 timestamp=e.recv_t.replace(tzinfo=timezone.utc).timestamp())
 
     def _read_part(self, msg_part: MessagePart) -> bytes:
+        # pylint: disable=no-self-use
         return msg_part.content
 
     def _get_message_categories(self, e: MessageEnvelopeData) -> List[str]:
         '''
-        Generate the list of category paths that the message will 
+        Generate the list of category paths that the message will
         appear under.
         '''
         rv: Set[PurePosixPath] = set()
-        
+
         # entry in timeline
-        rv.add(PurePosixPath('/timeline') / 
+        rv.add(PurePosixPath('/timeline') /
                PurePosixPath('%04d' % e.recv_t.year) /
                PurePosixPath('%02d' % e.recv_t.month) /
                PurePosixPath('%02d' % e.recv_t.day))
 
         # (static) entry in folder path
-        rv.add(PurePosixPath('/folder') / 
+        rv.add(PurePosixPath('/folder') /
                PurePosixPath(self.params['folder']))
 
         # email address tagging
@@ -114,7 +111,7 @@ class ImapStorageBackend(GeneratedStorageMixin, StorageBackend):
         '''
         ns = uuid.UUID(self.backend_id[:32])
         return str(uuid.uuid3(ns, str(env.msg_uid)))
-        
+
 
     def _make_msg_container(self, env: MessageEnvelopeData) -> dict:
         '''
@@ -122,7 +119,8 @@ class ImapStorageBackend(GeneratedStorageMixin, StorageBackend):
         '''
         ident = self._id_for_message(env)
         paths = [f'/.uuid/{ident}']
-        logger.debug(f'making msg container for msg {env.msg_uid} as {ident}')
+        logger.debug('making msg container for msg %d as %s',
+                     env.msg_uid, ident)
         categories = self._get_message_categories(env)
         return {
             'title': env.subject,
@@ -167,7 +165,3 @@ class ImapStorageBackend(GeneratedStorageMixin, StorageBackend):
             'folder': data['folder'],
             'ssl': data['ssl']
             }
-
-
-def _filename(hdr) -> str:
-    return f'{hdr.sender}-{hdr.subject}'

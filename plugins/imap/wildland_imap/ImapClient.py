@@ -15,7 +15,6 @@ from email.parser import BytesParser
 from email import policy
 from datetime import datetime
 from imapclient import IMAPClient
-from .TimelineDate import TimelineDate, DatePart
 
 @dataclass(eq=True, frozen=True)
 class MessageEnvelopeData:
@@ -33,7 +32,7 @@ class MessageEnvelopeData:
     receipients: List[str]
     subject: str
     recv_t: datetime
- 
+
 @dataclass(eq=True, frozen=True)
 class MessagePart:
     '''
@@ -107,27 +106,29 @@ class ImapClient:
             self.imap.logout()
 
     def all_messages_env(self) -> Iterable[MessageEnvelopeData]:
+        '''
+        Provides iterable over collection of all envelopes fetched
+        from server.
+        '''
         self._load_messages_if_needed()
-        self.logger.debug(f'here is what ecache is: {self._envelope_cache}')
 
-        ## ?
-        with self._local_lock: 
-            for msgid, envelope in self._envelope_cache.items():
+        with self._local_lock:
+            for envelope in self._envelope_cache.values():
                 yield envelope
- 
+
 
     def get_message(self, msg_id) -> List[MessagePart]:
         '''
         Read and return single message (basic headers and
         main contents) as byte array.
         '''
-        self.logger.debug(f'get_message called for: {msg_id}')
+        self.logger.debug('get_message called for: %d', msg_id)
         with self._local_lock:
             if msg_id not in self._message_cache:
                 self._message_cache[msg_id] = self._load_msg(msg_id)
             rv = self._message_cache[msg_id]
 
-        self.logger.debug(f'now leaving get_message')
+        self.logger.debug('now leaving get_message')
         return rv
 
     def _load_messages_if_needed(self):
@@ -165,12 +166,8 @@ class ImapClient:
             data = self.imap.fetch([mid], 'RFC822')
         parser = BytesParser(policy=policy.default)
         msg = parser.parsebytes(data[mid][b'RFC822'])
-        sender = msg['From']
         subj = msg['Subject']
         subj = _decode_subject(subj)
-
-        recv = msg['Date']
-
 
         body = msg.get_body(('html', 'plain'))
         content = body.get_payload(decode=True)
@@ -191,7 +188,7 @@ class ImapClient:
                 charset = 'utf-8'
             if content is str:
                 content = bytes(content, 'utf-8')
-            part = MessagePart(att.get_filename(), 
+            part = MessagePart(att.get_filename(),
                                att.get_content_type(),
                                content)
             rv.append(part)
@@ -259,14 +256,14 @@ class ImapClient:
         '''
 
         senders = set()
-        for addr in [ env.sender, env.from_ ]:
+        for addr in [env.sender, env.from_]:
             senders |= self._parse_address(addr)
 
         sub = decode_header(env.subject.decode())
         subject = _decode_subject(sub)
 
         receipients = set()
-        for addr in [ env.to, env.cc, env.bcc ]:
+        for addr in [env.to, env.cc, env.bcc]:
             receipients |= self._parse_address(addr)
 
         # TODO: MessageEnvelopeData needs refactor, represent all senders
