@@ -91,8 +91,9 @@ class ImapClient:
 
         self._connected = True
 
-        # self._monitor_thread = Thread(target=self._monitor_main)
-        # self._monitor_thread.start()
+        self._monitor_thread = Thread(target=self._monitor_main)
+        self._monitor_thread.start()
+        self.logger.debug('leaving connect()')
 
     def disconnect(self):
         '''
@@ -100,7 +101,7 @@ class ImapClient:
         '''
         self.logger.debug('disconnecting from IMAP server')
         self._connected = False
-        # self._monitor_thread.join()
+        self._monitor_thread.join()
         self._monitor_thread = None
         with self._imap_lock:
             self.imap.logout()
@@ -198,24 +199,13 @@ class ImapClient:
         '''
         remove message from local cache
         '''
-        hdr = None
-        for lst in self._senders.values():
-            for an_id, a_hdr in lst:
-                if an_id == msg_id:
-                    hdr = a_hdr
-                    lst.remove((an_id, a_hdr))
-                    break
-            if hdr is not None:
-                break
-        if hdr is not None:
-            if msg_id in self._message_cache:
-                del self._message_cache[msg_id]
-            rd = TimelineDate(DatePart.DAY, hdr.recv_t)
-            self._timeline[rd.up_to(DatePart.EPOCH)] \
-                [rd.up_to(DatePart.YEAR)] \
-                [rd.up_to(DatePart.MONTH)] \
-                [rd.up_to(DatePart.DAY)].remove((msg_id, hdr))
+        if msg_id in self._envelope_cache:
+            del self._envelope_cache[msg_id]
             self._all_ids.remove(msg_id)
+
+        if msg_id in self._message_cache:
+            del self._message_cache[msg_id]
+
 
     def _prefetch_msg(self, msg_id):
         '''
@@ -223,7 +213,6 @@ class ImapClient:
         cache.
         '''
         data = self.imap.fetch([msg_id], 'ENVELOPE')
-        self.logger.debug('for msg %d received env %s', msg_id, data)
         env = data[msg_id][b'ENVELOPE']
         self._register_envelope(msg_id, env)
 
@@ -246,7 +235,7 @@ class ImapClient:
             elif a.name:
                 txt = a.name.decode()
             if txt:
-                rv.add(txt)
+                rv.add(_decode_text(txt))
         return rv
 
     def _register_envelope(self, msgid, env):
@@ -260,14 +249,12 @@ class ImapClient:
             senders |= self._parse_address(addr)
 
         sub = decode_header(env.subject.decode())
-        subject = _decode_subject(sub)
+        subject = _decode_text(sub)
 
         receipients = set()
         for addr in [env.to, env.cc, env.bcc]:
             receipients |= self._parse_address(addr)
 
-        # TODO: MessageEnvelopeData needs refactor, represent all senders
-        # and receipients!
         hdr = MessageEnvelopeData(msgid, list(senders), list(receipients),
                                   subject, env.date)
         self._envelope_cache[msgid] = hdr
@@ -289,13 +276,16 @@ class ImapClient:
                 self._del_msg(mid)
 
             for mid in ids_to_add:
-                self.logger.debug('adding to cache message %d',
-                                  mid)
+                self.logger.debug('adding to cache message %d', mid)
                 self._prefetch_msg(mid)
 
     def _monitor_main(self):
         while self._connected:
+            self.logger.debug('monitor sleep begin')
+            time.sleep(10)
+            self.logger.debug('sleep is done now')
             with self._imap_lock:
+                self.logger.debug('monitor active')
                 reply = self.imap.noop()
                 if len(reply) > 1:
                     try:
@@ -305,9 +295,9 @@ class ImapClient:
                                           exc_info=True)
                 else:
                     self.logger.warning('unknown response received: %s', reply)
-            time.sleep(10)
 
-def _decode_subject(sub) -> str:
+
+def _decode_text(sub) -> str:
     if isinstance(sub, str):
         rv = sub
     else:

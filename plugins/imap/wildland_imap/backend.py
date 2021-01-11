@@ -48,8 +48,11 @@ class ImapStorageBackend(GeneratedStorageMixin, StorageBackend):
         logger.debug('backend is unmounted')
 
     def list_subcontainers(self) -> Iterable[dict]:
+        logger.debug("list_subcontainers entry")
         for msg in self.client.all_messages_env():
             yield self._make_msg_container(msg)
+
+        logger.debug("list_subcontainers exit")
 
     def get_root(self):
         '''
