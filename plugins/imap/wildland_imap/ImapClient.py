@@ -53,7 +53,10 @@ class ImapClient:
                  folder: str, ssl: bool):
         self.logger = logging.getLogger('ImapClient')
         self.logger.debug('creating IMAP client for host: %s', host)
-        self.imap = IMAPClient(host, use_uid=True, ssl=ssl)
+        self.host = host
+        self.ssl = ssl
+        self.cache_refresh_interval = 10 
+        self.imap = None
         self.login = login
         self.password = password
         self.folder = folder
@@ -71,7 +74,6 @@ class ImapClient:
 
         # monitor thread monitors changes to the inbox and
         # updates the cache accordingly
-        self._monitor_thread = None
         self._connected = False
 
         # lock guarding access to imap client
@@ -80,43 +82,49 @@ class ImapClient:
 
     def connect(self):
         '''
-        Connect to IMAP server and start periodic monitoring task.
+        Connect to IMAP server. 
         '''
         self.logger.debug('connecting to IMAP server')
+        self.imap = IMAPClient(self.host, use_uid=True, ssl=self.ssl)
         self.imap.login(self.login, self.password)
         self.imap.select_folder(self.folder)
         self._envelope_cache = dict()
         self._message_cache = dict()
         self._all_ids = list()
+        self._last_refresh_time = 0
 
         self._connected = True
-
-        self._monitor_thread = Thread(target=self._monitor_main)
-        self._monitor_thread.start()
         self.logger.debug('leaving connect()')
 
     def disconnect(self):
         '''
         disconnect from IMAP server.
         '''
-        self.logger.debug('disconnecting from IMAP server')
-        self._connected = False
-        self._monitor_thread.join()
-        self._monitor_thread = None
-        with self._imap_lock:
-            self.imap.logout()
+        with self._local_lock: 
+            self.logger.debug('disconnecting from IMAP server')
+            if self._connected:
+                self._connected = False
+                with self._imap_lock:
+                    self.imap.logout()
+                    # note that there is a bug in current
+                    # IMAPClient code, which makes it impossible
+                    # to reuse the object to log in again after
+                    # logout. That's why we dereference it here,
+                    # and get a fresh instance on connect.
+                    self.imap = None
+                self.logger.debug("ImapClient  disconnected")
 
-    def all_messages_env(self) -> Iterable[MessageEnvelopeData]:
+    def all_messages_env(self) -> List[MessageEnvelopeData]:
         '''
         Provides iterable over collection of all envelopes fetched
         from server.
         '''
         self._load_messages_if_needed()
-
+    
         with self._local_lock:
-            for envelope in self._envelope_cache.values():
-                yield envelope
-
+            rv = self._envelope_cache.values()
+            
+        return rv
 
     def get_message(self, msg_id) -> List[MessagePart]:
         '''
@@ -154,6 +162,7 @@ class ImapClient:
                                                ['ENVELOPE']).items():
                 env = data[b'ENVELOPE']
                 self._register_envelope(msgid, env)
+            self._last_refresh_time = time.time()
         self.logger.debug('leaving _load_messages_if_needed')
 
     def _load_msg(self, mid) -> List[MessagePart]:
@@ -168,7 +177,7 @@ class ImapClient:
         parser = BytesParser(policy=policy.default)
         msg = parser.parsebytes(data[mid][b'RFC822'])
         subj = msg['Subject']
-        subj = _decode_subject(subj)
+        subj = _decode_text(subj)
 
         body = msg.get_body(('html', 'plain'))
         content = body.get_payload(decode=True)
@@ -233,7 +242,8 @@ class ImapClient:
                 if a.host:
                     txt += '@' + a.host.decode()
             elif a.name:
-                txt = a.name.decode()
+                txt = decode_header(a.name.decode())
+                
             if txt:
                 rv.add(_decode_text(txt))
         return rv
@@ -243,7 +253,7 @@ class ImapClient:
         Create sender and timeline cache entries, based on
         raw envelope of received message.
         '''
-
+        
         senders = set()
         for addr in [env.sender, env.from_]:
             senders |= self._parse_address(addr)
@@ -278,23 +288,26 @@ class ImapClient:
             for mid in ids_to_add:
                 self.logger.debug('adding to cache message %d', mid)
                 self._prefetch_msg(mid)
+                self._last_refresh_time = time.time()
 
-    def _monitor_main(self):
-        while self._connected:
-            self.logger.debug('monitor sleep begin')
-            time.sleep(10)
-            self.logger.debug('sleep is done now')
+    def _refresh_if_needed(self):
+        '''
+        A naive mailbox refresh solution. It's triggered whenever the
+        message cache is accessed and polls the server if certain time
+        interval had passed since last poll.
+        '''
+        if self._connected:
             with self._imap_lock:
-                self.logger.debug('monitor active')
-                reply = self.imap.noop()
-                if len(reply) > 1:
-                    try:
-                        self._invalidate_and_reread()
-                    except Exception:
-                        self.logger.error("exception in monitor thread",
-                                          exc_info=True)
-                else:
-                    self.logger.warning('unknown response received: %s', reply)
+                if self._last_refresh_time < time.time()  - self.cache_refresh_interval: 
+                    reply = self.imap.noop()
+                    if len(reply) > 1:
+                        try:
+                            self._invalidate_and_reread()
+                        except Exception:
+                            self.logger.error("exception when refereshing mailbox",
+                                              exc_info=True)
+                    else:
+                        self.logger.warning('unknown response received: %s', reply)
 
 
 def _decode_text(sub) -> str:
