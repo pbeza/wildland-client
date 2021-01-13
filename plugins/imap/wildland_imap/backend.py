@@ -11,12 +11,26 @@ import uuid
 import click
 
 from wildland.storage_backends.base import StorageBackend
+from wildland.storage_backends.watch import SimpleStorageWatcher
 from wildland.storage_backends.generated import \
     GeneratedStorageMixin, FuncFileEntry, FuncDirEntry
 from .ImapClient import ImapClient, MessageEnvelopeData, \
     MessagePart
 
 logger = logging.getLogger('storage-imap')
+
+class ImapStorageWatcher(SimpleStorageWatcher):
+    '''
+    A watcher for IMAP server. This implementation just queries
+    the server and reports an update if message list has changed.
+    '''
+
+    def __init__(self, backend: 'ImapStorageBackend'):
+        super().__init__(backend)
+        self.client = backend.client
+
+    def get_token(self):
+        return self.client.refresh_if_needed()
 
 class ImapStorageBackend(GeneratedStorageMixin, StorageBackend):
     '''
@@ -38,31 +52,28 @@ class ImapStorageBackend(GeneratedStorageMixin, StorageBackend):
         mounts the file system
         '''
         self.client.connect()
-        logger.debug('backend is mounted')
 
     def unmount(self):
         '''
         unmounts the filesystem
         '''
         self.client.disconnect()
-        logger.debug('backend is unmounted')
+
+    def watcher(self):
+        return ImapStorageWatcher(self)
 
     def list_subcontainers(self) -> Iterable[dict]:
-        logger.debug("list_subcontainers entry")
         for msg in self.client.all_messages_env():
             yield self._make_msg_container(msg)
-
-        logger.debug("list_subcontainers exit")
 
     def get_root(self):
         '''
         returns wildland entry to the root directory
         '''
-        logger.info('get_root() for %s', self.backend_id)
         return FuncDirEntry('.', self._root)
 
     def _root(self):
-        logger.info("_root() requested")
+        logger.info("_root() requested for %s", self.backend_id)
         for envelope in self.client.all_messages_env():
             yield FuncDirEntry(self._id_for_message(envelope),
                                partial(self._msg_contents,
@@ -112,7 +123,7 @@ class ImapStorageBackend(GeneratedStorageMixin, StorageBackend):
         returns a string representation of stable uuid identifying
         email message of which the envelope is given.
         '''
-        ns = uuid.UUID(self.backend_id[:32])
+        ns = uuid.UUID(self.backend_id)
         return str(uuid.uuid3(ns, str(env.msg_uid)))
 
 

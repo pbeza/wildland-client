@@ -8,8 +8,8 @@ import logging
 import time
 import mimetypes
 from dataclasses import dataclass
-from threading import Thread, Lock
-from typing import Iterable, Dict, List, Set
+from threading import Lock
+from typing import List, Set
 from email.header import decode_header
 from email.parser import BytesParser
 from email import policy
@@ -49,13 +49,14 @@ class ImapClient:
     the features needed by the wildland filesystem.
     '''
 
+    # Avoid querying the server more often than that:
+    QUERY_INTERVAL = 60
+
     def __init__(self, host: str, login: str, password: str,
                  folder: str, ssl: bool):
         self.logger = logging.getLogger('ImapClient')
-        self.logger.debug('creating IMAP client for host: %s', host)
         self.host = host
         self.ssl = ssl
-        self.cache_refresh_interval = 10 
         self.imap = None
         self.login = login
         self.password = password
@@ -67,7 +68,7 @@ class ImapClient:
         self._message_cache = dict()
 
         # all ids retrieved
-        self._all_ids = list()
+        self._all_ids = set()
 
         # lock guarding access to local data structures
         self._local_lock = Lock()
@@ -79,10 +80,14 @@ class ImapClient:
         # lock guarding access to imap client
         self._imap_lock = Lock()
 
+        # to keep track of remote changes:
+        self._mailbox_version = 0
+        self._last_mailbox_query = 0
+
 
     def connect(self):
         '''
-        Connect to IMAP server. 
+        Connect to IMAP server.
         '''
         self.logger.debug('connecting to IMAP server')
         self.imap = IMAPClient(self.host, use_uid=True, ssl=self.ssl)
@@ -90,17 +95,18 @@ class ImapClient:
         self.imap.select_folder(self.folder)
         self._envelope_cache = dict()
         self._message_cache = dict()
-        self._all_ids = list()
-        self._last_refresh_time = 0
+        self._all_ids = set()
+        self._mailbox_version = 0
+        self._last_mailbox_query = 0
 
         self._connected = True
-        self.logger.debug('leaving connect()')
+        self.logger.debug('connected to IMAP server %s', self.host)
 
     def disconnect(self):
         '''
         disconnect from IMAP server.
         '''
-        with self._local_lock: 
+        with self._local_lock:
             self.logger.debug('disconnecting from IMAP server')
             if self._connected:
                 self._connected = False
@@ -119,12 +125,49 @@ class ImapClient:
         Provides iterable over collection of all envelopes fetched
         from server.
         '''
-        self._load_messages_if_needed()
-    
+        self.refresh_if_needed()
+
         with self._local_lock:
             rv = self._envelope_cache.values()
-            
+
         return rv
+
+    def refresh_if_needed(self) -> int:
+        '''
+        A naive mailbox refresh. Calling it pings the server with NOOP
+        and returns a "version" of mailbox observed. Version is just a
+        counter incremented each time when mailbox change is detected.
+        '''
+        with self._local_lock:
+            if (self._connected and time.time() > self._last_mailbox_query
+               + ImapClient.QUERY_INTERVAL):
+                with self._imap_lock:
+                    self.logger.debug('querying IMAP server')
+                    again = True
+                    repeats = 3
+                    while again:
+                        try:
+                            reply = self.imap.noop()
+                            again = False
+                        except ConnectionResetError:
+                            if repeats > 0:
+                                repeats -= 1
+                                self.logger.debug('connection lost, trying to reconnect')
+                                self.connect()
+                            else:
+                                raise
+
+
+                    self._last_mailbox_query = time.time()
+                    if len(reply) > 1:
+                        try:
+                            self._invalidate_and_reread()
+                        except Exception:
+                            self.logger.error("exception when refereshing mailbox",
+                                              exc_info=True)
+                    else:
+                        self.logger.warning('unknown response received: %s', reply)
+            return  self._mailbox_version
 
     def get_message(self, msg_id) -> List[MessagePart]:
         '''
@@ -137,33 +180,7 @@ class ImapClient:
                 self._message_cache[msg_id] = self._load_msg(msg_id)
             rv = self._message_cache[msg_id]
 
-        self.logger.debug('now leaving get_message')
         return rv
-
-    def _load_messages_if_needed(self):
-        '''
-        Load message headers if needed to populate the cache.
-        Current implementation doesn't allow for incremental
-        cache updates, so every time the cache is being refreshed
-        the whole message list is being retrieved. This is
-        likely something to be addressed in future.
-        '''
-
-        self.logger.debug('entering _load_messages_if_needed')
-        with self._local_lock:
-            if self._envelope_cache:
-                self.logger.debug('fast-leaving _load_messages_if_needed')
-                return
-
-        with self._imap_lock, self._local_lock:
-            msg_ids = self.imap.search('ALL')
-            self._all_ids = msg_ids
-            for msgid, data in self.imap.fetch(msg_ids,
-                                               ['ENVELOPE']).items():
-                env = data[b'ENVELOPE']
-                self._register_envelope(msgid, env)
-            self._last_refresh_time = time.time()
-        self.logger.debug('leaving _load_messages_if_needed')
 
     def _load_msg(self, mid) -> List[MessagePart]:
         '''
@@ -231,9 +248,12 @@ class ImapClient:
         https://imapclient.readthedocs.io/en/2.1.0/api.html#imapclient.response_types.Address)
         and return a string suitable for usage as a path element.
         '''
+        # pylint: disable=no-self-use
+
         rv = set()
 
-        if addr is None: return rv
+        if addr is None:
+            return rv
 
         for a in addr:
             txt = None
@@ -243,7 +263,7 @@ class ImapClient:
                     txt += '@' + a.host.decode()
             elif a.name:
                 txt = decode_header(a.name.decode())
-                
+
             if txt:
                 rv.add(_decode_text(txt))
         return rv
@@ -253,7 +273,7 @@ class ImapClient:
         Create sender and timeline cache entries, based on
         raw envelope of received message.
         '''
-        
+
         senders = set()
         for addr in [env.sender, env.from_]:
             senders |= self._parse_address(addr)
@@ -268,46 +288,29 @@ class ImapClient:
         hdr = MessageEnvelopeData(msgid, list(senders), list(receipients),
                                   subject, env.date)
         self._envelope_cache[msgid] = hdr
-        self._all_ids.append(msgid)
+        self._all_ids.add(msgid)
 
 
     def _invalidate_and_reread(self):
         '''
         invalidate local message list. Reread and update index.
         '''
-        with self._local_lock:
-            srv_msg_ids = self.imap.search('ALL')
-            ids_to_remove = set(self._all_ids) - set(srv_msg_ids)
-            ids_to_add = set(srv_msg_ids) - set(self._all_ids)
-            self.logger.debug('invalidate_and_reread ids_to_remove=%s ids_to_add=%s',
-                              ids_to_remove, ids_to_add)
-            for mid in ids_to_remove:
-                self.logger.debug('removing from cache message %d', mid)
-                self._del_msg(mid)
+        srv_msg_ids = self.imap.search('ALL')
+        ids_to_remove = self._all_ids - set(srv_msg_ids)
+        ids_to_add = set(srv_msg_ids) - self._all_ids
+        self.logger.debug('invalidate_and_reread ids_to_remove=%s ids_to_add=%s',
+                          str(ids_to_remove), str(ids_to_add))
+        for mid in ids_to_remove:
+            self.logger.debug('removing from cache message %d', mid)
+            self._del_msg(mid)
 
-            for mid in ids_to_add:
-                self.logger.debug('adding to cache message %d', mid)
-                self._prefetch_msg(mid)
-                self._last_refresh_time = time.time()
+        for mid in ids_to_add:
+            self.logger.debug('adding to cache message %d', mid)
+            self._prefetch_msg(mid)
 
-    def _refresh_if_needed(self):
-        '''
-        A naive mailbox refresh solution. It's triggered whenever the
-        message cache is accessed and polls the server if certain time
-        interval had passed since last poll.
-        '''
-        if self._connected:
-            with self._imap_lock:
-                if self._last_refresh_time < time.time()  - self.cache_refresh_interval: 
-                    reply = self.imap.noop()
-                    if len(reply) > 1:
-                        try:
-                            self._invalidate_and_reread()
-                        except Exception:
-                            self.logger.error("exception when refereshing mailbox",
-                                              exc_info=True)
-                    else:
-                        self.logger.warning('unknown response received: %s', reply)
+        if len(ids_to_remove) + len(ids_to_add) > 0:
+            self._mailbox_version += 1
+
 
 
 def _decode_text(sub) -> str:
