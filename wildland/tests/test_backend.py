@@ -61,8 +61,9 @@ def cleanup():
 def make_storage(location, backend_class) -> Tuple[StorageBackend, Path]:
     storage_dir = location / 'storage1'
     os.mkdir(storage_dir)
-    backend = backend_class(params={'path': str(storage_dir),
-                                    'type': getattr(backend_class, 'TYPE')})
+    backend = backend_class(params={'location': str(storage_dir),
+                                    'type': getattr(backend_class, 'TYPE'),
+                                    'backend_id': 'test_id'})
     return backend, storage_dir
 
 

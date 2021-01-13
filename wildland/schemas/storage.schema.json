@@ -1,8 +1,9 @@
 {
     "title": "Storage manifest (common schema)",
     "type": "object",
-    "required": ["owner", "type", "container-path"],
+    "required": ["object", "owner", "type", "container-path"],
     "properties": {
+        "object": { "const": "storage" },
         "owner": {
             "$ref": "types.json#fingerprint",
             "description": "Signer of the manifest. Needs to match the owner of the container."
@@ -14,6 +15,10 @@
         "container-path": {
             "$ref": "types.json#abs-path",
             "description": "Path identifying the container this storage is for (by convention, /.uuid/...)"
+        },
+        "backend_id":{
+            "type": "string",
+            "description": "storage UUID; optional, but if it is missing it will be generated automatically"
         },
         "read-only": {
             "type": "boolean",

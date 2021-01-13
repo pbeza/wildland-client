@@ -24,6 +24,7 @@ Storage object
 from typing import Type
 from pathlib import PurePosixPath
 import functools
+import uuid
 
 import click
 
@@ -60,7 +61,7 @@ def _make_create_command(backend: Type[StorageBackend]):
                      help='Update the container after creating storage'),
         click.Option(['--trusted'], is_flag=True,
                      help='Make the storage trusted'),
-        click.Option(['--inline'], is_flag=True,
+        click.Option(['--inline/--no-inline'], default=True,
                      help='Add the storage directly to container '
                      'manifest, instead of saving it to a file'),
         click.Option(['--manifest-pattern'], metavar='GLOB',
@@ -119,6 +120,8 @@ def _do_create(
     for param, value in list(params.items()):
         if value is None or value == []:
             del params[param]
+
+    params['backend_id'] = str(uuid.uuid4())
 
     manifest_pattern_dict = None
     if manifest_pattern:
@@ -179,8 +182,8 @@ def list_(obj: ContextObj):
     for storage in obj.client.load_storages():
         click.echo(storage.local_path)
         click.echo(f'  type: {storage.storage_type}')
-        if storage.storage_type == 'local':
-            click.echo(f'  path: {storage.params["path"]}')
+        if storage.storage_type in ['local', 'local-cached', 'local-dir-cached']:
+            click.echo(f'  location: {storage.params["location"]}')
 
 
 @storage_.command('delete', short_help='delete a storage', alias=['rm'])

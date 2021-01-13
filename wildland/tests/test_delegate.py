@@ -22,6 +22,7 @@
 
 from pathlib import Path
 import os
+import uuid
 from datetime import datetime
 
 import pytest
@@ -33,8 +34,8 @@ from ..client import Client
 def test_delegate_with_url(cli, base_dir):
     cli('user', 'create', 'User', '--key', '0xaaa')
     cli('container', 'create', 'referenceContainer', '--path', '/reference_PATH')
-    cli('storage', 'create', 'local', 'referenceStorage', '--path', '/tmp/local-path',
-        '--container', 'referenceContainer')
+    cli('storage', 'create', 'local', 'referenceStorage', '--location', '/tmp/local-path',
+        '--container', 'referenceContainer', '--no-inline')
 
     reference_path = base_dir / 'containers/referenceContainer.container.yaml'
     assert reference_path.exists()
@@ -43,7 +44,7 @@ def test_delegate_with_url(cli, base_dir):
     cli('container', 'create', 'Container', '--path', '/PATH')
     cli('storage', 'create', 'delegate', 'ProxyStorage',
         '--reference-container-url', reference_url,
-        '--container', 'Container')
+        '--container', 'Container', '--no-inline')
 
     client = Client(base_dir)
     client.recognize_users()
@@ -84,8 +85,10 @@ def storage(data_dir):
         'type': 'delegate',
         'storage': {
             'type': 'local',
-            'path': str(data_dir),
-        }
+            'location': str(data_dir),
+            'backend_id': str(uuid.uuid4()),
+        },
+        'backend_id': str(uuid.uuid4()),
     }
 
 
@@ -94,9 +97,11 @@ def storage_subdir(data_dir):
     return {
         'type': 'delegate',
         'subdirectory': '/dir1',
+        'backend_id': str(uuid.uuid4()),
         'storage': {
             'type': 'local',
-            'path': str(data_dir),
+            'location': str(data_dir),
+            'backend_id': str(uuid.uuid4())
         }
     }
 

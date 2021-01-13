@@ -263,6 +263,7 @@ class BearDBStorageBackend(GeneratedStorageMixin, StorageBackend):
         paths = [f'/.uuid/{ident}']
         categories = get_note_categories(tags)
         return {
+            'object': 'container',
             'title': title,
             'paths': paths,
             'categories': categories,
@@ -270,6 +271,7 @@ class BearDBStorageBackend(GeneratedStorageMixin, StorageBackend):
                 'type': 'delegate',
                 'reference-container': 'wildland:@default:@parent-container:',
                 'subdirectory': '/' + ident,
+                'backend_id': ident
             }]}
         }
 

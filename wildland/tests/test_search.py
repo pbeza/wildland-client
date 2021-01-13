@@ -21,6 +21,7 @@
 
 from pathlib import PurePosixPath
 import os
+import uuid
 import shutil
 from functools import partial
 
@@ -115,25 +116,25 @@ def setup(base_dir, cli):
 
     cli('container', 'create', 'Container1', '--path', '/path')
     cli('storage', 'create', 'local', 'Storage1',
-        '--path', base_dir / 'storage1',
+        '--location', base_dir / 'storage1',
         '--container', 'Container1',
-        '--trusted')
+        '--trusted', '--no-inline')
 
     cli('container', 'create', 'Container2',
         '--path', '/path/subpath',
         '--path', '/other/path',
         '--path', '/unsigned')
     cli('storage', 'create', 'local', 'Storage2',
-        '--path', base_dir / 'storage2',
-        '--container', 'Container2')
+        '--location', base_dir / 'storage2',
+        '--container', 'Container2', '--no-inline')
 
     cli('container', 'create', 'C.User2',
         '--user', 'User2',
         '--path', '/users/User2',
         '--update-user')
     cli('storage', 'create', 'local', 'Storage3',
-        '--path', base_dir / 'storage3',
-        '--container', 'C.User2')
+        '--location', base_dir / 'storage3',
+        '--container', 'C.User2', '--no-inline')
 
     os.mkdir(base_dir / 'storage1/other/')
     # TODO copy storage manifest as well
@@ -317,9 +318,8 @@ def setup_pattern(request, base_dir, cli):
 
     cli('container', 'create', 'Container1', '--path', '/path')
     cli('storage', 'create', 'local', 'Storage1',
-        '--path', base_dir / 'storage1',
+        '--location', base_dir / 'storage1',
         '--container', 'Container1',
-        '--inline',
         '--manifest-pattern', request.param)
 
     cli('container', 'create', 'Container2',
@@ -360,14 +360,13 @@ def test_container_with_storage_path(base_dir, cli):
 
     cli('container', 'create', 'Container1', '--path', '/path1')
     cli('storage', 'create', 'local', 'Storage1',
-        '--path', base_dir / 'storage1',
-        '--container', 'Container1',
-        '--inline')
+        '--location', base_dir / 'storage1',
+        '--container', 'Container1')
 
     cli('container', 'create', 'Container2', '--path', '/path2')
     cli('storage', 'create', 'local', 'Storage2',
-        '--path', base_dir / 'storage2',
-        '--container', 'Container2')
+        '--location', base_dir / 'storage2',
+        '--container', 'Container2', '--no-inline')
 
     os.rename(
         base_dir / 'storage/Storage2.storage.yaml',
@@ -394,7 +393,7 @@ class TestBackend(GeneratedStorageMixin, StorageBackend):
     '''
 
     def __init__(self, content):
-        super().__init__()
+        super().__init__(params={'backend_id': str(uuid.uuid4()), 'type': ''})
         self.content = content
 
     def get_root(self):
@@ -461,21 +460,25 @@ def test_traverse_other_key(cli, base_dir, client, signer):
 signature: |
   dummy.{signer}
 ---
+object: user
 owner: '0xfff'
 paths:
 - /users/User2
 pubkeys:
 - key.0xbbb
 infrastructures:
- - owner: '0xfff'
+ - object: container
+   owner: '0xfff'
    paths:
     - /.uuid/11e69833-0152-4563-92fc-b1540fc54a69
    backends:
     storage:
-     - type: local
-       path: {storage_path}
+     - object: storage
+       type: local
+       location: {storage_path}
        owner: '0xfff'
        container-path: /.uuid/11e69833-0152-4563-92fc-b1540fc54a69
+       backend_id: '3cba7968-da34-4b8c-8dc7-83d8860a89e2'
        manifest-pattern:
         type: glob
         path: /manifests/{{path}}/*.yaml
@@ -489,6 +492,7 @@ infrastructures:
 signature: |
   dummy.0xddd
 ---
+object: 'bridge'
 owner: '0xddd'
 user: file://localhost{remote_user_file}
 pubkey: 'key.0xfff'
@@ -522,9 +526,8 @@ def test_search_two_containers(base_dir, cli):
     cli('container', 'create', 'Container2', '--path', '/path1')
 
     cli('storage', 'create', 'local', 'Storage1',
-        '--path', base_dir / 'storage1',
-        '--container', 'Container2',
-        '--inline')
+        '--location', base_dir / 'storage1',
+        '--container', 'Container2')
 
     (base_dir / 'test').write_text('testdata')
 

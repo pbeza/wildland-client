@@ -21,6 +21,7 @@
 from pathlib import Path, PurePosixPath
 import os
 from datetime import datetime
+import uuid
 import yaml
 
 import pytest
@@ -32,8 +33,8 @@ from ..client import Client
 def test_date_proxy_with_url(cli, base_dir):
     cli('user', 'create', 'User', '--key', '0xaaa')
     cli('container', 'create', 'referenceContainer', '--path', '/reference_PATH')
-    cli('storage', 'create', 'local', 'referenceStorage', '--path', '/tmp/local-path',
-        '--container', 'referenceContainer')
+    cli('storage', 'create', 'local', 'referenceStorage', '--location', '/tmp/local-path',
+        '--container', 'referenceContainer', '--no-inline')
 
     reference_path = base_dir / 'containers/referenceContainer.container.yaml'
     assert reference_path.exists()
@@ -42,7 +43,7 @@ def test_date_proxy_with_url(cli, base_dir):
     cli('container', 'create', 'Container', '--path', '/PATH')
     cli('storage', 'create', 'date-proxy', 'ProxyStorage',
         '--reference-container-url', reference_url,
-        '--container', 'Container')
+        '--container', 'Container', '--no-inline')
 
     client = Client(base_dir)
     client.recognize_users()
@@ -83,8 +84,10 @@ def storage(data_dir):
         'type': 'date-proxy',
         'storage': {
             'type': 'local',
-            'path': str(data_dir),
-        }
+            'location': str(data_dir),
+            'backend_id': 'test'
+        },
+        'backend_id': 'test2'
     }
 
 
@@ -148,6 +151,7 @@ def container(cli, base_dir, data_dir):
     (base_dir / 'containers').mkdir(parents=True)
     with (base_dir / 'containers/macro.container.yaml').open('w') as f:
         f.write(yaml.dump({
+            'object': 'container',
             'owner': '0xaaa',
             'paths': [
                 '/.uuid/98cf16bf-f59b-4412-b54f-d8acdef391c0',
@@ -155,18 +159,23 @@ def container(cli, base_dir, data_dir):
             ],
             'backends': {
                 'storage': [{
+                    'object': 'storage',
                     'type': 'date-proxy',
                     'owner': '0xaaa',
                     'container-path': '/.uuid/98cf16bf-f59b-4412-b54f-d8acdef391c0',
+                    'backend_id': str(uuid.uuid4()),
                     'reference-container': {
+                        'object': 'container',
                         'owner': '0xaaa',
                         'paths': ['/.uuid/39f437f3-b071-439c-806b-6d14fa55e827'],
                         'backends': {
                             'storage': [{
+                                'object': 'storage',
                                 'owner': '0xaaa',
                                 'container-path': '/.uuid/39f437f3-b071-439c-806b-6d14fa55e827',
                                 'type': 'local',
-                                'path': str(data_dir),
+                                'location': str(data_dir),
+                                'backend_id': str(uuid.uuid4())
                             }]
                         }
                     }
@@ -198,11 +207,13 @@ def test_date_proxy_subcontainers(base_dir, container, data_dir):
     assert len(subcontainers) == 2
     assert subcontainers[0].paths[1:] == [PurePosixPath('/timeline/2008/02/03')]
     assert subcontainers[0].backends[0] == {
+        'object': 'storage',
         'type': 'delegate',
         'subdirectory': '/2008/02/03',
         'owner': container.owner,
         'container-path': str(subcontainers[0].paths[0]),
-        'reference-container': f'wildland:@default:{container.paths[0]}:'
+        'reference-container': f'wildland:@default:{container.paths[0]}:',
+        'backend_id': str(subcontainers[0].paths[0])[7:]
     }
     assert subcontainers[1].paths[1:] == [PurePosixPath('/timeline/2010/05/07')]
     assert subcontainers[1].backends[0]['subdirectory'] == '/2010/05/07'
