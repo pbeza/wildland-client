@@ -21,6 +21,7 @@
 Indexed HTTP storage backend
 '''
 
+from datetime import datetime
 from pathlib import PurePosixPath
 from typing import Iterable, Tuple
 from urllib.parse import urljoin, urlparse, quote
@@ -122,6 +123,12 @@ class HttpIndexStorageBackend(DirectoryCachedStorageMixin, StorageBackend):
                 'Accept': 'text/html',
             }
         )
+
+        # Special handling for 403 Forbidden
+        if resp.status_code == 403:
+            raise PermissionError(f'Could not list requested directory [{path}]')
+
+        # For all other cases throw a joint HTTPError
         resp.raise_for_status()
 
         parser = etree.HTMLParser()
@@ -166,8 +173,24 @@ class HttpIndexStorageBackend(DirectoryCachedStorageMixin, StorageBackend):
 
             yield rel_path.name, attr
 
+    def getattr(self, path: PurePosixPath) -> Attr:
+        try:
+            attr = super().getattr(path)
+        except PermissionError:
+            logger.info('Could not list directory for [%s]. '
+                        'Falling back to the file directly.', str(path))
+            url = self.make_url(path)
+            attr = self._get_single_file_attr(url)
+
+        return attr
+
     def open(self, path: PurePosixPath, flags: int) -> PagedHttpFile:
         url = self.make_url(path)
+        attr = self._get_single_file_attr(url)
+        return PagedHttpFile(url, attr)
+
+    @staticmethod
+    def _get_single_file_attr(url: str) -> Attr:
         resp = requests.request(
             method='HEAD',
             url=url,
@@ -178,5 +201,8 @@ class HttpIndexStorageBackend(DirectoryCachedStorageMixin, StorageBackend):
         resp.raise_for_status()
 
         size = int(resp.headers['Content-Length'])
-        attr = Attr.file(size, 0)
-        return PagedHttpFile(url, attr)
+        timestamp = datetime.strptime(
+            resp.headers['Last-Modified'], "%a, %d %b %Y %X %Z"
+        ).strftime("%s")
+
+        return Attr.file(size, timestamp)
