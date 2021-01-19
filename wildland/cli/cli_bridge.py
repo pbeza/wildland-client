@@ -26,9 +26,11 @@ from typing import List, Optional
 
 import click
 
+from ..manifest.manifest import ManifestError
 from ..bridge import Bridge
 from .cli_base import aliased_group, ContextObj, CliError
 from .cli_common import sign, verify, edit
+from .cli_user import import_manifest
 
 
 @aliased_group('bridge', short_help='bridge management')
@@ -45,8 +47,7 @@ def bridge_():
 @click.option('--ref-user-location', metavar='URL',
               required=True,
               help='Path to the user manifest (use file:// for local file). If --ref-user is \
-              skipped, the user from this path is considered trusted and imported into wildland \
-              user store.')
+              skipped, the user manifest from this path is considered trusted.')
 @click.option('--ref-user-path', 'ref_user_paths', multiple=True,
               help='paths for user in Wildland namespace (omit to take from user manifest)')
 @click.option('--file-path', help='file path to create under')
@@ -95,6 +96,53 @@ def create(obj: ContextObj,
     path = obj.client.save_new_bridge(
         bridge, name, Path(file_path) if file_path else None)
     click.echo(f'Created: {path}')
+
+
+@bridge_.command('list', short_help='list bridges', alias=['ls'])
+@click.pass_obj
+def list_(obj: ContextObj):
+    '''
+    Display known bridges.
+    '''
+
+    obj.client.recognize_users()
+    for bridge in obj.client.load_bridges():
+        click.echo(bridge.local_path)
+
+        try:
+            user = obj.client.load_user_by_name(bridge.owner)
+            if user.paths:
+                user_desc = ' (' + ', '.join([str(p) for p in user.paths]) + ')'
+            else:
+                user_desc = ''
+        except ManifestError:
+            user_desc = ''
+        click.echo(f'  owner: {bridge.owner}' + user_desc)
+        click.echo('  paths: ' + ', '.join([str(p) for p in bridge.paths]))
+        click.echo()
+
+
+@bridge_.command('import', short_help='import bridge or user manifest', alias=['im'])
+@click.pass_obj
+@click.option('--path', 'paths', multiple=True,
+              help='path for resulting bridge manifest (can be repeated); if omitted, will'
+                   ' use user\'s paths')
+@click.option('--bridge-owner', help="specify a different (then default) user to be used as the "
+                                     "owner of created bridge manifests")
+@click.option('--only-first', is_flag=True, default=False,
+              help="import only first encountered bridge "
+                   "(ignored in all cases except WL container paths)")
+@click.argument('path-or-url')
+def bridge_import(obj: ContextObj, path_or_url, paths, bridge_owner, only_first):
+    """
+    Import a provided user or bridge manifest.
+    Accepts a local path, an url or a Wildland path to manifest or to bridge.
+    Optionally override bridge paths with paths provided via --paths.
+    Created bridge manifests will use system @default-owner, or --bridge-owner is specified.
+    """
+    obj.client.recognize_users()
+
+    import_manifest(obj, path_or_url, paths, bridge_owner, only_first)
 
 
 bridge_.add_command(sign)

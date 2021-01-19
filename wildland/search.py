@@ -57,7 +57,10 @@ class Step:
     client: Client
 
     # Container
-    container: Container
+    container: Optional[Container]
+
+    # Bridge, if bridge is used at this step
+    bridge: Optional[Bridge]
 
     # User, if we're changing users at this step
     user: Optional[User]
@@ -97,7 +100,19 @@ class Search:
             raise PathError(f'Expecting a container path, not a file path: {self.wlpath}')
 
         for step in self._resolve_all():
-            yield step.container
+            if step.container:
+                yield step.container
+
+    def read_bridge(self) -> Iterable[Bridge]:
+        '''
+        Yield all bridges matching the given WL path.
+        '''
+        if self.wlpath.file_path is not None:
+            raise PathError(f'Expecting an object path, not a file path: {self.wlpath}')
+
+        for step in self._resolve_all():
+            if step.bridge:
+                yield step.bridge
 
     def read_file(self) -> bytes:
         '''
@@ -112,6 +127,8 @@ class Search:
             raise PathError(f'Expecting a file path, not a container path: {self.wlpath}')
 
         for step in self._resolve_all():
+            if not step.container:
+                continue
             try:
                 _, storage_backend = self._find_storage(step)
             except ManifestError:
@@ -134,6 +151,8 @@ class Search:
             raise PathError(f'Expecting a file path, not a container path: {self.wlpath}')
 
         for step in self._resolve_all():
+            if not step.container:
+                continue
             try:
                 _, storage_backend = self._find_storage(step)
             except ManifestError:
@@ -144,6 +163,8 @@ class Search:
             except FileNotFoundError:
                 continue
 
+        raise PathError(f'Container not found for path: {self.wlpath}')
+
     def _resolve_all(self) -> Iterable[Step]:
         '''
         Resolve all path parts, yield all results that match.
@@ -152,7 +173,6 @@ class Search:
         for step in self._resolve_first():
             for last_step in self._resolve_rest(step, 1):
                 yield last_step
-        raise PathError(f'Container not found for path: {self.wlpath}')
 
     def _resolve_rest(self, step: Step, i: int) -> Iterable[Step]:
         if i == len(self.wlpath.parts):
@@ -179,7 +199,7 @@ class Search:
         # Try user's infrastructure containers
         for user in self.local_users:
             if user.owner == self.initial_owner:
-                for step in self._user_step(user, self.initial_owner, self.client):
+                for step in self._user_step(user, self.initial_owner, self.client, None):
                     yield from self._resolve_next(step, 0)
 
     def _resolve_local(self, part: PurePosixPath, owner: str) -> Iterable[Step]:
@@ -198,7 +218,8 @@ class Search:
                     owner=self.initial_owner,
                     client=self.client,
                     container=container,
-                    user=None
+                    user=None,
+                    bridge=None
                 )
 
         for bridge in self.local_bridges:
@@ -212,6 +233,9 @@ class Search:
         '''
         Resolve next part by looking up a manifest in the current container.
         '''
+
+        if not step.container:
+            return
 
         part = self.wlpath.parts[i]
 
@@ -265,6 +289,7 @@ class Search:
             client=step.client,
             container=container,
             user=None,
+            bridge=None,
         )
 
     def _bridge_step(self,
@@ -315,14 +340,22 @@ class Search:
         user = next_client.session.load_user(user_manifest_content)
 
         yield from self._user_step(
-            user, next_owner, next_client)
+            user, next_owner, next_client, bridge)
 
     def _user_step(self,
                    user: User,
                    owner: str,
-                   client: Client) -> Iterable[Step]:
+                   client: Client,
+                   current_bridge: Optional[Bridge]) -> Iterable[Step]:
 
         self._verify_owner(user, owner)
+        yield Step(
+            owner=user.owner,
+            client=client,
+            container=None,
+            user=user,
+            bridge=current_bridge
+        )
 
         for container_spec in user.containers:
             if isinstance(container_spec, str):
@@ -354,6 +387,7 @@ class Search:
                 client=client,
                 container=container,
                 user=user,
+                bridge=current_bridge
             )
 
     def _verify_owner(self, obj, expected_owner):

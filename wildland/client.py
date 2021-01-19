@@ -35,7 +35,7 @@ from .user import User
 from .container import Container
 from .storage import Storage
 from .bridge import Bridge
-from .wlpath import WildlandPath
+from .wlpath import WildlandPath, PathError
 from .manifest.sig import DummySigContext, SignifySigContext
 from .manifest.manifest import ManifestError, Manifest
 from .session import Session
@@ -252,7 +252,10 @@ class Client:
                 from .search import Search
 
                 search = Search(self, wlpath, {'default': owner})
-                return next(search.read_container())
+                try:
+                    return next(search.read_container())
+                except StopIteration as ex:
+                    raise PathError(f'Container not found for path: {wlpath}') from ex
 
         return self.session.load_container(self.read_from_url(url, owner))
 
@@ -316,7 +319,10 @@ class Client:
         if WildlandPath.match(name):
             wlpath = WildlandPath.from_str(name)
             # TODO: what to do if there are more containers that match the path?
-            return next(self.load_container_from_wlpath(wlpath))
+            try:
+                return next(self.load_container_from_wlpath(wlpath))
+            except StopIteration as ex:
+                raise PathError(f'Container not found for path: {wlpath}') from ex
 
         path = self.resolve_container_name_to_path(name)
         if path:
@@ -440,7 +446,7 @@ class Client:
         name.
         '''
 
-        path = self._new_path('user', name or user.owner)
+        path = self.new_path('user', name or user.owner)
         path.write_bytes(self.session.dump_user(user))
         user.local_path = path
         return path
@@ -463,7 +469,7 @@ class Client:
         '''
 
         ident = container.ensure_uuid()
-        path = self._new_path('container', name or ident)
+        path = self.new_path('container', name or ident)
         path.write_bytes(self.session.dump_container(container))
         container.local_path = path
         return path
@@ -474,7 +480,7 @@ class Client:
         name.
         '''
 
-        path = self._new_path('storage', name or storage.container_path.name)
+        path = self.new_path('storage', name or storage.container_path.name)
         path.write_bytes(self.session.dump_storage(storage))
         storage.local_path = path
         return path
@@ -487,13 +493,20 @@ class Client:
 
         if not path:
             assert name is not None
-            path = self._new_path('bridge', name)
+            path = self.new_path('bridge', name)
 
         path.write_bytes(self.session.dump_bridge(bridge))
         bridge.local_path = path
         return path
 
-    def _new_path(self, manifest_type, name: str) -> Path:
+    def new_path(self, manifest_type, name: str) -> Path:
+        """
+        Create a path in Wildland base_dir to save a new object of type manifest_type and name
+        name. It follows Wildland conventions.
+        :param manifest_type: 'user', 'container', 'storage', 'bridge' or 'set'
+        :param name: name of the object
+        :return: Path
+        """
         if manifest_type == 'user':
             base_dir = self.user_dir
         elif manifest_type == 'container':
@@ -695,6 +708,40 @@ class Client:
 
         return '://' in s or s.startswith(WILDLAND_URL_PREFIX)
 
+    def _wl_url_to_search(self, url: str):
+        wlpath = WildlandPath.from_str(url[len(WILDLAND_URL_PREFIX):])
+        if not wlpath.owner:
+            raise WildlandError(
+                'Wildland path in URL context has to have explicit owner')
+        # TODO: Still a circular dependency with search
+        # pylint: disable=import-outside-toplevel
+        from .search import Search
+
+        search = Search(self, wlpath, {})
+
+        return search
+
+    def read_bridge_from_url(self, url: str) -> Iterable[Bridge]:
+        """
+        Return an iterator over all bridges encountered on a given Wildland path.
+        """
+        if not url.startswith(WILDLAND_URL_PREFIX):
+            raise WildlandError('Missing Wildland path prefix')
+        search = self._wl_url_to_search(url)
+        yield from search.read_bridge()
+
+    def is_url_file_path(self, url: str):
+        """
+        Determines if the given URL is an URL to file or to a Wildland bridge.
+        :param url: str
+        """
+        if not self.is_url(url):
+            return False
+        if url.startswith(WILDLAND_URL_PREFIX):
+            search = self._wl_url_to_search(url)
+            return bool(search.wlpath.file_path)
+        return True
+
     def read_from_url(self, url: str, owner: str) -> bytes:
         '''
         Retrieve data from a given URL. The local (file://) URLs
@@ -703,16 +750,7 @@ class Client:
         '''
 
         if url.startswith(WILDLAND_URL_PREFIX):
-            wlpath = WildlandPath.from_str(url[len(WILDLAND_URL_PREFIX):])
-            if not wlpath.owner:
-                raise WildlandError(
-                    'Wildland path in URL context has to have explicit owner')
-
-            # TODO: Still a circular dependency with search
-            # pylint: disable=import-outside-toplevel, cyclic-import
-            from .search import Search
-
-            search = Search(self, wlpath, {})
+            search = self._wl_url_to_search(url)
             return search.read_file()
 
         if url.startswith('file:'):
