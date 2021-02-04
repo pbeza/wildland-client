@@ -122,8 +122,10 @@ For Wildland object path, will import all referenced bridges and their reference
     Import only the first encountered bridge manifest. Ignored except for WL container paths.
     Particularly useful if --path is used.
 
-.. program:: wl-user-modify-a
-.. _wl-user-modify-a:
+.. program:: wl-user-modify
+.. _wl-user-modify:
+.. _wl-user-modify-add-path:
+.. _wl-user-modify-del-path:
 
 :command:`wl user modify {add-path|del-path} --path PATH <file>`
 --------------------------------------------------------------------------------
@@ -133,6 +135,9 @@ Add/remove Wildland path to/from a user |~| manifest given by *<file>*.
 .. option:: --path
 
    Path to add/remove. Can be repeated.
+
+.. _wl-user-modify-add-pubkey:
+.. _wl-user-modify-del-pubkey:
 
 :command:`wl user modify {add-pubkey|del-pubkey} --pubkey PUBKEY <file>`
 --------------------------------------------------------------------------------
