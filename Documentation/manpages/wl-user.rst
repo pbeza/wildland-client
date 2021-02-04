@@ -12,6 +12,7 @@ Synopsis
 | :command:`wl user create <name> --key <key>`
 | :command:`wl user {sign|verify} [...] <file>`
 | :command:`wl user edit [--editor <editor>] <file>`
+| :command:`wl user modify {add-path|del-path|add-pubkey|del-pubkey} [...] <file>`
 
 Description
 ===========
@@ -120,3 +121,24 @@ For Wildland object path, will import all referenced bridges and their reference
 
     Import only the first encountered bridge manifest. Ignored except for WL container paths.
     Particularly useful if --path is used.
+
+.. program:: wl-user-modify-a
+.. _wl-user-modify-a:
+
+:command:`wl user modify {add-path|del-path} --path PATH <file>`
+--------------------------------------------------------------------------------
+
+Add/remove Wildland path to/from a user |~| manifest given by *<file>*.
+
+.. option:: --path
+
+   Path to add/remove. Can be repeated.
+
+:command:`wl user modify {add-pubkey|del-pubkey} --pubkey PUBKEY <file>`
+--------------------------------------------------------------------------------
+
+Add/remove public key to/from a user |~| manifest given by *<file>*.
+
+.. option:: --pubkey
+
+   Public key to add/remove (the same format as in the public key file). Can be repeated.
