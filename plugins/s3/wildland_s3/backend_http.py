@@ -115,7 +115,7 @@ class HttpIndexStorageBackend(DirectoryCachedStorageMixin, StorageBackend):
         return urljoin(self.base_url, quote(str(full_path)))
 
     def info_dir(self, path: PurePosixPath) -> Iterable[Tuple[str, Attr]]:
-        url = self.make_url(path) + '/'
+        url = self.make_url(path) + '/index.html'
         resp = requests.request(
             method='GET',
             url=url,
