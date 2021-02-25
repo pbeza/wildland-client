@@ -6,9 +6,9 @@
 # interface.
 
 import logging
+from .apple_log import apple_log
 
-
-logger = logging.getLogger('fs_mac')
+logger = logging.getLogger('fs')
 
 class WildlandAbstractFS:
     '''
@@ -19,6 +19,7 @@ class WildlandAbstractFS:
 
     
     def start(self):
+        apple_log.configure()
         logger.info('Wildland is starting')
 
 
