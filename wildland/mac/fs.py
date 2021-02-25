@@ -5,7 +5,10 @@
 # by hosting application, which provides the supported
 # interface.
 
+import os
 import logging
+import threading
+from pathlib import Path
 from .apple_log import apple_log
 from ..control_server import ControlServer, ControlHandler, control_command
 from ..manifest.schema import Schema
@@ -25,7 +28,7 @@ class WildlandAbstractFS:
         self.storage_paths: Dict[int, List[PurePosixPath]] = {}
         self.main_paths: Dict[PurePosixPath, int] = {}
         self.storage_counter = 1
-        self.multithreaded = true
+        self.multithreaded = True
         self.mount_lock = threading.Lock()
 
         self.control_server = ControlServer()
@@ -33,7 +36,7 @@ class WildlandAbstractFS:
         self.default_user = None
         self.uid = None
         self.gid = None
-        self.socket_path = socket_path
+        self.socket_path = Path(socket_path)
         command_schemas = Schema.load_dict('commands.json', 'args')
         self.control_server.register_validators({
             cmd: schema.validate for cmd, schema in command_schemas.items()
