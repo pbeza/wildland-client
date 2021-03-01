@@ -742,17 +742,23 @@ class Client:
         # because dict is not hashable (and there is no frozendict in python)
         cache_key = yaml.dump(container_url_or_dict), owner, trusted
         if cache_key in self._select_reference_storage_cache:
+            if isinstance(self._select_reference_storage_cache[cache_key], Exception):
+                raise self._select_reference_storage_cache[cache_key]
             return self._select_reference_storage_cache[cache_key]
 
-        if isinstance(container_url_or_dict, str):
-            container = self.load_container_from_url(
-                container_url_or_dict, owner
-            )
+        try:
+            if isinstance(container_url_or_dict, str):
+                container = self.load_container_from_url(
+                    container_url_or_dict, owner
+                )
 
-        else:
-            container = self.load_container_from_dict(
-                container_url_or_dict, owner
-            )
+            else:
+                container = self.load_container_from_dict(
+                    container_url_or_dict, owner
+                )
+        except Exception as e:
+            self._select_reference_storage_cache[cache_key] = e
+            raise
 
         if trusted and container.owner != owner:
             logger.error(
