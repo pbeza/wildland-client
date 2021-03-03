@@ -21,12 +21,9 @@
 Wildland Filesystem
 '''
 
-import errno
 import logging
 import os
-from pathlib import PurePosixPath, Path
-from typing import List, Dict, Optional, Set
-import threading
+from pathlib import Path
 from dataclasses import dataclass
 
 import fuse
@@ -34,14 +31,8 @@ fuse.fuse_python_api = 0, 2
 
 from .fs_base import WildlandFSBase, Timespec
 from .fuse_utils import debug_handler
-from .conflict import ConflictResolver, Resolved
-from .storage_backends.base import StorageBackend, Attr
-from .storage_backends.watch import FileEvent, StorageWatcher
-from .exc import WildlandError
 from .log import init_logging
-from .control_server import ControlServer, ControlHandler, control_command
-from .manifest.schema import Schema
-
+from .control_server import ControlHandler
 
 logger = logging.getLogger('fuse')
 
@@ -60,7 +51,7 @@ class Watch:
     def __str__(self):
         return f'{self.storage_id}:{self.pattern}'
 
-        
+
 class WildlandFS(fuse.Fuse, WildlandFSBase):
     '''A FUSE implementation of Wildland'''
     # pylint: disable=no-self-use,too-many-public-methods
@@ -68,7 +59,7 @@ class WildlandFS(fuse.Fuse, WildlandFSBase):
     def __init__(self, *args, **kwds):
         # this is before cmdline parsing
         fuse.Fuse.__init__(self, *args, **kwds)
-        WildlandFSBase.__init__(self, *args, **kwds)
+        WildlandFSBase.__init__(self)
         # Note that we need this intermediate class because
         # parser apparently uses some reflection approach
         # which enters infinite recursion in multiple inheritance
@@ -86,7 +77,7 @@ class WildlandFS(fuse.Fuse, WildlandFSBase):
             help='run single-threaded')
 
         self.parser.add_option(mountopt='default_user', help='override default_user')
- 
+
         self.install_debug_handler()
 
         # Disable file caching, so that we don't have to report the right file
@@ -102,8 +93,8 @@ class WildlandFS(fuse.Fuse, WildlandFSBase):
     def getattr(self, path):
         return self._mapattr(super().getattr(path))
 
-    def getfattr(self, path, *args):
-        return self._mapattr(super().getfattr(path, *args))
+    def fgetattr(self, path, *args):
+        return self._mapattr(super().fgetattr(path, *args))
 
     def readdir(self, path, _offset):
         return [fuse.Direntry(name) for name in super().readdir(path, _offset)]
@@ -137,14 +128,14 @@ class WildlandFS(fuse.Fuse, WildlandFSBase):
         else:
             init_logging(console=False, file_path=log_path)
 
- 
+
     def install_debug_handler(self):
         '''Decorate all python-fuse entry points'''
         for name in fuse.Fuse._attrs:
             if hasattr(self, name):
                 method = getattr(self, name)
                 setattr(self, name, debug_handler(method, bound=True))
- 
+
     @staticmethod
     def _mapattr(stat: os.stat_result) -> fuse.Stat:
         return fuse.Stat(
@@ -165,10 +156,11 @@ class WildlandFS(fuse.Fuse, WildlandFSBase):
             tv_sec=ts.tv_sec,
             tv_usec=ts.tv_used
         )
-    
+
     #
     # FUSE API
     #
+    # pylint: disable=missing-docstring
 
     def fsinit(self):
         logger.info('mounting wildland')
@@ -181,7 +173,7 @@ class WildlandFS(fuse.Fuse, WildlandFSBase):
         with self.mount_lock:
             for storage_id in list(self.storages):
                 self._unmount_storage(storage_id)
- 
+
 def main():
     # pylint: disable=missing-docstring
     server = WildlandFS()

@@ -33,7 +33,6 @@ from .conflict import ConflictResolver, Resolved
 from .storage_backends.base import StorageBackend, Attr
 from .storage_backends.watch import FileEvent, StorageWatcher
 from .exc import WildlandError
-from .log import init_logging
 from .control_server import ControlServer, ControlHandler, control_command
 from .manifest.schema import Schema
 
@@ -68,8 +67,8 @@ class WildlandFSBase:
     '''A base class for implementations of Wildland'''
     # pylint: disable=no-self-use,too-many-public-methods
 
-    def __init__(self, *args, **kwds):
-        
+    def __init__(self):
+
         # Mount information
         self.storages: Dict[int, StorageBackend] = {}
         self.storage_extra: Dict[int, Dict] = {}
@@ -266,7 +265,7 @@ class WildlandFSBase:
     @control_command('test')
     def control_test(self, _handler, **kwargs):
         return {'kwargs': kwargs}
-    
+
     def _stat(self, attr: Attr) -> os.stat_result:
         return os.stat_result((
             attr.mode,
@@ -463,7 +462,7 @@ class WildlandFSBase:
         if storage.read_only:
             attr.mode &= ~0o222
         return self._stat(attr)
-    
+
     def readdir(self, path, _offset):
         names = ['.', '..'] + self.resolver.readdir(PurePosixPath(path))
         return names
@@ -500,7 +499,7 @@ class WildlandFSBase:
         attr = storage.fgetattr(path, *args)
         if storage.read_only:
             attr.mode &= ~0o222
-        return self._stat(attr) 
+        return self._stat(attr)
 
     def ftruncate(self, *args):
         return self.proxy('ftruncate', *args, modify=True)
@@ -597,4 +596,3 @@ class WildlandFSConflictResolver(ConflictResolver):
         with self.fs.mount_lock:
             storage = self.fs.storages[ident]
         return list(storage.readdir(relpath))
-
