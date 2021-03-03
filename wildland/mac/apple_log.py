@@ -17,14 +17,18 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 '''
-A simple configuration for Python logging system to divert all messages to 
+A simple configuration for Python logging system to divert all messages to
 Apple's Unified Logging.
 '''
-
+# pylint: disable=import-error
 import logging
 from PBRLogBridge import log_message
 
 class apple_log(logging.StreamHandler):
+    '''
+    A logging handler class which is responsible for forwarding
+    log messages to the Apple unified logging logging bridge.
+    '''
 
     def __init__(self):
         logging.StreamHandler.__init__(self)
@@ -35,16 +39,12 @@ class apple_log(logging.StreamHandler):
 
     @staticmethod
     def configure():
-#        cfg = {
-#            'version': 1,
-#            'handlers': {
-#                'ios_log': {} # here the class
-#            },
-#            'root': {
-#                'handlers': ['ios_log'],
-#                'level': 'DEBUG',
-#            }
-#        }
+        '''
+        Configure the logging system to use the Apple
+        logging bridge. This should be called before
+        any log statements are executed.
+        '''
+
         ioshandler = apple_log()
         logging.basicConfig(level=logging.DEBUG)
         logging.getLogger().addHandler(ioshandler)
