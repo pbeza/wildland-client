@@ -20,13 +20,19 @@
 '''
 Storage class
 '''
+
+from __future__ import annotations
+
 from pathlib import PurePosixPath, Path
 from typing import Dict, Any, Optional, List
+from typing import TYPE_CHECKING
 
 from .storage_backends.base import StorageBackend
 from .manifest.manifest import Manifest, ManifestError
 from .manifest.schema import Schema
-from .container import Container
+
+if TYPE_CHECKING:
+    from .container import Container
 
 class Storage:
     '''
