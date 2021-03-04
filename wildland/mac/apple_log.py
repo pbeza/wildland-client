@@ -17,28 +17,19 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 '''
-<<<<<<< HEAD
 A simple configuration for Python logging system to divert all messages to 
 Apple's Unified Logging.
 '''
 
-=======
-A simple configuration for Python logging system to divert all messages to
-Apple's Unified Logging.
-'''
 # pylint: disable=import-error
->>>>>>> pisajew/fspy
 import logging
 from PBRLogBridge import log_message
 
 class apple_log(logging.StreamHandler):
-<<<<<<< HEAD
-=======
     '''
     A logging handler class which is responsible for forwarding
     log messages to the Apple unified logging logging bridge.
     '''
->>>>>>> pisajew/fspy
 
     def __init__(self):
         logging.StreamHandler.__init__(self)
@@ -54,7 +45,7 @@ class apple_log(logging.StreamHandler):
         logging bridge. This should be called before
         any log statements are executed.
         '''
-
+        
         ioshandler = apple_log()
         logging.basicConfig(level=logging.DEBUG)
         logging.getLogger().addHandler(ioshandler)
