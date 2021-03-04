@@ -23,7 +23,7 @@ Common commands (sign, edit, ...) for multiple object types
 
 import sys
 from pathlib import Path
-from typing import Callable, List
+from typing import Callable, List, Any
 
 import click
 import yaml
@@ -41,6 +41,7 @@ from ..manifest.manifest import (
     ManifestError,
     split_header,
 )
+from ..manifest.schema import SchemaError
 
 
 def find_manifest_file(client: Client, name, manifest_type) -> Path:
@@ -66,15 +67,25 @@ def find_manifest_file(client: Client, name, manifest_type) -> Path:
     raise click.ClickException(f'Not found: {name}')
 
 
-def validate_manifest(manifest: Manifest, manifest_type):
-    '''
+def validate_manifest(manifest: Manifest, manifest_type, client: Client):
+    """
     CLI helper: validate a manifest.
-    '''
+    """
 
     if manifest_type == 'user':
         manifest.apply_schema(User.SCHEMA)
     if manifest_type == 'container':
         manifest.apply_schema(Container.SCHEMA)
+
+        # copied to avoid problems with accessing / modifying existing manifest
+        manifest_copy = manifest.copy_to_unsigned()
+        manifest_copy.skip_signing()
+        for storage in manifest_copy.fields['backends']['storage']:
+            storage_obj = client.load_storage_from_dict(storage,
+                                                        manifest_copy.fields['owner'],
+                                                        manifest_copy.fields['paths'][0])
+            storage_obj.validate()
+
     if manifest_type == 'storage':
         manifest.apply_schema(Storage.BASE_SCHEMA)
     if manifest_type == 'bridge':
@@ -118,7 +129,10 @@ def sign(ctx, input_file, output_file, in_place):
 
     manifest = Manifest.from_unsigned_bytes(data, obj.client.session.sig)
     if manifest_type:
-        validate_manifest(manifest, manifest_type)
+        try:
+            validate_manifest(manifest, manifest_type, obj.client)
+        except SchemaError as se:
+            raise CliError(f'Invalid manifest: {se}') from se
 
     try:
         manifest.encrypt_and_sign(obj.client.session.sig,
@@ -166,8 +180,8 @@ def verify(ctx, input_file):
         manifest = Manifest.from_bytes(data, obj.client.session.sig,
                                        allow_only_primary_key=(manifest_type == 'user'))
         if manifest_type:
-            validate_manifest(manifest, manifest_type)
-    except ManifestError as e:
+            validate_manifest(manifest, manifest_type, obj.client)
+    except (ManifestError, SchemaError) as e:
         raise click.ClickException(f'Error verifying manifest: {e}')
     click.echo('Manifest is valid')
 
@@ -236,45 +250,62 @@ def edit(ctx, editor, input_file, remount):
         _, data = split_header(data)
 
     original_data = data
-    edited_s = click.edit(data.decode(), editor=editor, extension='.yaml',
-                          require_save=False)
-    data = edited_s.encode()
 
-    if original_data == data:
-        click.echo('No changes detected, not saving.')
-        return
+    new_manifest = None
+    while not new_manifest:
+        edited_s = click.edit(data.decode(), editor=editor, extension='.yaml',
+                              require_save=False)
+        data = edited_s.encode()
 
-    try:
-        manifest = Manifest.from_unsigned_bytes(data, obj.client.session.sig)
-    except ManifestError as me:
-        raise click.ClickException(f'Manifest parse error: {me}') from me
+        if original_data == data:
+            click.echo('No changes detected, not saving.')
+            return
 
-    if manifest_type is not None:
-        validate_manifest(manifest, manifest_type)
+        try:
+            manifest = Manifest.from_unsigned_bytes(data, obj.client.session.sig)
+        except ManifestError as me:
+            click.echo(f'Manifest parse error: {me}')
+            if click.confirm('Do you want to edit the manifest again to fix the error?'):
+                continue
+            click.echo('Changes not saved.')
+            return
 
-    try:
-        manifest.encrypt_and_sign(obj.client.session.sig,
-                                  only_use_primary_key=(manifest_type == 'user'))
-    except SigError as se:
-        raise CliError(f'Cannot save manifest: {se}') from se
+        if manifest_type is not None:
+            try:
+                validate_manifest(manifest, manifest_type, obj.client)
+            except SchemaError as se:
+                click.echo(f'Manifest validation error: {se}')
+                if click.confirm('Do you want to edit the manifest again to fix the error?'):
+                    continue
+                click.echo('Changes not saved.')
+                return
 
-    signed_data = manifest.to_bytes()
+        try:
+            manifest.encrypt_and_sign(obj.client.session.sig,
+                                      only_use_primary_key=(manifest_type == 'user'))
+        except SigError as se:
+            raise CliError(f'Cannot save manifest: {se}') from se
+
+        new_manifest = manifest
+
+    signed_data = new_manifest.to_bytes()
     with open(path, 'wb') as f:
         f.write(signed_data)
     click.echo(f'Saved: {path}')
 
     if remount and manifest_type == 'container' and obj.fs_client.is_mounted():
         container = obj.client.load_container_from_path(path)
-        if obj.fs_client.find_storage_id(container) is not None:
+        if obj.fs_client.find_primary_storage_id(container) is not None:
             click.echo('Container is mounted, remounting')
 
             user_paths = obj.client.get_bridge_paths_for_user(container.owner)
-            storage = obj.client.select_storage(container)
+            storages = obj.client.get_storages_to_mount(container)
+
             obj.fs_client.mount_container(
-                container, storage, user_paths, remount=remount)
+                container, storages, user_paths, remount=remount)
 
 
-def modify_manifest(ctx, name: str, edit_func: Callable[[dict], dict], *args):
+def modify_manifest(ctx, name: str, edit_func: Callable[[dict], dict], *args, **kwargs):
     '''
     Edit manifest (identified by `name`) fields using a specified callback.
     This module provides three common callbacks: `add_field`, `del_field` and `set_field`.
@@ -291,12 +322,15 @@ def modify_manifest(ctx, name: str, edit_func: Callable[[dict], dict], *args):
     sig_ctx = obj.client.session.sig
     manifest = Manifest.from_file(manifest_path, sig_ctx)
     if manifest_type is not None:
-        validate_manifest(manifest, manifest_type)
+        validate_manifest(manifest, manifest_type, obj.client)
 
-    fields = edit_func(manifest.fields, *args)
+    fields = edit_func(manifest.fields, *args, **kwargs)
     modified = Manifest.from_fields(fields)
     if manifest_type is not None:
-        validate_manifest(modified, manifest_type)
+        try:
+            validate_manifest(modified, manifest_type, obj.client)
+        except SchemaError as se:
+            raise CliError(f'Invalid manifest: {se}') from se
 
     modified.encrypt_and_sign(sig_ctx, only_use_primary_key=(manifest_type == 'user'))
 
@@ -325,20 +359,72 @@ def add_field(fields: dict, field: str, values: List[str]) -> dict:
     return fields
 
 
-def del_field(fields: dict, field: str, values: List[str]) -> dict:
-    '''
-    Callback function for `modify_manifest`. Removes values from the specified field.
-    Non-existent values are ignored.
-    '''
-    if fields.get(field) is None:
-        fields[field] = []
+# pylint: disable=dangerous-default-value
+def del_nested_field(manifest_fields: dict, fields: List[str],
+                     values: List[Any] = [], keys: List[Any] = []) -> dict:
+    """
+    Callback function for `modify_manifest` which is a wrapper for del_field callback
+    for nested fields (e.g. ['backends', 'storage'])
+    """
+    field = fields.pop(0)
 
-    for value in values:
-        if value in fields[field]:
-            fields[field].remove(value)
-        else:
-            click.echo(f'{value} is not in the manifest')
-            continue
+    if not fields:
+        return del_field(manifest_fields, field, values, keys)
+
+    next_obj = manifest_fields.get(field)
+
+    if isinstance(next_obj, dict):
+        manifest_fields[field] = del_nested_field(next_obj, fields, values, keys)
+    else:
+        click.echo(f'Field [{field}] either does not exist or is not a dictionary. Terminating.')
+
+    return manifest_fields
+
+
+def del_field(fields: dict, field: str, values: List[Any] = [], keys: List[Any] = []) -> dict:
+    """
+    Callback function for `modify_manifest`. Removes values from a list or a set either by values
+    or keys. Non-existent values or keys are ignored.
+    """
+    if values and keys:
+        click.echo('You may not simultanously remove both by key and by value. Choose only one.')
+        return fields
+
+    obj = fields.get(field)
+
+    # We handle lists and sets differently.
+
+    if isinstance(obj, list):
+        # Remove by value
+        for value in values:
+            if value in obj:
+                obj.remove(value)
+            else:
+                click.echo(f'{value} is not in the manifest')
+                continue
+
+        # If remove by keys in a list, thus by indexes, they must be reversed so
+        # that we don't remove elements by indexes changing and moving upwards
+        for idx in sorted(keys, reverse=True):
+            try:
+                del obj[idx]
+            except IndexError:
+                click.echo(f'Given index [{idx}] does not exist. Skipped.')
+    elif isinstance(obj, dict):
+        for key in keys:
+            try:
+                del obj[key]
+            except KeyError:
+                click.echo(f'Given key [{key}] does not exist. Skipped.')
+
+        for value in values:
+            for key, item in obj.copy().items():
+                if value == item:
+                    del obj[key]
+    else:
+        click.echo(f'Given field [{field}] is neither list, dict or does not exist. '
+                    'Nothing is deleted.')
+        return fields
 
     return fields
 

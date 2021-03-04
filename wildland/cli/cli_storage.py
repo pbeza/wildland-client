@@ -32,6 +32,7 @@ from .cli_base import aliased_group, ContextObj, CliError
 from .cli_common import sign, verify, edit, modify_manifest, set_field, add_field, del_field, dump
 from ..storage import Storage
 from ..manifest.template import TemplateManager
+from ..manifest.schema import SchemaError
 
 from ..storage_backends.base import StorageBackend
 from ..storage_backends.dispatch import get_storage_backends
@@ -154,7 +155,10 @@ def _do_create(
         manifest_pattern=params.get('manifest_pattern', manifest_pattern_dict),
         access=access
     )
-    storage.validate()
+    try:
+        storage.validate()
+    except SchemaError as se:
+        raise CliError(f'Invalid storage properties: {se}') from se
 
     _do_save_new_storage(obj.client, container, storage, inline, name)
 
@@ -170,7 +174,7 @@ def _do_save_new_storage(client, container, storage, inline, name):
     :param name: storage name
     """
     if inline:
-        click.echo('Adding storage directly to container')
+        click.echo(f'Adding storage {storage.backend_id} directly to the container')
         container.backends.append(storage.to_unsigned_manifest()._fields)
         click.echo(f'Saving: {container.local_path}')
         client.save_container(container)
@@ -178,7 +182,7 @@ def _do_save_new_storage(client, container, storage, inline, name):
         storage_path = client.save_new_storage(storage, name)
         click.echo('Created: {}'.format(storage_path))
 
-        click.echo('Adding storage to container')
+        click.echo('Adding storage {storage.backend_id} to the container')
         container.backends.append(client.local_url(storage_path))
         click.echo(f'Saving: {container.local_path}')
         client.save_container(container)
