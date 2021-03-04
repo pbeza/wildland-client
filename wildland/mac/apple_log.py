@@ -17,7 +17,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 '''
-A simple configuration for Python logging system to divert all messages to 
+A simple configuration for Python logging system to divert all messages to
 Apple's Unified Logging.
 '''
 
@@ -45,7 +45,7 @@ class apple_log(logging.StreamHandler):
         logging bridge. This should be called before
         any log statements are executed.
         '''
-        
+
         ioshandler = apple_log()
         logging.basicConfig(level=logging.DEBUG)
         logging.getLogger().addHandler(ioshandler)
