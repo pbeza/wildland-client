@@ -267,17 +267,17 @@ class WildlandFSBase:
         return {'kwargs': kwargs}
 
     def _stat(self, attr: Attr) -> os.stat_result:
-        return os.stat_result(( # type: ignore
+        return os.stat_result((  # type: ignore
             attr.mode,
-            0, # st_ino
-            None, # st_dev
-            1, # nlink
+            0,  # st_ino
+            None,  # st_dev
+            1,  # nlink
             self.uid,
             self.gid,
             attr.size,
-            attr.timestamp, # atime
-            attr.timestamp, # mtime
-            attr.timestamp # ctime
+            attr.timestamp,  # atime
+            attr.timestamp,  # mtime
+            attr.timestamp  # ctime
             ))
 
     def _notify_storage_watches(self, event_type, relpath, storage_id):
@@ -537,8 +537,8 @@ class WildlandFSBase:
     def mknod(self, *args):
         return -errno.ENOSYS
 
-    def readlink(self, *args):
-        return -errno.ENOSYS
+    def readlink(self, path: Union[str, PurePosixPath]):
+        return self.proxy('readlink', path)
 
     def removexattr(self, *args):
         return -errno.ENOSYS
@@ -547,8 +547,8 @@ class WildlandFSBase:
             move_to: Union[str, PurePosixPath]):
         move_from = PurePosixPath(move_from)
         move_to = PurePosixPath(move_to)
-        resolved_from = self._resolve_path( move_from, parent=False)
-        resolved_to = self._resolve_path( move_to, parent=True)
+        resolved_from = self._resolve_path(move_from, parent=False)
+        resolved_to = self._resolve_path(move_to, parent=True)
 
         if not self._is_same_storage(resolved_from, resolved_to):
             return -errno.EXDEV
