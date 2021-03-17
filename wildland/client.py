@@ -716,9 +716,12 @@ class Client:
             # If there is a 'container' parameter with a backend URL, convert
             # it to an inline manifest.
             if 'reference-container' in storage.params:
-                storage.params['storage'] = self._select_reference_storage(
+                path, storage.params['storage'] = self._select_reference_storage(
                     storage.params['reference-container'], container.owner, storage.trusted
                 )
+                backend_cls = StorageBackend.types()[storage.storage_type]
+                if hasattr(backend_cls, 'MOUNT_REFERENCE_CONTAINER') and backend_cls.MOUNT_REFERENCE_CONTAINER:
+                    storage.params['storage-path'] = str(self.fs_client.mount_dir / path.relative_to('/'))
                 if storage.params['storage'] is None:
                     continue
 
@@ -771,11 +774,12 @@ class Client:
             self,
             container_url_or_dict: Union[str, Dict],
             owner: str,
-            trusted: bool) -> Optional[Dict]:
-        """
-        Select a "reference" storage based on URL or dictionary. This resolves a
-        container specification and then selects storage for the container.
-        """
+            trusted: bool) -> Optional[Tuple[PurePosixPath, Dict]]:
+        '''
+        Select an "reference" storage and default container path based on URL
+        or dictionary. This resolves a container specification and then selects
+        storage for the container.
+        '''
 
         # use custom caching that dumps *container_url_or_dict* to yaml,
         # because dict is not hashable (and there is no frozendict in python)
@@ -801,8 +805,9 @@ class Client:
             return None
 
         reference_storage = self.select_storage(container)
-        self._select_reference_storage_cache[cache_key] = reference_storage.params
-        return reference_storage.params
+        result = container.paths[0], reference_storage.params
+        self._select_reference_storage_cache[cache_key] = result
+        return result
 
     @staticmethod
     def _postprocess_subcontainer(container: Container,

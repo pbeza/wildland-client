@@ -296,14 +296,7 @@ class EncryptedProxyStorageBackend(StorageBackend):
         self.ciphertext_storage = self.params['storage']
 
         # the path where it got mounted (this is new)
-        # self.ciphertext_path = self.params['storage-path']
-
-        # Following is a local hack
-        s = PurePosixPath('/home/pepesza/wildland')
-        s = s / self.ciphertext_storage.params['container-path'][1:]
-        self.ciphertext_path = PurePosixPath(s)
-
-
+        self.ciphertext_path = self.params['storage-path']
 
 
     @classmethod
