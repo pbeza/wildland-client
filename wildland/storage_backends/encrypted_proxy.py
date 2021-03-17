@@ -181,8 +181,15 @@ class GoCryptFS(EncryptedFSRunner):
     def stop(self):
         if self.cleartextdir is None:
             raise WildlandFSError('Unmounting failed: mount point unknown')
-        res = subprocess.run(['fusermount', '-u', self.cleartextdir], check=True)
-        return res.returncode
+        max_retries = 2
+        for retry in range(max_retries):
+            try:
+                return subprocess.run(['fusermount', '-u', self.cleartextdir], check=True).returncode
+            except subprocess.CalledProcessError:
+                logger.info("Failed to stop gocryptfs, will retry %s times" % max_retries)
+                import time
+                time.sleep(1)
+        raise WildlandFSError('Unmounting failed: mount point is busy')
 
     @classmethod
     def init(cls, tempdir: PurePosixPath, ciphertextdir: PurePosixPath) -> 'GoCryptFS':
