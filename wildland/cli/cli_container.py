@@ -43,13 +43,14 @@ from .cli_common import sign, verify, edit, modify_manifest, add_field, del_fiel
 from .cli_storage import do_create_storage_from_set
 from ..container import Container
 from ..exc import WildlandError
-from ..remounter import Remounter
-from ..storage import Storage, StorageBackend
-from ..manifest.manifest import ManifestError
-from ..manifest.template import TemplateManager
-from ..sync import Syncer, list_storage_conflicts
 from ..hashdb import HashDb
 from ..log import init_logging
+from ..manifest.manifest import ManifestError
+from ..manifest.template import TemplateManager
+from ..publish import Publisher
+from ..remounter import Remounter
+from ..storage import Storage, StorageBackend
+from ..sync import Syncer, list_storage_conflicts
 from ..wlpath import WildlandPath
 
 MW_PIDFILE = Path(BaseDirectory.get_runtime_dir()) / 'wildland-mount-watch.pid'
@@ -214,13 +215,26 @@ def update(obj: ContextObj, storage, cont):
 @click.pass_obj
 def publish(obj: ContextObj, cont):
     """
-    Publish a container manifest under a given wildland path
-    (or to an infrastructure container, if wlpath not given).
+    Publish a container manifest to an infrastructure container.
     """
 
     obj.client.recognize_users()
     container = obj.client.load_container_from(cont)
-    obj.client.publish_container(container)
+    Publisher(obj.client, container).publish_container()
+
+
+@container_.command(short_help='unpublish container manifest')
+@click.argument('cont', metavar='CONTAINER')
+@click.pass_obj
+def unpublish(obj: ContextObj, cont):
+    '''
+    Attempt to unpublish a container manifest under a given wildland path
+    from all infrastructure containers.
+    '''
+
+    obj.client.recognize_users()
+    container = obj.client.load_container_from(cont)
+    Publisher(obj.client, container).unpublish_container()
 
 
 def _container_info(client, container):

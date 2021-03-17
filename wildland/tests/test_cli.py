@@ -1171,7 +1171,7 @@ def test_container_update(cli, base_dir):
     assert str(storage_path) in data
 
 
-def test_container_publish(cli, tmp_path):
+def test_container_publish_unpublish(cli, tmp_path):
     cli('user', 'create', 'User', '--key', '0xaaa')
     cli('container', 'create', 'Container', '--path', '/PATH', '--update-user')
     cli('storage', 'create', 'local', 'Storage',
@@ -1183,6 +1183,10 @@ def test_container_publish(cli, tmp_path):
     cli('container', 'publish', 'Container')
 
     assert len(tuple(tmp_path.glob('*.yaml'))) == 1
+
+    cli('container', 'unpublish', 'Container')
+
+    assert not tuple(tmp_path.glob('*.yaml'))
 
 
 def test_container_publish_rewrite(cli, tmp_path):
@@ -1207,11 +1211,40 @@ def test_container_publish_rewrite(cli, tmp_path):
             for line in itertools.chain(file1, file2):
                 print(line)
                 if re.fullmatch(
-                        r'- https://example\.invalid/m-[A-Za-z0-9-]+.yaml',
+                        r'- https://example\.invalid/m-([A-Za-z0-9-]+\.){2}yaml',
                         line.strip()):
                     break
             else:
                 assert False
+
+def test_container_republish_paths(cli, tmp_path):
+    cli('user', 'create', 'User', '--key', '0xaaa')
+    cli('container', 'create', 'Container',
+        '--path', '/PA/TH1',
+        '--path', '/PA/TH2',
+        '--update-user',
+        '--no-encrypt-manifest')
+    cli('storage', 'create', 'local', 'Storage',
+        '--location', os.fspath(tmp_path),
+        '--container', 'Container',
+        '--no-inline',
+        '--manifest-pattern', '/manifests/{path}.yaml',
+        '--base-url', 'https://example.invalid/')
+
+    cli('container', 'publish', 'Container')
+
+    assert (tmp_path / 'manifests/PA/TH1.yaml').exists()
+    assert (tmp_path / 'manifests/PA/TH2.yaml').exists()
+    assert not (tmp_path / 'manifests/PA/TH3.yaml').exists()
+
+    cli('container', 'modify', 'del-path', 'Container', '--path', '/PA/TH2')
+    cli('container', 'modify', 'add-path', 'Container', '--path', '/PA/TH3')
+
+    cli('container', 'publish', 'Container')
+
+    assert (tmp_path / 'manifests/PA/TH1.yaml').exists()
+    assert not (tmp_path / 'manifests/PA/TH2.yaml').exists()
+    assert (tmp_path / 'manifests/PA/TH3.yaml').exists()
 
 
 def test_container_delete(cli, base_dir):

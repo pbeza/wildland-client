@@ -44,7 +44,7 @@ from .wlpath import WildlandPath, PathError
 from .exc import WildlandError
 
 if TYPE_CHECKING:
-    from .client import Client
+    from .client import Client # pylint: disable=cyclic-import
 
 logger = logging.getLogger('search')
 
@@ -682,6 +682,12 @@ class StorageDriver:
         finally:
             self.storage_backend.release(relpath, 0, obj)
 
+    def remove_file(self, relpath):
+        """
+        Remove a file.
+        """
+        self.storage_backend.unlink(relpath)
+
     def makedirs(self, relpath, mode=0o755):
         """
         Make directory, and it's parents if needed. Does not work across
@@ -695,3 +701,15 @@ class StorageDriver:
             else:
                 if not attr.is_dir():
                     raise NotADirectoryError(errno.ENOTDIR, path)
+
+    def read_file(self, relpath) -> bytes:
+        '''
+        Read a file from StorageBackend, using FUSE commands.
+        '''
+
+        obj = self.storage_backend.open(relpath, os.O_RDONLY)
+        try:
+            st = self.storage_backend.fgetattr(relpath, obj)
+            return self.storage_backend.read(relpath, st.size, 0, obj)
+        finally:
+            self.storage_backend.release(relpath, 0, obj)
