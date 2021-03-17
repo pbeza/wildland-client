@@ -28,8 +28,9 @@ import functools
 import glob
 import logging
 import os
+from graphlib import TopologicalSorter
 from pathlib import Path, PurePosixPath
-from typing import Dict, Iterable, Iterator, Optional, Tuple, Union
+from typing import Dict, Iterable, Iterator, Optional, Set, Tuple, Union
 from urllib.parse import urlparse, quote
 
 import yaml
@@ -516,6 +517,60 @@ class Client:
             path.read_bytes(), path,
             trusted_owner=trusted_owner)
 
+    def ensure_mount_reference_container(self, containers):
+        '''
+        Ensure that for any storage with MOUNT_REFERENCE_CONTAINER corresponding
+        reference_container appears in sequence before the referencer.
+        '''
+        dependency_graph: Dict[Container, Set[Container]] = dict()
+        containers_to_process = list(containers)
+        iter_obj = iter(containers_to_process)
+
+        default_user = self.config.get('@default')
+
+        storages = list(self.fs_client.get_info().values())
+        mounted_paths = set()
+        for storage in storages:
+            mounted_paths.add(storage['paths'][0])
+
+        def open_node(container):
+            for backend in container.backends:
+                if 'reference-container' not in backend:
+                    continue
+
+                user = default_user
+                wlpath = WildlandPath.from_str(backend['reference-container'])
+                if wlpath.owner:
+                    user = wlpath.owner
+                referenced = self.load_container_from_url(backend['reference-container'], user)
+                if referenced.paths[0] in mounted_paths:
+                    continue
+
+                if container in dependency_graph.keys():
+                    dependency_graph[container].add(referenced)
+                else:
+                    dependency_graph[container] = {referenced}
+                if referenced not in containers_to_process:
+                    containers_to_process.append(referenced)
+
+        while True:
+            try:
+                container = next(iter_obj)
+                open_node(container)
+            except StopIteration:
+                break
+
+        ts = TopologicalSorter(dependency_graph)
+        dependencies_first = list(ts.static_order())
+
+        final_order = []
+        for i in containers_to_process:
+            if i in dependencies_first:
+                continue
+            final_order.append(i)
+        final_order = dependencies_first + final_order
+        return final_order
+
     @functools.lru_cache
     def get_bridge_paths_for_user(self, user: Union[User, str], owner: Optional[User] = None) \
             -> Iterable[PurePosixPath]:
@@ -716,12 +771,18 @@ class Client:
             # If there is a 'container' parameter with a backend URL, convert
             # it to an inline manifest.
             if 'reference-container' in storage.params:
-                path, storage.params['storage'] = self._select_reference_storage(
+                referenced_storage_and_path = self._select_reference_storage(
                     storage.params['reference-container'], container.owner, storage.trusted
                 )
+                if referenced_storage_and_path is None:
+                    logging.warning("Can't select reference storage: %s",
+                                    storage.params['reference-container'])
+                    continue
+                path, storage.params['storage'] = referenced_storage_and_path
                 backend_cls = StorageBackend.types()[storage.storage_type]
-                if hasattr(backend_cls, 'MOUNT_REFERENCE_CONTAINER') and backend_cls.MOUNT_REFERENCE_CONTAINER:
-                    storage.params['storage-path'] = str(self.fs_client.mount_dir / path.relative_to('/'))
+                if backend_cls.MOUNT_REFERENCE_CONTAINER:
+                    storage_path = str(self.fs_client.mount_dir / path.relative_to('/'))
+                    storage.params['storage-path'] = storage_path
                 if storage.params['storage'] is None:
                     continue
 
