@@ -184,7 +184,8 @@ class GoCryptFS(EncryptedFSRunner):
         max_retries = 2
         for retry in range(max_retries):
             try:
-                return subprocess.run(['fusermount', '-u', self.cleartextdir], check=True).returncode
+                cmd = ['fusermount', '-u', str(self.cleartextdir)]
+                return subprocess.run(cmd, check=True).returncode
             except subprocess.CalledProcessError:
                 logger.info("Failed to stop gocryptfs, will retry %s times" % max_retries)
                 import time
@@ -238,8 +239,6 @@ class EncryptedProxyStorageBackend(StorageBackend):
     params['storage'] (see StorageBackend.from_params()).
     '''
 
-    # TODO update schema to use oneOf for engine
-    # TODO revisit "symmetrickey" name
     SCHEMA = Schema({
         "type": "object",
         "required": ["reference-container", "symmetrickey", "engine"],
@@ -261,7 +260,7 @@ class EncryptedProxyStorageBackend(StorageBackend):
         }
     })
 
-    engine_obj: EncryptedFSRunner
+    engine_obj: Optional[EncryptedFSRunner]
     engine: str
 
     TYPE = 'encrypted-proxy'
@@ -273,6 +272,7 @@ class EncryptedProxyStorageBackend(StorageBackend):
         self.read_only = False
         self.credentials = kwds['params']['symmetrickey']
         self.engine = kwds['params']['engine']
+        self.engine_obj = None
 
         alphabet = string.ascii_letters + string.digits
         mountid = ''.join(secrets.choice(alphabet) for i in range(15))
@@ -291,18 +291,15 @@ class EncryptedProxyStorageBackend(StorageBackend):
                         'owner': kwds['params']['owner'],
                         'is-local-owner': True}
         gen_backend_id(local_params)
-        # TODO determine if capabilities of ciphertext storage are of relevance here
-        # some experimentation, maybe?
         self.local = LocalStorageBackend(params=local_params)
 
         # below parameters are automatically generated based on
         # reference-container and MOUNT_REFERENCE_CONTAINER flag
 
-        # StorageBackend instance matching reference-container (this
-        # currently exists)
+        # StorageBackend instance matching reference-container
         self.ciphertext_storage = self.params['storage']
 
-        # the path where it got mounted (this is new)
+        # The path where it got mounted
         self.ciphertext_path = self.params['storage-path']
 
 
@@ -362,10 +359,15 @@ class EncryptedProxyStorageBackend(StorageBackend):
         return self.local.utimens(path, atime, mtime)
 
     def mount(self) -> None:
-        self.engine_obj = GoCryptFS(self.tmpdir_path, self.ciphertext_path, self.credentials)
-        self.engine_obj.run(self.cleartext_path, self.ciphertext_storage)
-        self.local.request_mount()
+        # On every mount this callback is called twice.
+        # Ciphertext_path might not be available first time.
+        if Path(self.ciphertext_path).exists():
+            self.engine_obj = GoCryptFS(self.tmpdir_path, self.ciphertext_path, self.credentials)
+            self.engine_obj.run(self.cleartext_path, self.ciphertext_storage)
+            self.local.request_mount()
 
     def unmount(self) -> None:
-        self.local.request_unmount()
-        self.engine_obj.stop()
+        if self.engine_obj is not None:
+            self.local.request_unmount()
+            self.engine_obj.stop()
+            self.engine_obj = None
