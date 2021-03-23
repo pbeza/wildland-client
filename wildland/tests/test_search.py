@@ -170,7 +170,7 @@ def test_resolve_first(base_dir, client):
     step = list(search._resolve_first())[0]
     assert step.container.paths[1] == PurePosixPath('/path')
 
-    _, backend = search._find_storage(step)
+    _, backend = search._find_and_mount_storage(step.container)
     assert isinstance(backend, LocalStorageBackend)
     assert backend.root == base_dir / 'storage1'
 
@@ -179,7 +179,7 @@ def test_resolve_first(base_dir, client):
     step = list(search._resolve_first())[0]
     assert step.container.paths[1] == PurePosixPath('/path/subpath')
 
-    _, backend = search._find_storage(step)
+    _, backend = search._find_and_mount_storage(step.container)
     assert isinstance(backend, LocalStorageBackend)
     assert backend.root == base_dir / 'storage2'
 
@@ -763,7 +763,7 @@ def test_traverse_with_fs_client_mounted(base_dir, control_client, client2):
         mock_storage_backend.assert_any_call(PartialDict({
             'type': 'local',
             'location': user2_infra_mount_path
-        }))
+        }), deduplicate=True)
         # check if infra container was _not_ accessed directly
         direct_access = mock.call(PartialDict({'location': str(base_dir / 'infra2')}))
         assert direct_access not in mock_storage_backend.mock_calls
@@ -800,11 +800,11 @@ def test_traverse_container_with_fs_client_mounted(
         mock_storage_backend.assert_any_call(PartialDict({
             'type': 'local',
             'location': user2_infra_mount_path
-        }))
+        }), deduplicate=True)
         mock_storage_backend.assert_any_call(PartialDict({
             'type': 'local',
             'location': user1_infra_mount_path
-        }))
+        }), deduplicate=True)
         # check if infra container was _not_ accessed directly
         direct_access = mock.call(PartialDict({'location': str(base_dir / 'infra2')}))
         assert direct_access not in mock_storage_backend.mock_calls

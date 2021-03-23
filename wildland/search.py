@@ -30,7 +30,7 @@ import re
 import types
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Optional, Tuple, Iterable, Mapping, List, Set
+from typing import Optional, Tuple, Iterable, Mapping, List, Set, Dict
 from typing import TYPE_CHECKING
 
 from .fs_client import WildlandFSClient
@@ -111,6 +111,17 @@ class Search:
         self.local_users = list(self.client.load_users())
         self.local_bridges = list(self.client.load_bridges())
 
+        # storage backends mounted for the purpose of path resolution;
+        # keeping them mounted for the whole operation greatly improve
+        # performance for enumerating several similar containers (including
+        # wildcard WL paths)
+        self._mounted_storage: Dict[Container, Tuple[Storage, StorageBackend]] = dict()
+
+    def _unmount_storages(self):
+        for _, storage_backend in self._mounted_storage.values():
+            storage_backend.request_unmount()
+        self._mounted_storage.clear()
+
     def resolve_raw(self) -> Iterable[Step]:
         """
         Resolve the non-file part of the wildland path and yield raw resolution results.
@@ -157,7 +168,7 @@ class Search:
             if not step.container:
                 continue
             try:
-                _, storage_backend = self._find_storage(step)
+                _, storage_backend = self._find_and_mount_storage(step.container)
             except ManifestError:
                 continue
             with storage_backend:
@@ -181,7 +192,7 @@ class Search:
             if not step.container:
                 continue
             try:
-                _, storage_backend = self._find_storage(step)
+                _, storage_backend = self._find_and_mount_storage(step.container)
             except ManifestError:
                 continue
             try:
@@ -266,9 +277,12 @@ class Search:
         Resolve all path parts, yield all results that match.
         """
 
-        for step in self._resolve_first():
-            for last_step in self._resolve_rest(step, 1):
-                yield last_step
+        try:
+            for step in self._resolve_first():
+                for last_step in self._resolve_rest(step, 1):
+                    yield last_step
+        finally:
+            self._unmount_storages()
 
     def _resolve_rest(self, step: Step, i: int) -> Iterable[Step]:
         if i == len(self.wlpath.parts):
@@ -278,7 +292,7 @@ class Search:
         for next_step in self._resolve_next(step, i):
             yield from self._resolve_rest(next_step, i+1)
 
-    def _find_storage(self, step: Step) -> Tuple[Storage, StorageBackend]:
+    def _find_and_mount_storage(self, container: Container) -> Tuple[Storage, StorageBackend]:
         """
         Find a storage for the latest resolved part.
 
@@ -288,21 +302,29 @@ class Search:
         Returns (storage, storage_backend).
         """
 
-        assert step.container is not None
-        storage = self.client.select_storage(step.container)
-        if self.fs_client is not None:
-            fuse_path = self.fs_client.get_primary_unique_mount_path(step.container, storage)
-            mounted_path = self.fs_client.mount_dir / fuse_path.relative_to('/')
-            if mounted_path.exists():
-                local_storage = StorageBackend.from_params({
-                    'type': 'local',
-                    'backend-id': storage.backend_id,
-                    'location': mounted_path,
-                    'owner': step.container.owner,
-                    'is-local-owner': True,
-                })
-                return storage, local_storage
-        return storage, StorageBackend.from_params(storage.params)
+        if container not in self._mounted_storage:
+            storage = self.client.select_storage(container)
+            storage_backend = None
+            if self.fs_client is not None:
+                fuse_path = self.fs_client.get_primary_unique_mount_path(container, storage)
+                mounted_path = self.fs_client.mount_dir / fuse_path.relative_to('/')
+                if mounted_path.exists():
+                    storage_backend = StorageBackend.from_params({
+                        'type': 'local',
+                        'backend-id': storage.backend_id,
+                        'location': mounted_path,
+                        'owner': container.owner,
+                        'is-local-owner': True,
+                        },
+                        deduplicate=True)
+            if storage_backend is None:
+                # if cannot access through FUSE, do it directly
+                storage_backend = StorageBackend.from_params(storage.params, deduplicate=True)
+
+            storage_backend.request_mount()
+            self._mounted_storage[container] = storage, storage_backend
+
+        return self._mounted_storage[container]
 
     def _resolve_first(self):
         # Try local containers
@@ -357,7 +379,7 @@ class Search:
         # Try local paths first
         yield from self._resolve_local(part, step.owner, step)
 
-        storage, storage_backend = self._find_storage(step)
+        storage, storage_backend = self._find_and_mount_storage(step.container)
         manifest_pattern = storage.manifest_pattern or storage.DEFAULT_MANIFEST_PATTERN
         pattern = get_file_pattern(manifest_pattern, part)
         step.pattern = pattern
