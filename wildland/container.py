@@ -90,6 +90,21 @@ class Container:
                 f'manifest={self.manifest!r}, '
                 f'access={self.access!r})')
 
+    def __eq__(self, other):
+        """
+        Check if two container objects in fact describe the same container.
+
+        Note it does ignore non-identity related object properties,
+        like attached backends, or manifest.
+        """
+        return (self.owner == other.owner and
+                set(self.paths) == set(other.paths) and
+                self.title == other.title and
+                set(self.categories) == set(other.categories))
+
+    def __hash__(self):
+        return hash((self.owner, frozenset(self.paths), self.title, frozenset(self.categories)))
+
     @classmethod
     def from_manifest(cls, manifest: Manifest, local_path=None) -> 'Container':
         """
