@@ -30,7 +30,8 @@ from pathlib import PurePosixPath, Path
 import logging
 import secrets
 import string
-from typing import Optional, Iterable
+import time
+from typing import Optional
 
 import click
 
@@ -51,7 +52,7 @@ class EncryptedFSRunner(metaclass=abc.ABCMeta):
     binary: str
 
     @classmethod
-    def init(cls, basedir: PurePosixPath, ciphertextdir: PurePosixPath) -> 'EncryptedFSRunner':
+    def init(cls, tempdir: PurePosixPath, ciphertextdir: PurePosixPath) -> 'EncryptedFSRunner':
         '''
         Initialize and configure a cryptographic filesystem storage.
         ``credentials()`` should be available after that.
@@ -188,7 +189,6 @@ class GoCryptFS(EncryptedFSRunner):
                 return subprocess.run(cmd, check=True).returncode
             except subprocess.CalledProcessError:
                 logger.info("Failed to stop gocryptfs, will retry %s times" % max_retries)
-                import time
                 time.sleep(1)
         raise WildlandFSError('Unmounting failed: mount point is busy')
 
