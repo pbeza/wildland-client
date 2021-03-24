@@ -538,11 +538,18 @@ class Client:
                 if 'reference-container' not in backend:
                     continue
 
-                user = default_user
-                wlpath = WildlandPath.from_str(backend['reference-container'])
-                if wlpath.owner:
-                    user = wlpath.owner
-                referenced = self.load_container_from_url(backend['reference-container'], user)
+                container_url_or_dict = backend['reference-container']
+
+                if isinstance(container_url_or_dict, str):
+                    referenced = self.load_container_from_url(
+                        container_url_or_dict, container.owner
+                    )
+
+                else:
+                    referenced = self.load_container_from_dict(
+                        container_url_or_dict, container.owner
+                    )
+
                 if referenced.paths[0] in mounted_paths:
                     continue
 
