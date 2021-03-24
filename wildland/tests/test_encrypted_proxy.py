@@ -22,6 +22,9 @@ import os
 from datetime import datetime
 import uuid
 import yaml
+import time
+import subprocess
+import zlib
 
 import pytest
 
@@ -32,38 +35,76 @@ from wildland.storage_backends.encrypted_proxy import GoCryptFS, generate_passwo
 from wildland.storage_backends.local import LocalStorageBackend, LocalFile, to_attr
 from wildland.storage_backends.base import StorageBackend, Attr
 
+from ..cli.cli_base import ContextObj
+from ..cli.cli_container import prepare_mount
+from ..cli.cli_main import _do_mount_containers
 
-# def test_encrypted_proxy_with_url(env, cli, base_dir):
-#     cli('user', 'create', 'User', '--key', '0xaaa')
-#     cli('container', 'create', 'referenceContainer', '--path', '/reference_PATH')
-#     cli('storage', 'create', 'local', 'referenceStorage', '--location', '/tmp/local-path',
-#         '--container', 'referenceContainer', '--no-inline')
+def test_encrypted_proxy_with_url(env, cli, base_dir):
+    local_dir = base_dir / 'local'
+    Path(local_dir).mkdir()
+    cli('user', 'create', 'User', '--key', '0xaaa')
+    cli('container', 'create', 'referenceContainer', '--path', '/reference_PATH')
+    cli('storage', 'create', 'local', 'referenceStorage', '--location', local_dir,
+        '--container', 'referenceContainer', '--no-inline')
 
-#     reference_path = base_dir / 'containers/referenceContainer.container.yaml'
-#     assert reference_path.exists()
-#     reference_url = f'file://{reference_path}'
+    reference_path = base_dir / 'containers/referenceContainer.container.yaml'
+    assert reference_path.exists()
+    # handle both files and paths here
+    reference_url = 'wildland::/reference_PATH:'
 
-#     cli('container', 'create', 'Container', '--path', '/PATH')
-#     cli('storage', 'create', 'encrypted-proxy', 'ProxyStorage',
-#         '--reference-container-url', reference_url,
-#         '--container', 'Container', '--no-inline')
+    cli('container', 'create', 'Container', '--path', '/PATH')
+    cli('storage', 'create', 'encrypted-proxy', 'ProxyStorage',
+        '--reference-container-url', reference_url,
+        '--container', 'Container', '--inline')
 
-#     client = Client(base_dir)
-#     client.recognize_users()
+    client = Client(base_dir)
+    client.recognize_users()
 
-#     # When loaded directly, the storage manifest contains container URL...
-#     storage = client.load_storage_from('ProxyStorage')
-#     assert storage.params['reference-container'] == reference_url
+    obj = ContextObj(client)
+    obj.fs_client = client.fs_client
 
-#     # But select_storage loads also the reference manifest
-#     container = client.load_container_from('Container')
-#     storage = client.select_storage(container)
-#     assert storage.storage_type == 'encrypted-proxy'
-#     assert storage.params['symmetrickey']
-#     assert storage.params['engine'] in ['gocryptfs', 'cryfs', 'encfs']
-#     reference_storage = storage.params['storage']
-#     assert isinstance(reference_storage, dict)
-#     assert reference_storage['type'] == 'local'
+    # But select_storage loads also the reference manifest
+    container = client.load_container_from('Container')
+    storage = client.select_storage(container)
+    assert storage.storage_type == 'encrypted-proxy'
+    assert storage.params['symmetrickey']
+    assert storage.params['engine'] in ['gocryptfs', 'cryfs', 'encfs']
+    reference_storage = storage.params['storage']
+    assert isinstance(reference_storage, dict)
+    assert reference_storage['type'] == 'local'
+
+    # start and check if engine is running
+    user = client.users['0xaaa']
+    client.fs_client.mount(single_thread=False, default_user=user)
+    to_mount = ['Container']
+    _do_mount_containers(obj, to_mount)
+    subprocess.run(['pidof', 'gocryptfs'], check=True)
+
+    # write and read a file
+    mounted_plaintext = obj.fs_client.mount_dir / Path('/PATH').relative_to('/')
+    assert os.listdir(mounted_plaintext) == [], "plaintext dir should be empty!"
+    with open(mounted_plaintext / 'test.file', 'w') as ft:
+        ft.write("1" * 10000) # low entropy plaintext file
+
+    assert os.listdir(mounted_plaintext) == ['test.file']
+
+    time.sleep(1) # time to let gocryptfs finish writing to plaintext dir
+
+    # check if ciphertext directory looks familiar
+    listing = os.listdir(local_dir)
+    assert len(listing) == 3
+    assert 'gocryptfs.conf' in listing
+    assert 'gocryptfs.diriv' in listing
+    listing.remove('gocryptfs.conf')
+    listing.remove('gocryptfs.diriv')
+
+    # read and examine entropy of ciphertext file
+    with open(local_dir / listing[0], 'rb') as fb:
+        enc_bytes = fb.read()
+    packed_bytes = zlib.compress(enc_bytes)
+    assert len(packed_bytes) * 1.05 > len(enc_bytes), "encrypted bytes are of low entropy!"
+
+    time.sleep(1) # otherwise "unmount: /tmp/.../mnt: target is busy"
 
 @pytest.fixture
 def env():
@@ -73,35 +114,6 @@ def env():
         yield env
     finally:
         env.destroy()
-
-@pytest.fixture
-def storage_dir(base_dir):
-    storage_dir = Path(base_dir / 'storage_dir')
-    storage_dir.mkdir()
-    return storage_dir
-
-@pytest.fixture
-def storage(storage_dir):
-    return {
-        'type': 'encrypted-proxy',
-        'symmetrickey': 'NqI1eJypujyJQbLeqN6vggvJpWTqn6;ewoJIkNyZWF0b3IiOiAiZ29jcnlwdGZzIDEuOC4wIiwKCSJFbmNyeXB0ZWRLZXkiOiAiczRtQmtta05sRGdzdDJUblZjeDBCaDQ1cVVnakUwb0ZzdXp5TkI1Q3dxWnU0MURJVTRNMi9VYmZqRERvNUhZcWhDZXMxNVFkcEhYRlFHWmhGWWtsWFE9PSIsCgkiU2NyeXB0T2JqZWN0IjogewoJCSJTYWx0IjogIi9OYW1qaWdrY3F4NHJjS0ZHdS9sdkdsU0ZnV0J4SGYwdm0vSmhydVluc2M9IiwKCQkiTiI6IDY1NTM2LAoJCSJSIjogOCwKCQkiUCI6IDEsCgkJIktleUxlbiI6IDMyCgl9LAoJIlZlcnNpb24iOiAyLAoJIkZlYXR1cmVGbGFncyI6IFsKCQkiR0NNSVYxMjgiLAoJCSJIS0RGIiwKCQkiRGlySVYiLAoJCSJFTUVOYW1lcyIsCgkJIkxvbmdOYW1lcyIsCgkJIlJhdzY0IgoJXQp9Cg==;6af6KVAmgVyBocDWP7ETJw==',
-        'engine': 'gocryptfs',
-        'backend-id': 'test-plain',
-        'owner': '0xaaa',
-        'storage': {
-            'type': 'local',
-            'location': str(storage_dir),
-            'backend-id': 'test-enc',
-            'owner': '0xaaa',
-            'is-local-owner': True,
-            'container-path': '/encrypted'
-        }
-    }
-
-def test_delegate_fuse_empty(env, storage):
-    env.mount_storage(['/encrypted'], storage['storage'])
-    env.mount_storage(['/plaintext'], storage)
-    # assert os.listdir(env.mnt_dir / 'plaintext') == []
 
 def test_gocryptfs_runner(base_dir):
     first = base_dir / 'a'
