@@ -73,6 +73,7 @@ class EncryptedFSRunner(metaclass=abc.ABCMeta):
         '''
         raise NotImplementedError()
 
+    # pylint: disable=no-self-use
     def reencrypt(self, credentials: str):
         """
         Implements in-place re-encryption to a new key material / password.
@@ -112,17 +113,6 @@ def _decode_credentials(encoded_credentials):
     config = base64.standard_b64decode(parts[1]).decode()
     topdiriv = base64.standard_b64decode(parts[2])
     return (password, config, topdiriv)
-
-def gen_backend_id(params):
-    # TODO fix this garbage
-    import hashlib
-    import yaml
-    import uuid
-    hasher = hashlib.md5()
-    params_for_hash = dict((k, v) for (k, v) in params.items()
-                           if k != 'storage')
-    hasher.update(yaml.dump(params_for_hash, sort_keys=True).encode('utf-8'))
-    params['backend-id'] = str(uuid.UUID(hasher.hexdigest()))
 
 class GoCryptFS(EncryptedFSRunner):
     '''
@@ -183,12 +173,12 @@ class GoCryptFS(EncryptedFSRunner):
         if self.cleartextdir is None:
             raise WildlandFSError('Unmounting failed: mount point unknown')
         max_retries = 2
-        for retry in range(max_retries):
+        for _retry in range(max_retries):
             try:
                 cmd = ['fusermount', '-u', str(self.cleartextdir)]
                 return subprocess.run(cmd, check=True).returncode
             except subprocess.CalledProcessError:
-                logger.info("Failed to stop gocryptfs, will retry %s times" % max_retries)
+                logger.info("Failed to stop gocryptfs, will retry %s times", max_retries)
                 time.sleep(1)
         raise WildlandFSError('Unmounting failed: mount point is busy')
 
@@ -289,8 +279,9 @@ class EncryptedProxyStorageBackend(StorageBackend):
         local_params = {'location': self.cleartext_path,
                         'type': 'local',
                         'owner': kwds['params']['owner'],
-                        'is-local-owner': True}
-        gen_backend_id(local_params)
+                        'is-local-owner': True,
+                        'backend-id': mountid + '/cleartext'
+                        }
         self.local = LocalStorageBackend(params=local_params)
 
         # below parameters are automatically generated based on

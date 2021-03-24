@@ -526,8 +526,6 @@ class Client:
         containers_to_process = list(containers)
         iter_obj = iter(containers_to_process)
 
-        default_user = self.config.get('@default')
-
         storages = list(self.fs_client.get_info().values())
         mounted_paths = set()
         for storage in storages:

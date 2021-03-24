@@ -17,29 +17,25 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 # pylint: disable=missing-docstring,redefined-outer-name
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 import os
-from datetime import datetime
-import uuid
-import yaml
 import time
 import subprocess
+import uuid
 import zlib
 
 import pytest
 
+from wildland.storage_backends.encrypted_proxy import GoCryptFS, generate_password
+from wildland.storage_backends.local import LocalStorageBackend
+
 from .fuse_env import FuseEnv
 from ..client import Client
 
-from wildland.storage_backends.encrypted_proxy import GoCryptFS, generate_password, gen_backend_id
-from wildland.storage_backends.local import LocalStorageBackend, LocalFile, to_attr
-from wildland.storage_backends.base import StorageBackend, Attr
-
 from ..cli.cli_base import ContextObj
-from ..cli.cli_container import prepare_mount
 from ..cli.cli_main import _do_mount_containers
 
-def test_encrypted_proxy_with_url(env, cli, base_dir):
+def test_encrypted_proxy_with_url(cli, base_dir):
     local_dir = base_dir / 'local'
     Path(local_dir).mkdir()
     cli('user', 'create', 'User', '--key', '0xaaa')
@@ -135,12 +131,13 @@ def test_gocryptfs_runner(base_dir):
     # open for writing, working directory
     runner2 = GoCryptFS(second, second_enc, runner.credentials())
     params = {'location': second_enc,
-              'type': 'local'}
-    gen_backend_id(params)
+              'type': 'local',
+              'backend-id': str(uuid.uuid4())
+              }
     runner2.run(second_clear, LocalStorageBackend(params=params))
     with open(second_clear / 'test.file', 'w') as f:
         f.write("string")
-    assert 0 == runner2.stop()
+    assert runner2.stop() == 0
 
     assert not (second_clear / 'test.file').exists()
 
@@ -151,8 +148,8 @@ def test_gocryptfs_runner(base_dir):
     assert runner3.topdiriv
     runner3.run(second_clear, LocalStorageBackend(params=params))
     with open(second_clear / 'test.file', 'r') as f:
-        assert "string" == f.read()
-    assert 0 == runner3.stop()
+        assert f.read() == "string"
+    assert runner3.stop() == 0
 
 def test_generate_password():
     assert ';' not in generate_password(100)
