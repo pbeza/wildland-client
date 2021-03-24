@@ -171,9 +171,10 @@ def _boostrap_forest(ctx,
 
     manifests_storage = obj.client.select_storage(container=manifests_container,
                                                   predicate=lambda x: x.is_writeable)
+
     manifests_backend = StorageBackend.from_params(manifests_storage.params)
 
-    if not manifests_storage.base_url:
+    if not manifests_backend.base_url:
         manifests_container.local_path.unlink()
         infra_container.local_path.unlink()
         data_container.local_path.unlink()
@@ -183,7 +184,7 @@ def _boostrap_forest(ctx,
     _boostrap_manifest(manifests_backend, infra_container.local_path,
                        Path(f"{user}-index.yaml"))
 
-    manifest_url = urljoin(manifests_storage.base_url + "/", f"{user}-index.yaml")
+    manifest_url = urljoin(manifests_backend.base_url + "/", f"{user}-index.yaml")
     modify_manifest(ctx, str(forest_owner.local_path), add_field,
                     'infrastructures', [str(manifest_url)])
 
