@@ -526,14 +526,13 @@ class Client:
         containers_to_process = list(containers)
         iter_obj = iter(containers_to_process)
 
-        storages = list(self.fs_client.get_info().values())
-        mounted_paths = set()
-        for storage in storages:
-            mounted_paths.add(storage['paths'][0])
-
         def open_node(container):
             for backend in container.backends:
                 if 'reference-container' not in backend:
+                    continue
+
+                backend_cls = StorageBackend.types()[backend['type']]
+                if not backend_cls.MOUNT_REFERENCE_CONTAINER:
                     continue
 
                 container_url_or_dict = backend['reference-container']
@@ -547,9 +546,6 @@ class Client:
                     referenced = self.load_container_from_dict(
                         container_url_or_dict, container.owner
                     )
-
-                if referenced.paths[0] in mounted_paths:
-                    continue
 
                 if container in dependency_graph.keys():
                     dependency_graph[container].add(referenced)
