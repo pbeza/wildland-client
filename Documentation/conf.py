@@ -104,7 +104,7 @@ nitpick_ignore = [
     ('py:class', 'fuse.Stat'),
     # sphinx does not like dataclasses
     ('py:class', 'wildland.storage_backends.base.FileEvent'),
-    ('py:class', 'wildland.storage_backends.base.HashCache')
+    ('py:class', 'wildland.hashdb.HashCache'),
 ]
 
 todo_include_todos = True
@@ -182,7 +182,9 @@ man_pages = [
     ('manpages/wl-container', 'wl-container', 'Container management', [author], 1),
     ('manpages/wl-storage', 'wl-storage', 'Storage management', [author], 1),
     ('manpages/wl-storage-set', 'wl-storage-set', 'Storage set management', [author], 1),
+    ('manpages/wl-storage-template', 'wl-storage-template', 'Storage template management', [author], 1),
     ('manpages/wl-user', 'wl-user', 'Wildland user management', [author], 1),
+    ('manpages/wl-forest', 'wl-forest', 'Wildland forest management', [author], 1),
     ('manpages/wl-bridge', 'wl-bridge', 'Bridge manifest management', [author], 1),
 
     ('manpages/wl-sign', 'wl-sign', 'Sign manifests', [author], 1),

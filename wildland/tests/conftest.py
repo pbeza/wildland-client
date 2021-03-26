@@ -2,8 +2,10 @@
 
 import tempfile
 import shutil
-from pathlib import Path
+from contextlib import suppress
+from pathlib import Path, PurePosixPath
 import os
+from typing import List
 from unittest import mock
 
 import yaml
@@ -76,27 +78,32 @@ class TestControlClient:
     """
     A test version of ControlClient.
 
-    Usage:
+    Usage::
 
         # Set up:
         client = TestControlClient()
-        client.expect('foo', 1)
-        client.expect('bar')
+        client.expect('foo', 1)           # expect 1 when calling `foo`
+        client.expect('bar')              # expect None when calling `bar`
 
-        # Run (in code under test):
-        client.run_command('foo')         # 1
-        client.run_command('bar', baz=2)  # None
+        # Run (in the code under test):
+        client.run_command('foo')         # returns 1 which is the expected returned value
+        client.run_command('bar', baz=2)  # returns None
 
         # Examine:
-        client.calls['foo']   # {}
-        client.calls['bar']   # {'baz': 2}
+        client.calls['foo']               # returns `{}` which is last argument of the `foo` command
+        client.calls['bar']               # returns `{'baz': 2}`
         client.check()
     """
 
     # pylint: disable=missing-docstring
     def __init__(self):
+        # arguments of the last call for each command
         self.calls = {}
+        # accumulated arguments of each type of the command call
+        self.all_calls = {}
+        # expected return value of commands
         self.results = {}
+        self.events = []
 
     def connect(self, socket_path):
         pass
@@ -105,17 +112,65 @@ class TestControlClient:
         pass
 
     def run_command(self, name, **kwargs):
-        assert name in self.results, f'unrecognized command: {name}'
+        assert name in self.results, f'unexpected command: {name}'
         self.calls[name] = kwargs
+        self.all_calls.setdefault(name, []).append(kwargs)
+        if isinstance(self.results[name], Exception):
+            raise self.results[name]
         return self.results[name]
 
-    def expect(self, name, result=None):
-        """
-        Add a command to a list of expected commands, with a result to be
-        returned.
-        """
+    def iter_events(self):
+        while self.events:
+            event = self.events.pop(0)
+            if isinstance(event, BaseException):
+                raise event
+            yield event
 
+    def expect(self, name: str, result=None) -> None:
+        """
+        Add a command to a list of expected commands, with a result to be returned.
+        """
         self.results[name] = result
+
+    def add_storage_paths(self, storage_id: int, paths: List[PurePosixPath]) -> None:
+        """
+        Add a storage to be returned by 'paths' command. AKA "mount storage".
+        """
+        self.results.setdefault('paths', {})
+        for path in paths:
+            storages = self.results['paths'].setdefault(path, [])
+            # don't duplicate on remount request
+            if storage_id not in storages:
+                storages.append(storage_id)
+
+        self.results.setdefault('info', {})
+        if storage_id not in self.results['info']:
+            self.results['info'][storage_id] = {
+                'type': 'local',
+                'paths': paths,
+                'extra': {},
+            }
+
+    def del_storage(self, storage_id):
+        """
+        Remove storage from 'paths' command result. AKA "unmount storage".
+        """
+        if 'paths' not in self.results:
+            return
+        for path in list(self.results['paths']):
+            with suppress(ValueError):
+                self.results['paths'][path].remove(storage_id)
+            if not self.results['paths'][path]:
+                del self.results['paths'][path]
+
+        with suppress(KeyError):
+            del self.results['info'][storage_id]
+
+    def queue_event(self, event):
+        """
+        Queue an event to be returned.
+        """
+        self.events.append(event)
 
     def check(self):
         """

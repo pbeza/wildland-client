@@ -81,6 +81,8 @@ def validate_manifest(manifest: Manifest, manifest_type, client: Client):
         manifest_copy = manifest.copy_to_unsigned()
         manifest_copy.skip_signing()
         for storage in manifest_copy.fields['backends']['storage']:
+            if isinstance(storage, str):
+                continue
             storage_obj = client.load_storage_from_dict(storage,
                                                         manifest_copy.fields['owner'],
                                                         manifest_copy.fields['paths'][0])
@@ -227,28 +229,28 @@ def edit(ctx, editor, input_file, remount):
     """
     Edit and sign a manifest in a safe way. The command will launch an editor
     and validate the edited file before signing and replacing it.
-
-    If invoked with manifests type (``user edit``, etc.), the command will
-    also validate the manifest against schema.
     """
     obj: ContextObj = ctx.obj
 
-    manifest_type = ctx.parent.command.name
-    if manifest_type == 'main':
-        manifest_type = None
+    provided_manifest_type = ctx.parent.command.name
+    if provided_manifest_type == 'main':
+        provided_manifest_type = None
 
-    path = find_manifest_file(obj.client, input_file, manifest_type)
+    path = find_manifest_file(obj.client, input_file, provided_manifest_type)
 
     obj.client.recognize_users()
     try:
         manifest = Manifest.from_file(path, obj.client.session.sig)
+        manifest_type = manifest.fields['object']
         data = yaml.dump(manifest.fields, encoding='utf-8', sort_keys=False)
     except ManifestError:
         data = path.read_bytes()
+        manifest_type = provided_manifest_type
 
     if HEADER_SEPARATOR in data:
         _, data = split_header(data)
 
+    data = b'# All YAML comments will be discarded when the manifest is saved\n' + data
     original_data = data
 
     new_manifest = None
@@ -305,7 +307,7 @@ def edit(ctx, editor, input_file, remount):
                 container, storages, user_paths, remount=remount)
 
 
-def modify_manifest(ctx, name: str, edit_func: Callable[[dict], dict], *args, **kwargs):
+def modify_manifest(ctx, name: str, edit_func: Callable[..., dict], *args, **kwargs):
     """
     Edit manifest (identified by `name`) fields using a specified callback.
     This module provides three common callbacks: `add_field`, `del_field` and `set_field`.

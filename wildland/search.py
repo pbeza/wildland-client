@@ -30,9 +30,10 @@ import re
 import types
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Optional, Tuple, Iterable, Mapping
+from typing import Optional, Tuple, Iterable, Mapping, List, Set
 from typing import TYPE_CHECKING
 
+from .fs_client import WildlandFSClient
 from .user import User
 from .container import Container
 from .bridge import Bridge
@@ -43,7 +44,7 @@ from .wlpath import WildlandPath, PathError
 from .exc import WildlandError
 
 if TYPE_CHECKING:
-    from .client import Client
+    from .client import Client # pylint: disable=cyclic-import
 
 logger = logging.getLogger('search')
 
@@ -72,9 +73,12 @@ class Step:
     # Previous step, if any
     previous: Optional['Step']
 
+    # file pattern used to lookup the next step (if any)
+    pattern: Optional[str] = None
+
     def steps_chain(self):
         """Iterate over all steps leading to this resolved path"""
-        step = self
+        step: Optional[Step] = self
         while step is not None:
             yield step
             step = step.previous
@@ -95,11 +99,13 @@ class Search:
     def __init__(self,
             client: Client,
             wlpath: WildlandPath,
-            aliases: Mapping[str, str] = types.MappingProxyType({})):
+            aliases: Mapping[str, str] = types.MappingProxyType({}),
+            fs_client: Optional[WildlandFSClient] = None):
         self.client = client
         self.wlpath = wlpath
         self.aliases = aliases
         self.initial_owner = self._subst_alias(wlpath.owner or '@default')
+        self.fs_client = fs_client
 
         self.local_containers = list(self.client.load_containers())
         self.local_users = list(self.client.load_users())
@@ -186,6 +192,75 @@ class Search:
 
         raise PathError(f'Container not found for path: {self.wlpath}')
 
+    def _get_params_for_mount_step(self, step: Step) -> \
+            Tuple[PurePosixPath,
+                  Optional[Tuple[Container,
+                                 Iterable[Storage],
+                                 Iterable[PurePosixPath],
+                                 Optional[Container]]]]:
+        """
+        Return a FUSE mount command for a container for given step (if not mounted already).
+
+        :param step:
+        :return: a mount path and params to mount (if necessary)
+        """
+        assert step.container is not None
+        assert self.fs_client is not None
+        storage = self.client.select_storage(step.container)
+        fuse_path = self.fs_client.get_primary_unique_mount_path(step.container, storage)
+        if list(self.fs_client.find_all_storage_ids_for_path(fuse_path)):
+            # already mounted
+            return fuse_path, None
+        mount_params: Tuple[Container,
+                            Iterable[Storage],
+                            Iterable[PurePosixPath],
+                            Optional[Container]] = (step.container, [storage], [], None)
+        return fuse_path, mount_params
+
+    def get_watch_params(self) -> Tuple[List, Set[PurePosixPath]]:
+        """
+        Prepare parameters required to watch given WL path for changes
+        (including any container involved in path resolution).
+
+        This function returns a tuple of:
+         - list of mount parameters (for WildlandFSClient.mount_multiple_containers())
+         - set of patterns (relative to the FUSE mount point) to watch
+        Watching the patterns is legal only if all returned mount commands succeeded.
+
+        Usage:
+        >>> client = Client()
+        >>> fs_client = client.fs_client
+        >>> search = Search(...)
+        >>> mount_cmds, patterns = search.get_watch_params()
+        >>> try:
+        >>>     # mounting under unique paths only is enough, no need to pollute user's forest
+        >>>     fs_client.mount_multiple_containers(mount_cmds, unique_path_only=True)
+        >>>     for events in fs_client.watch(patterns):
+        >>>         ...
+        >>> except:
+        >>>     ...
+        """
+        if self.fs_client is None:
+            raise WildlandError('get_watch_params requires fs_client')
+
+        mount_cmds = {}
+        patterns_for_path = set()
+        for final_step in self._resolve_all():
+            if final_step.container is None:
+                continue
+            if self.wlpath.file_path is not None:
+                final_step.pattern = str(self.wlpath.file_path)
+            for step in final_step.steps_chain():
+                if step.pattern is None or step.container is None:
+                    continue
+                mount_path, mount_params = self._get_params_for_mount_step(step)
+                if mount_params:
+                    mount_cmds[mount_path] = mount_params
+                patterns_for_path.add(
+                    mount_path / step.pattern.lstrip('/'))
+
+        return list(mount_cmds.values()), patterns_for_path
+
     def _resolve_all(self) -> Iterable[Step]:
         """
         Resolve all path parts, yield all results that match.
@@ -207,10 +282,26 @@ class Search:
         """
         Find a storage for the latest resolved part.
 
+        If self.fs_client is set and the container is mounted,
+        returns a local storage backend pointing at mounted FUSE dir.
+
         Returns (storage, storage_backend).
         """
 
+        assert step.container is not None
         storage = self.client.select_storage(step.container)
+        if self.fs_client is not None:
+            fuse_path = self.fs_client.get_primary_unique_mount_path(step.container, storage)
+            mounted_path = self.fs_client.mount_dir / fuse_path.relative_to('/')
+            if mounted_path.exists():
+                local_storage = StorageBackend.from_params({
+                    'type': 'local',
+                    'backend-id': storage.backend_id,
+                    'location': mounted_path,
+                    'owner': step.container.owner,
+                    'is-local-owner': True,
+                })
+                return storage, local_storage
         return storage, StorageBackend.from_params(storage.params)
 
     def _resolve_first(self):
@@ -268,9 +359,10 @@ class Search:
 
         storage, storage_backend = self._find_storage(step)
         manifest_pattern = storage.manifest_pattern or storage.DEFAULT_MANIFEST_PATTERN
+        pattern = get_file_pattern(manifest_pattern, part)
+        step.pattern = pattern
         with storage_backend:
-            for manifest_path in storage_find_manifests(
-                    storage_backend, manifest_pattern, part):
+            for manifest_path in storage_glob(storage_backend, pattern):
                 trusted_owner = None
                 if storage.trusted:
                     trusted_owner = storage.owner
@@ -407,7 +499,7 @@ class Search:
                 try:
                     container = client.session.load_container(manifest_content)
                     container_desc = container_spec
-                except WildlandError:
+                except WildlandError as ex:
                     logger.warning('failed to load user %s infrastructure: %s: Exception: %s',
                                    user.owner, container_spec, str(ex))
                     continue
@@ -464,19 +556,15 @@ def storage_read_file(storage, relpath) -> bytes:
         storage.release(relpath, 0, obj)
 
 
-def storage_find_manifests(
-        storage: StorageBackend,
+def get_file_pattern(
         manifest_pattern: dict,
-        query_path: PurePosixPath) -> Iterable[PurePosixPath]:
+        query_path: PurePosixPath) -> str:
     """
-    Find all files satisfying a manifest_pattern. The following manifest_pattern
-    values are supported:
+    Return a file glob to find all files satisfying a manifest_pattern.
+    The following manifest_pattern values are supported:
 
     - {'type': 'glob', 'path': path} where path is an absolute path that can
       contain '*' and '{path}'
-
-    Yields all files found in the storage, but without guarantee that you will
-    be able to open or read them.
     """
 
     mp_type = manifest_pattern['type']
@@ -489,7 +577,7 @@ def storage_find_manifests(
         else:
             glob_path = manifest_pattern['path'].replace(
                 '{path}', str(query_path.relative_to('/')))
-        return storage_glob(storage, glob_path)
+        return glob_path
     raise WildlandError(f'Unknown manifest_pattern: {mp_type}')
 
 
@@ -594,6 +682,12 @@ class StorageDriver:
         finally:
             self.storage_backend.release(relpath, 0, obj)
 
+    def remove_file(self, relpath):
+        """
+        Remove a file.
+        """
+        self.storage_backend.unlink(relpath)
+
     def makedirs(self, relpath, mode=0o755):
         """
         Make directory, and it's parents if needed. Does not work across
@@ -607,3 +701,15 @@ class StorageDriver:
             else:
                 if not attr.is_dir():
                     raise NotADirectoryError(errno.ENOTDIR, path)
+
+    def read_file(self, relpath) -> bytes:
+        '''
+        Read a file from StorageBackend, using FUSE commands.
+        '''
+
+        obj = self.storage_backend.open(relpath, os.O_RDONLY)
+        try:
+            st = self.storage_backend.fgetattr(relpath, obj)
+            return self.storage_backend.read(relpath, st.size, 0, obj)
+        finally:
+            self.storage_backend.release(relpath, 0, obj)

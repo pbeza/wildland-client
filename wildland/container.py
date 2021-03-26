@@ -23,7 +23,7 @@ The container
 from copy import deepcopy
 from pathlib import PurePosixPath, Path
 import uuid
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Any
 import itertools
 
 from .manifest.manifest import Manifest
@@ -57,22 +57,38 @@ class Container:
 
     def ensure_uuid(self) -> str:
         """
+        Get the UUID of this container, create if necessary.
+        """
+        return self.get_uuid_path().name
+
+    def get_uuid_path(self) -> PurePosixPath:
+        """
         Find or create an UUID path for this container.
         """
-
         for path in self.paths:
             if path.parent == PurePosixPath('/.uuid/'):
-                return path.name
-        ident = str(uuid.uuid4())
-        self.paths.insert(0, PurePosixPath('/.uuid/') / ident)
-        return ident
+                return path
+        path = PurePosixPath('/.uuid/') / str(uuid.uuid4())
+        self.paths.insert(0, path)
+        return path
 
     def __str__(self):
-        """Friendly text representation of the container"""
+        """Friendly text representation of the container."""
         local_str = ''
         if self.local_path:
             local_str = f' ({self.local_path})'
         return f'{self.owner}:{[str(p) for p in self.paths]}' + local_str
+
+    def __repr__(self):
+        return (f'{type(self).__name__}('
+                f'owner={self.owner!r}, '
+                f'paths={self.paths!r}, '
+                f'backends={self.backends!r}, '
+                f'title={self.title!r}, '
+                f'categories={self.categories!r}, '
+                f'local_path={self.local_path!r}, '
+                f'manifest={self.manifest!r}, '
+                f'access={self.access!r})')
 
     @classmethod
     def from_manifest(cls, manifest: Manifest, local_path=None) -> 'Container':
@@ -86,7 +102,8 @@ class Container:
             paths=[PurePosixPath(p) for p in manifest.fields['paths']],
             backends=manifest.fields['backends']['storage'],
             title=manifest.fields.get('title', None),
-            categories=[Path(p) for p in manifest.fields.get('categories', [])],
+            categories=[PurePosixPath(p)
+                for p in manifest.fields.get('categories', [])],
             local_path=local_path,
             manifest=manifest,
             access=manifest.fields.get('access', None)
@@ -110,7 +127,7 @@ class Container:
             if 'object' in backend:
                 del backend['object']
 
-        fields = {
+        fields: dict[str, Any] = {
             "object": type(self).__name__.lower(),
             "owner": self.owner,
             "paths": [str(p) for p in self.paths],
@@ -128,7 +145,7 @@ class Container:
     @property
     def expanded_paths(self):
         """
-        Paths expanded by the set of paths generated from title and categories (if provided)
+        Paths expanded by the set of paths generated from title and categories (if provided).
 
         This method MUST NOT change the order of paths so that /.uuid/{container_uuid} path remains
         first in the list.

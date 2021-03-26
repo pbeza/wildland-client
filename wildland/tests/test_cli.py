@@ -20,6 +20,7 @@
 # pylint: disable=missing-docstring,redefined-outer-name,too-many-lines
 
 from copy import deepcopy
+from pathlib import Path
 import itertools
 import os
 import re
@@ -32,11 +33,11 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from click import ClickException
-from ..manifest.manifest import ManifestError, Manifest
 from ..cli.cli_base import CliError
-from ..utils import load_yaml, load_yaml_all
 from ..cli.cli_common import del_nested_field
+from ..exc import WildlandError
+from ..manifest.manifest import ManifestError, Manifest
+from ..utils import load_yaml, load_yaml_all
 
 
 def modify_file(path, pattern, replacement):
@@ -76,6 +77,10 @@ def strip_yaml(line):
 
     return line.strip('\n -')
 
+def get_container_uuid_from_uuid_path(uuid_path):
+    match = re.search('/.uuid/(.+?)$', uuid_path)
+    return match.group(1) if match else ''
+
 @pytest.fixture
 def cleanup():
     cleanup_functions = []
@@ -87,6 +92,7 @@ def cleanup():
 
     for f in cleanup_functions:
         f()
+
 
 # Users
 
@@ -432,6 +438,15 @@ def test_storage_create(cli, base_dir):
     assert "location: /PATH" in data
     assert "backend-id:" in data
 
+    cli('storage', 'create', 'zip-archive', 'ZipStorage', '--location', '/zip',
+        '--container', 'Container', '--no-inline')
+    with open(base_dir / 'storage/ZipStorage.storage.yaml') as f:
+        data = f.read()
+
+    assert "owner: ''0xaaa''" in data
+    assert "location: /zip" in data
+    assert "backend-id:" in data
+
 
 def test_storage_create_not_inline(cli, base_dir):
     cli('user', 'create', 'User', '--key', '0xaaa')
@@ -569,7 +584,11 @@ def test_multiple_storage_mount(cli, base_dir, control_client):
 
     with open(base_dir / 'containers/Container.container.yaml') as f:
         documents = list(yaml.safe_load_all(f))
-    path = documents[1]['paths'][0]
+
+    uuid_path = documents[1]['paths'][0]
+    uuid = get_container_uuid_from_uuid_path(uuid_path)
+    assert documents[1]['paths'][1] == '/PATH'
+
     backend_id1 = documents[1]['backends']['storage'][0]['backend-id']
     backend_id2 = documents[1]['backends']['storage'][1]['backend-id']
 
@@ -582,17 +601,17 @@ def test_multiple_storage_mount(cli, base_dir, control_client):
     assert command[0]['storage']['owner'] == '0xaaa'
 
     paths_1 = [
-        f'/.users/0xaaa{path}',
-        f'/.users/0xaaa{path}/.backends/{backend_id1}',
+        f'/.backends/{uuid}/{backend_id1}',
+        f'/.users/0xaaa/.backends/{uuid}/{backend_id1}',
+        f'/.users/0xaaa/.uuid/{uuid}',
         '/.users/0xaaa/PATH',
-        f'{path}',
-        f'{path}/.backends/{backend_id1}',
+        f'/.uuid/{uuid}',
         '/PATH',
     ]
 
     paths_2 = [
-        f'/.users/0xaaa{path}/.backends/{backend_id2}',
-        f'{path}/.backends/{backend_id2}',
+        f'/.backends/{uuid}/{backend_id2}',
+        f'/.users/0xaaa/.backends/{uuid}/{backend_id2}',
     ]
 
     assert sorted(command[0]['paths']) == paths_1
@@ -638,8 +657,8 @@ def test_multiple_storage_mount(cli, base_dir, control_client):
     command = control_client.calls['mount']['items']
     assert len(command) == 1
     assert sorted(command[0]['paths']) == [
-        f'/.users/0xaaa{path}/.backends/{backend_id3}',
-        f'{path}/.backends/{backend_id3}',
+        f'/.backends/{uuid}/{backend_id3}',
+        f'/.users/0xaaa/.backends/{uuid}/{backend_id3}',
     ]
 
 
@@ -656,22 +675,25 @@ def test_storage_mount_remove_primary_and_remount(cli, base_dir, control_client)
     with open(base_dir / 'containers/Container.container.yaml') as f:
         documents = list(yaml.safe_load_all(f))
 
-    path = documents[1]['paths'][0]
+    uuid_path = documents[1]['paths'][0]
+    uuid = get_container_uuid_from_uuid_path(uuid_path)
+    assert documents[1]['paths'][1] == '/PATH'
+
     backend_id1 = documents[1]['backends']['storage'][0]['backend-id']
     backend_id2 = documents[1]['backends']['storage'][1]['backend-id']
 
     paths_1 = [
-        f'/.users/0xaaa{path}',
-        f'/.users/0xaaa{path}/.backends/{backend_id1}',
+        f'/.backends/{uuid}/{backend_id1}',
+        f'/.users/0xaaa/.backends/{uuid}/{backend_id1}',
+        f'/.users/0xaaa/.uuid/{uuid}',
         '/.users/0xaaa/PATH',
-        f'{path}',
-        f'{path}/.backends/{backend_id1}',
+        f'/.uuid/{uuid}',
         '/PATH',
     ]
 
     paths_2 = [
-        f'/.users/0xaaa{path}/.backends/{backend_id2}',
-        f'{path}/.backends/{backend_id2}',
+        f'/.backends/{uuid}/{backend_id2}',
+        f'/.users/0xaaa/.backends/{uuid}/{backend_id2}',
     ]
 
     control_client.expect('paths', {})
@@ -684,15 +706,16 @@ def test_storage_mount_remove_primary_and_remount(cli, base_dir, control_client)
     cli('container', 'modify', 'del-storage', 'Container', '--storage', backend_id1)
 
     control_client.expect('paths', {
-        f'/.users/0xaaa{path}': [1],
-        f'/.users/0xaaa{path}/.backends/{backend_id1}': [1],
+        f'/.backends/{uuid}/{backend_id1}': [1],
+        f'/.users/0xaaa/.backends/{uuid}/{backend_id1}': [1],
+        f'/.users/0xaaa/.uuid/{uuid}': [1],
         '/.users/0xaaa/PATH': [1],
-        f'{path}': [1],
-        f'{path}/.backends/{backend_id1}': [1],
+        f'/.uuid/{uuid}': [1],
         '/PATH': [1],
-        f'/.users/0xaaa{path}/.backends/{backend_id2}': [2],
-        f'{path}/.backends/{backend_id2}': [2],
+        f'/.backends/{uuid}/{backend_id2}': [2],
+        f'/.users/0xaaa/.backends/{uuid}/{backend_id2}': [2],
     })
+
     control_client.expect('info', {
         '1': {
             'paths': paths_1,
@@ -719,11 +742,11 @@ def test_storage_mount_remove_primary_and_remount(cli, base_dir, control_client)
     command = control_client.calls['mount']['items']
     assert len(command) == 1
     assert sorted(command[0]['paths']) == [
-        f'/.users/0xaaa{path}',
-        f'/.users/0xaaa{path}/.backends/{backend_id2}',
+        f'/.backends/{uuid}/{backend_id2}',
+        f'/.users/0xaaa/.backends/{uuid}/{backend_id2}',
+        f'/.users/0xaaa/.uuid/{uuid}',
         '/.users/0xaaa/PATH',
-        f'{path}',
-        f'{path}/.backends/{backend_id2}',
+        f'/.uuid/{uuid}',
         '/PATH',
     ]
 
@@ -740,22 +763,25 @@ def test_storage_mount_remove_secondary_and_remount(cli, base_dir, control_clien
     with open(base_dir / 'containers/Container.container.yaml') as f:
         documents = list(yaml.safe_load_all(f))
 
-    path = documents[1]['paths'][0]
+    uuid_path = documents[1]['paths'][0]
+    uuid = get_container_uuid_from_uuid_path(uuid_path)
+    assert documents[1]['paths'][1] == '/PATH'
+
     backend_id1 = documents[1]['backends']['storage'][0]['backend-id']
     backend_id2 = documents[1]['backends']['storage'][1]['backend-id']
 
     paths_1 = [
-        f'/.users/0xaaa{path}',
-        f'/.users/0xaaa{path}/.backends/{backend_id1}',
+        f'/.backends/{uuid}/{backend_id1}',
+        f'/.users/0xaaa/.backends/{uuid}/{backend_id1}',
+        f'/.users/0xaaa/.uuid/{uuid}',
         '/.users/0xaaa/PATH',
-        f'{path}',
-        f'{path}/.backends/{backend_id1}',
+        f'/.uuid/{uuid}',
         '/PATH',
     ]
 
     paths_2 = [
-        f'/.users/0xaaa{path}/.backends/{backend_id2}',
-        f'{path}/.backends/{backend_id2}',
+        f'/.backends/{uuid}/{backend_id2}',
+        f'/.users/0xaaa/.backends/{uuid}/{backend_id2}',
     ]
 
     control_client.expect('paths', {})
@@ -768,15 +794,16 @@ def test_storage_mount_remove_secondary_and_remount(cli, base_dir, control_clien
     cli('container', 'modify', 'del-storage', 'Container', '--storage', backend_id2)
 
     control_client.expect('paths', {
-        f'/.users/0xaaa{path}': [1],
-        f'/.users/0xaaa{path}/.backends/{backend_id1}': [1],
+        f'/.backends/{uuid}/{backend_id1}': [1],
+        f'/.users/0xaaa/.backends/{uuid}/{backend_id1}': [1],
+        f'/.users/0xaaa/.uuid/{uuid}': [1],
         '/.users/0xaaa/PATH': [1],
-        f'{path}': [1],
-        f'{path}/.backends/{backend_id1}': [1],
+        f'/.uuid/{uuid}': [1],
         '/PATH': [1],
-        f'/.users/0xaaa{path}/.backends/{backend_id2}': [2],
-        f'{path}/.backends/{backend_id2}': [2],
+        f'/.backends/{uuid}/{backend_id2}': [2],
+        f'/.users/0xaaa/.backends/{uuid}/{backend_id2}': [2],
     })
+
     control_client.expect('info', {
         '1': {
             'paths': paths_1,
@@ -802,6 +829,7 @@ def test_storage_mount_remove_secondary_and_remount(cli, base_dir, control_clien
 
     command = control_client.calls['mount']['items']
     assert command == []
+
 
 ## Container
 
@@ -912,7 +940,10 @@ def test_container_duplicate_mount(cli, base_dir, control_client):
     with open(base_dir / 'containers/Duplicate.container.yaml') as f:
         documents = list(load_yaml_all(f))
 
-    path = documents[1]['paths'][0]
+    uuid_path = documents[1]['paths'][0]
+    uuid = get_container_uuid_from_uuid_path(uuid_path)
+    assert documents[1]['paths'][1] == '/PATH'
+
     backend_id = documents[1]['backends']['storage'][0]['backend-id']
 
     control_client.expect('paths', {})
@@ -923,11 +954,11 @@ def test_container_duplicate_mount(cli, base_dir, control_client):
     command = control_client.calls['mount']['items']
     assert command[0]['storage']['owner'] == '0xaaa'
     assert sorted(command[0]['paths']) == [
-        f'/.users/0xaaa{path}',
-        f'/.users/0xaaa{path}/.backends/{backend_id}',
+        f'/.backends/{uuid}/{backend_id}',
+        f'/.users/0xaaa/.backends/{uuid}/{backend_id}',
+        f'/.users/0xaaa/.uuid/{uuid}',
         '/.users/0xaaa/PATH',
-        f'{path}',
-        f'{path}/.backends/{backend_id}',
+        f'/.uuid/{uuid}',
         '/PATH',
     ]
 
@@ -1161,7 +1192,7 @@ def test_container_update(cli, base_dir):
     assert str(storage_path) in data
 
 
-def test_container_publish(cli, tmp_path):
+def test_container_publish_unpublish(cli, tmp_path):
     cli('user', 'create', 'User', '--key', '0xaaa')
     cli('container', 'create', 'Container', '--path', '/PATH', '--update-user')
     cli('storage', 'create', 'local', 'Storage',
@@ -1173,6 +1204,10 @@ def test_container_publish(cli, tmp_path):
     cli('container', 'publish', 'Container')
 
     assert len(tuple(tmp_path.glob('*.yaml'))) == 1
+
+    cli('container', 'unpublish', 'Container')
+
+    assert not tuple(tmp_path.glob('*.yaml'))
 
 
 def test_container_publish_rewrite(cli, tmp_path):
@@ -1197,11 +1232,40 @@ def test_container_publish_rewrite(cli, tmp_path):
             for line in itertools.chain(file1, file2):
                 print(line)
                 if re.fullmatch(
-                        r'- https://example\.invalid/m-[A-Za-z0-9-]+.yaml',
+                        r'- https://example\.invalid/m-([A-Za-z0-9-]+\.){2}yaml',
                         line.strip()):
                     break
             else:
                 assert False
+
+def test_container_republish_paths(cli, tmp_path):
+    cli('user', 'create', 'User', '--key', '0xaaa')
+    cli('container', 'create', 'Container',
+        '--path', '/PA/TH1',
+        '--path', '/PA/TH2',
+        '--update-user',
+        '--no-encrypt-manifest')
+    cli('storage', 'create', 'local', 'Storage',
+        '--location', os.fspath(tmp_path),
+        '--container', 'Container',
+        '--no-inline',
+        '--manifest-pattern', '/manifests/{path}.yaml',
+        '--base-url', 'https://example.invalid/')
+
+    cli('container', 'publish', 'Container')
+
+    assert (tmp_path / 'manifests/PA/TH1.yaml').exists()
+    assert (tmp_path / 'manifests/PA/TH2.yaml').exists()
+    assert not (tmp_path / 'manifests/PA/TH3.yaml').exists()
+
+    cli('container', 'modify', 'del-path', 'Container', '--path', '/PA/TH2')
+    cli('container', 'modify', 'add-path', 'Container', '--path', '/PA/TH3')
+
+    cli('container', 'publish', 'Container')
+
+    assert (tmp_path / 'manifests/PA/TH1.yaml').exists()
+    assert not (tmp_path / 'manifests/PA/TH2.yaml').exists()
+    assert (tmp_path / 'manifests/PA/TH3.yaml').exists()
 
 
 def test_container_delete(cli, base_dir):
@@ -1273,22 +1337,22 @@ def test_container_delete_umount(cli, base_dir, control_client):
 
     with open(base_dir / 'storage/Storage.storage.yaml') as f:
         documents = list(yaml.safe_load_all(f))
-    backend_id = documents[1]['backend-id']
 
-    print(backend_id)
+    backend_id = documents[1]['backend-id']
 
     (base_dir / 'storage/Storage.storage.yaml').unlink()
 
     with open(base_dir / 'containers/Container.container.yaml') as f:
         documents = list(load_yaml_all(f))
 
-    path = documents[1]['paths'][0]
+    uuid_path = documents[1]['paths'][0]
+    uuid = get_container_uuid_from_uuid_path(uuid_path)
 
     paths_obj = {
-        f'{path}/.backends/{backend_id}': [101],
-        path: [102],
-        f'/.users/0xaaa{path}': [103],
-        f'/.users/0xaaa{path}/.backends/{backend_id}': [104],
+        f'/.backends/{uuid}/{backend_id}': [101],
+        f'/.uuid/{uuid}': [102],
+        f'/.users/0xaaa/.uuid/{uuid}': [103],
+        f'/.users/0xaaa/.backends/{uuid}/{backend_id}': [104],
         '/PATH2': [105],
     }
 
@@ -1333,7 +1397,10 @@ def test_container_mount(cli, base_dir, control_client):
     with open(base_dir / 'containers/Container.container.yaml') as f:
         documents = list(load_yaml_all(f))
 
-    path = documents[1]['paths'][0]
+    uuid_path = documents[1]['paths'][0]
+    uuid = get_container_uuid_from_uuid_path(uuid_path)
+    assert documents[1]['paths'][1] == '/PATH'
+
     backend_id = documents[1]['backends']['storage'][0]['backend-id']
 
     control_client.expect('paths', {})
@@ -1344,11 +1411,11 @@ def test_container_mount(cli, base_dir, control_client):
     command = control_client.calls['mount']['items']
     assert command[0]['storage']['owner'] == '0xaaa'
     assert sorted(command[0]['paths']) == [
-        f'/.users/0xaaa{path}',
-        f'/.users/0xaaa{path}/.backends/{backend_id}',
+        f'/.backends/{uuid}/{backend_id}',
+        f'/.users/0xaaa/.backends/{uuid}/{backend_id}',
+        f'/.users/0xaaa/.uuid/{uuid}',
         '/.users/0xaaa/PATH',
-        f'{path}',
-        f'{path}/.backends/{backend_id}',
+        f'/.uuid/{uuid}',
         '/PATH',
     ]
 
@@ -1360,8 +1427,8 @@ def test_container_mount(cli, base_dir, control_client):
     command = control_client.calls['mount']['items']
     assert command[0]['storage']['owner'] == '0xaaa'
     assert sorted(command[0]['paths']) == [
-        f'/.users/0xaaa{path}',
-        f'/.users/0xaaa{path}/.backends/{backend_id}',
+        f'/.users/0xaaa/.backends/{uuid}/{backend_id}',
+        f'/.users/0xaaa/.uuid/{uuid}',
         '/.users/0xaaa/PATH',
     ]
     assert command[0]['extra']['trusted_owner'] is None
@@ -1386,7 +1453,10 @@ def test_container_mount_with_bridges(cli, base_dir, control_client):
     with open(base_dir / 'containers/Container.container.yaml') as f:
         documents_container = list(load_yaml_all(f))
 
-    path = documents_container[1]['paths'][0]
+    uuid_path = documents_container[1]['paths'][0]
+    uuid = get_container_uuid_from_uuid_path(uuid_path)
+    assert documents_container[1]['paths'][1] == '/PATH'
+
     backend_id = documents_container[1]['backends']['storage'][0]['backend-id']
 
     # add infrastructure container
@@ -1418,14 +1488,14 @@ def test_container_mount_with_bridges(cli, base_dir, control_client):
     command = control_client.calls['mount']['items']
     assert command[0]['storage']['owner'] == '0xbbb'
     assert sorted(command[0]['paths']) == [
-        f'/.users/0xbbb{path}',
-        f'/.users/0xbbb{path}/.backends/{backend_id}',
+        f'/.users/0xbbb/.backends/{uuid}/{backend_id}',
+        f'/.users/0xbbb/.uuid/{uuid}',
         '/.users/0xbbb/PATH',
-        f'/people/other{path}',
-        f'/people/other{path}/.backends/{backend_id}',
+        f'/people/other/.backends/{uuid}/{backend_id}',
+        f'/people/other/.uuid/{uuid}',
         '/people/other/PATH',
-        f'/users/other{path}',
-        f'/users/other{path}/.backends/{backend_id}',
+        f'/users/other/.backends/{uuid}/{backend_id}',
+        f'/users/other/.uuid/{uuid}',
         '/users/other/PATH',
     ]
 
@@ -1599,8 +1669,8 @@ def test_container_mount_glob(cli, base_dir, control_client):
     control_client.expect('status', {})
 
     cli('user', 'create', 'User', '--key', '0xaaa')
-    cli('container', 'create', 'Container1', '--path', '/PATH1')
-    cli('container', 'create', 'Container2', '--path', '/PATH2')
+    cli('container', 'create', 'Container1', '--path', '/PATH1', '--no-encrypt-manifest')
+    cli('container', 'create', 'Container2', '--path', '/PATH2', '--no-encrypt-manifest')
     cli('storage', 'create', 'local', 'Storage', '--location', '/PATH',
         '--container', 'Container1')
     cli('storage', 'create', 'local', 'Storage', '--location', '/PATH',
@@ -1612,9 +1682,41 @@ def test_container_mount_glob(cli, base_dir, control_client):
     cli('container', 'mount', base_dir / 'containers' / '*.yaml')
 
     command = control_client.calls['mount']['items']
+
+    with open(base_dir / 'containers/Container1.container.yaml') as f:
+        documents_container1 = list(load_yaml_all(f))
+
+    with open(base_dir / 'containers/Container2.container.yaml') as f:
+        documents_container2 = list(load_yaml_all(f))
+
+    uuid_path1 = documents_container1[1]['paths'][0]
+    uuid1 = get_container_uuid_from_uuid_path(uuid_path1)
+    assert documents_container1[1]['paths'][1] == '/PATH1'
+
+    uuid_path2 = documents_container2[1]['paths'][0]
+    uuid2 = get_container_uuid_from_uuid_path(uuid_path2)
+    assert documents_container2[1]['paths'][1] == '/PATH2'
+
+    backend_id1 = documents_container1[1]['backends']['storage'][0]['backend-id']
+    backend_id2 = documents_container2[1]['backends']['storage'][0]['backend-id']
+
     assert len(command) == 2
-    assert sorted(command[0]['paths'])[2] == '/.users/0xaaa/PATH1'
-    assert sorted(command[1]['paths'])[2] == '/.users/0xaaa/PATH2'
+    assert sorted(command[0]['paths']) == [
+        f'/.backends/{uuid1}/{backend_id1}',
+        f'/.users/0xaaa/.backends/{uuid1}/{backend_id1}',
+        f'/.users/0xaaa/.uuid/{uuid1}',
+        '/.users/0xaaa/PATH1',
+        f'/.uuid/{uuid1}',
+        '/PATH1'
+    ]
+    assert sorted(command[1]['paths']) == [
+        f'/.backends/{uuid2}/{backend_id2}',
+        f'/.users/0xaaa/.backends/{uuid2}/{backend_id2}',
+        f'/.users/0xaaa/.uuid/{uuid2}',
+        '/.users/0xaaa/PATH2',
+        f'/.uuid/{uuid2}',
+        '/PATH2'
+    ]
 
 
 def test_container_mount_save(cli, base_dir, control_client):
@@ -1653,7 +1755,8 @@ def test_container_mount_inline_storage(cli, base_dir, control_client):
     with open(base_dir / 'containers/Container.container.yaml') as f:
         documents = list(load_yaml_all(f))
 
-    path = documents[1]['paths'][0]
+    uuid_path = documents[1]['paths'][0]
+    uuid = get_container_uuid_from_uuid_path(uuid_path)
     backend_id = documents[1]['backends']['storage'][0]['backend-id']
 
     control_client.expect('paths', {})
@@ -1662,14 +1765,12 @@ def test_container_mount_inline_storage(cli, base_dir, control_client):
     cli('container', 'mount', 'Container')
 
     command = control_client.calls['mount']['items']
-    assert command[0]['storage']['owner'] == '0xaaa'
-    assert command[0]['storage']['location'] == '/STORAGE'
     assert sorted(command[0]['paths']) == [
-        f'/.users/0xaaa{path}',
-        f'/.users/0xaaa{path}/.backends/{backend_id}',
+        f'/.backends/{uuid}/{backend_id}',
+        f'/.users/0xaaa/.backends/{uuid}/{backend_id}',
+        f'/.users/0xaaa/.uuid/{uuid}',
         '/.users/0xaaa/PATH',
-        path,
-        f'{path}/.backends/{backend_id}',
+        f'/.uuid/{uuid}',
         '/PATH',
     ]
 
@@ -1709,13 +1810,13 @@ def test_container_mount_check_trusted_owner(cli, base_dir, control_client):
     # Should not mount if the storage is not trusted
 
     control_client.expect('info', make_info(None))
-    with pytest.raises(ClickException, match='Signature expected'):
+    with pytest.raises(WildlandError, match='Signature expected'):
         cli('container', 'mount', manifest_path)
 
     # Should not mount if the owner is different
 
     control_client.expect('info', make_info('0xbbb'))
-    with pytest.raises(ClickException, match='Wrong owner for manifest without signature'):
+    with pytest.raises(WildlandError, match='Wrong owner for manifest without signature'):
         cli('container', 'mount', manifest_path)
 
     # Should mount if the storage is trusted and with right owner
@@ -1735,7 +1836,8 @@ def test_container_mount_no_subcontainers(cli, base_dir, control_client):
     with open(base_dir / 'containers/Container.container.yaml') as f:
         documents = list(load_yaml_all(f))
 
-    path = documents[1]['paths'][0]
+    uuid_path = documents[1]['paths'][0]
+    uuid = get_container_uuid_from_uuid_path(uuid_path)
     backend_id = documents[1]['backends']['storage'][0]['backend-id']
 
     control_client.expect('paths', {})
@@ -1746,11 +1848,11 @@ def test_container_mount_no_subcontainers(cli, base_dir, control_client):
     command = control_client.calls['mount']['items']
     assert command[0]['storage']['owner'] == '0xaaa'
     assert sorted(command[0]['paths']) == [
-        f'/.users/0xaaa{path}',
-        f'/.users/0xaaa{path}/.backends/{backend_id}',
+        f'/.backends/{uuid}/{backend_id}',
+        f'/.users/0xaaa/.backends/{uuid}/{backend_id}',
+        f'/.users/0xaaa/.uuid/{uuid}',
         '/.users/0xaaa/PATH',
-        path,
-        f'{path}/.backends/{backend_id}',
+        f'/.uuid/{uuid}',
         '/PATH',
     ]
 
@@ -1761,19 +1863,20 @@ def test_container_mount_subcontainers(cli, base_dir, control_client, tmp_path):
     cli('user', 'create', 'User', '--key', '0xaaa')
     cli('container', 'create', 'Container', '--path', '/PATH', '--no-encrypt-manifest')
 
-    path2 = '/.uuid/0000-1111-2222-3333-4444'
+    uuid2 = '0000-1111-2222-3333-4444'
+    backend_id = '5555-6666-7777-8888-9999'
     with open(tmp_path / 'subcontainer.yaml', 'w') as f:
         f.write(f"""signature: |
   dummy.0xaaa
 ---
 owner: '0xaaa'
 paths:
- - {path2}
+ - /.uuid/{uuid2}
  - /subcontainer
 backends:
   storage:
     - type: delegate
-      backend-id: 0000-1111-2222-3333-4444
+      backend-id: {backend_id}
       reference-container: 'wildland:@default:@parent-container:'
       subdirectory: '/subdir'
 """)
@@ -1783,8 +1886,9 @@ backends:
     with open(base_dir / 'containers/Container.container.yaml') as f:
         documents = list(load_yaml_all(f))
 
-    path = documents[1]['paths'][0]
-    backend_id = documents[1]['backends']['storage'][0]['backend-id']
+    uuid_path1 = documents[1]['paths'][0]
+    uuid1 = get_container_uuid_from_uuid_path(uuid_path1)
+    backend_id1 = documents[1]['backends']['storage'][0]['backend-id']
 
     control_client.expect('paths', {})
     control_client.expect('mount')
@@ -1795,32 +1899,32 @@ backends:
     assert len(command) == 2
     assert command[0]['storage']['owner'] == '0xaaa'
     assert sorted(command[0]['paths']) == [
-        f'/.users/0xaaa{path}',
-        f'/.users/0xaaa{path}/.backends/{backend_id}',
+        f'/.backends/{uuid1}/{backend_id1}',
+        f'/.users/0xaaa/.backends/{uuid1}/{backend_id1}',
+        f'/.users/0xaaa/.uuid/{uuid1}',
         '/.users/0xaaa/PATH',
-        path,
-        f'{path}/.backends/{backend_id}',
+        f'/.uuid/{uuid1}',
         '/PATH',
     ]
 
     assert command[1]['storage']['owner'] == '0xaaa'
     assert command[1]['storage']['type'] == 'delegate'
-    assert command[1]['storage']['container-path'] == path2
-    assert command[1]['storage']['reference-container'] == f'wildland:@default:{path}:'
+    assert command[1]['storage']['container-path'] == f'/.uuid/{uuid2}'
+    assert command[1]['storage']['reference-container'] == f'wildland:@default:/.uuid/{uuid1}:'
     assert command[1]['storage']['subdirectory'] == '/subdir'
     assert command[1]['storage']['storage'] == command[0]['storage']
 
     assert sorted(command[1]['paths']) == [
-        f'/.users/0xaaa{path2}',
-        f'/.users/0xaaa{path2}/.backends/0000-1111-2222-3333-4444',
+        f'/.backends/{uuid2}/{backend_id}',
+        f'/.users/0xaaa/.backends/{uuid2}/{backend_id}',
+        f'/.users/0xaaa/.uuid/{uuid2}',
         '/.users/0xaaa/subcontainer',
-        path2,
-        f'{path2}/.backends/0000-1111-2222-3333-4444',
+        f'/.uuid/{uuid2}',
         '/subcontainer',
     ]
 
 
-def test_container_mount_errors(cli, cli_fail, base_dir, control_client, tmp_path):
+def test_container_mount_errors(cli, base_dir, control_client, tmp_path):
     control_client.expect('status', {})
 
     cli('user', 'create', 'User', '--key', '0xaaa')
@@ -1862,9 +1966,10 @@ backends:
     control_client.expect('paths', {})
     control_client.expect('mount')
 
-    output = cli_fail('container', 'mount', tmp_path / 'container-*.yaml', capture=True)
-    assert 'Traceback' not in output
-    assert 'Failed to load some container manifests' in output
+    # TODO: cli_fail doesn't capture stderr now...
+    with pytest.raises(WildlandError, match='Failed to load some container manifests'):
+        output = cli('container', 'mount', tmp_path / 'container-*.yaml', capture=True)
+        assert 'Traceback' not in output
 
     # the other container should still be mounted
     command = control_client.calls['mount']['items']
@@ -1879,19 +1984,20 @@ def test_container_mount_only_subcontainers(cli, base_dir, control_client, tmp_p
     cli('user', 'create', 'User', '--key', '0xaaa')
     cli('container', 'create', 'Container', '--path', '/PATH')
 
-    path2 = '/.uuid/0000-1111-2222-3333-4444'
+    uuid2 = '0000-1111-2222-3333-4444'
+    backend_id = '5555-6666-7777-8888-9999'
     with open(tmp_path / 'subcontainer.yaml', 'w') as f:
         f.write(f"""signature: |
   dummy.0xaaa
 ---
 owner: '0xaaa'
 paths:
- - {path2}
+ - /.uuid/{uuid2}
  - /subcontainer
 backends:
   storage:
     - type: delegate
-      backend-id: 0000-1111-2222-3333-4444
+      backend-id: {backend_id}
       reference-container: 'wildland:@default:@parent-container:'
       subdirectory: '/subdir'
 """)
@@ -1900,9 +2006,7 @@ backends:
 
     with open(base_dir / 'containers/Container.container.yaml') as f:
         container_data = f.read().split('\n', 4)[-1]
-        uuid = re.search(r'/.uuid/(.+?)\\n', container_data).group(1)
-
-    path = f'/.uuid/{uuid}'
+        uuid1 = re.search(r'/.uuid/(.+?)\\n', container_data).group(1)
 
     control_client.expect('paths', {})
     control_client.expect('mount')
@@ -1913,17 +2017,17 @@ backends:
     assert len(command) == 1
     assert command[0]['storage']['owner'] == '0xaaa'
     assert command[0]['storage']['type'] == 'delegate'
-    assert command[0]['storage']['container-path'] == path2
-    assert command[0]['storage']['reference-container'] == f'wildland:@default:{path}:'
+    assert command[0]['storage']['container-path'] == f'/.uuid/{uuid2}'
+    assert command[0]['storage']['reference-container'] == f'wildland:@default:/.uuid/{uuid1}:'
     assert command[0]['storage']['subdirectory'] == '/subdir'
     assert command[0]['storage']['storage']['type'] == 'local'
     assert command[0]['storage']['storage']['location'] == os.fspath(tmp_path)
     assert sorted(command[0]['paths']) == [
-        f'/.users/0xaaa{path2}',
-        f'/.users/0xaaa{path2}/.backends/0000-1111-2222-3333-4444',
+        f'/.backends/{uuid2}/{backend_id}',
+        f'/.users/0xaaa/.backends/{uuid2}/{backend_id}',
+        f'/.users/0xaaa/.uuid/{uuid2}',
         '/.users/0xaaa/subcontainer',
-        path2,
-        f'{path2}/.backends/0000-1111-2222-3333-4444',
+        f'/.uuid/{uuid2}',
         '/subcontainer',
     ]
 
@@ -1934,17 +2038,18 @@ def test_container_mount_local_subcontainers_trusted(cli, control_client, tmp_pa
     cli('user', 'create', 'User', '--key', '0xaaa')
     cli('container', 'create', 'Container', '--path', '/PATH')
 
-    path2 = '/.uuid/0000-1111-2222-3333-4444'
+    uuid = '0000-1111-2222-3333-4444'
+    backend_id = '5555-6666-7777-8888-9999'
     with open(tmp_path / 'subcontainer.yaml', 'w') as f:
         f.write(f"""---
 owner: '0xaaa'
 paths:
- - {path2}
+ - /.uuid/{uuid}
  - /subcontainer
 backends:
   storage:
     - type: delegate
-      backend-id: 0000-1111-2222-3333-4444
+      backend-id: {backend_id}
       reference-container: 'wildland:@default:@parent-container:'
       subdirectory: '/subdir'
 """)
@@ -1961,11 +2066,11 @@ backends:
     assert command[0]['storage']['owner'] == '0xaaa'
     assert command[0]['storage']['type'] == 'delegate'
     assert sorted(command[0]['paths']) == [
-        f'/.users/0xaaa{path2}',
-        f'/.users/0xaaa{path2}/.backends/0000-1111-2222-3333-4444',
+        f'/.backends/{uuid}/{backend_id}',
+        f'/.users/0xaaa/.backends/{uuid}/{backend_id}',
+        f'/.users/0xaaa/.uuid/{uuid}',
         '/.users/0xaaa/subcontainer',
-        path2,
-        f'{path2}/.backends/0000-1111-2222-3333-4444',
+        f'/.uuid/{uuid}',
         '/subcontainer',
     ]
 
@@ -1975,7 +2080,7 @@ def test_container_mount_container_without_storage(cli, control_client):
     cli('user', 'create', 'User', '--key', '0xaaa')
     cli('container', 'create', 'Container', '--path', '/PATH')
 
-    with pytest.raises(ClickException, match='No valid storages found'):
+    with pytest.raises(WildlandError, match='No valid storages found'):
         cli('container', 'mount', 'Container')
 
 
@@ -1989,21 +2094,22 @@ def test_container_unmount(cli, base_dir, control_client):
     with open(base_dir / 'containers/Container.container.yaml') as f:
         documents = list(load_yaml_all(f))
 
-    path = documents[1]['paths'][0]
+    uuid_path = documents[1]['paths'][0]
+    uuid = get_container_uuid_from_uuid_path(uuid_path)
     backend_id = documents[1]['backends']['storage'][0]['backend-id']
 
     control_client.expect('paths', {
-        f'/.users/0xaaa{path}': [101],
-        f'/.users/0xaaa{path}/.backends/{backend_id}': [102],
-        path: [103],
-        f'{path}/.backends/{backend_id}': [104],
+        f'/.users/0xaaa/.uuid/{uuid}': [101],
+        f'/.users/0xaaa/.backends/{uuid}/{backend_id}': [102],
+        f'/.uuid/{uuid}': [103],
+        f'/.backends/{uuid}/{backend_id}': [104],
         '/PATH': [105],
     })
     control_client.expect('unmount')
     cli('container', 'unmount', 'Container', '--without-subcontainers')
 
-    # /.uuid/{cont_uuid}/.backends/{backend_uuid} is always the primary path
-    assert control_client.calls['unmount']['storage_id'] == 104
+    # /.users/{owner}/.backends/{cont_uuid}/{backend_uuid} is always the primary path
+    assert control_client.calls['unmount']['storage_id'] == 102
 
 
 def test_container_other_signer(cli, base_dir):
@@ -2052,7 +2158,8 @@ def test_container_extended_paths(cli, control_client, base_dir):
     with open(base_dir / 'containers/Container.container.yaml') as f:
         documents = list(load_yaml_all(f))
 
-    path = documents[1]['paths'][0]
+    uuid_path = documents[1]['paths'][0]
+    uuid = get_container_uuid_from_uuid_path(uuid_path)
     backend_id = documents[1]['backends']['storage'][0]['backend-id']
 
     control_client.expect('paths', {})
@@ -2064,20 +2171,20 @@ def test_container_extended_paths(cli, control_client, base_dir):
     assert command[0]['storage']['owner'] == '0xaaa'
 
     assert sorted(command[0]['paths']) == sorted([
-        f'/.users/0xaaa{path}',
-        f'/.users/0xaaa{path}/.backends/{backend_id}',
+        f'/.backends/{uuid}/{backend_id}',
+        f'/.users/0xaaa/.backends/{uuid}/{backend_id}',
+        f'/.users/0xaaa/.uuid/{uuid}',
         '/.users/0xaaa/PATH',
-        '/.users/0xaaa/c1/c2/title',
-        '/.users/0xaaa/c3/title',
         '/.users/0xaaa/c1/c2/@c3/title',
+        '/.users/0xaaa/c1/c2/title',
         '/.users/0xaaa/c3/@c1/c2/title',
-        '/c1/c2/title',
-        '/c3/title',
-        '/c1/c2/@c3/title',
-        '/c3/@c1/c2/title',
-        f'{path}/.backends/{backend_id}',
-        path,
+        '/.users/0xaaa/c3/title',
+        f'/.uuid/{uuid}',
         '/PATH',
+        '/c1/c2/@c3/title',
+        '/c1/c2/title',
+        '/c3/@c1/c2/title',
+        '/c3/title'
     ])
 
     modify_file(base_dir / 'config.yaml', "'@default': '0xaaa'", '')
@@ -2088,8 +2195,8 @@ def test_container_extended_paths(cli, control_client, base_dir):
     command = control_client.calls['mount']['items']
     assert command[0]['storage']['owner'] == '0xaaa'
     assert sorted(command[0]['paths']) == [
-        f'/.users/0xaaa{path}',
-        f'/.users/0xaaa{path}/.backends/{backend_id}',
+        f'/.users/0xaaa/.backends/{uuid}/{backend_id}',
+        f'/.users/0xaaa/.uuid/{uuid}',
         '/.users/0xaaa/PATH',
         '/.users/0xaaa/c1/c2/@c3/title',
         '/.users/0xaaa/c1/c2/title',
@@ -2196,7 +2303,7 @@ def test_cli_container_sync(tmpdir, cleanup):
             '--container', 'AliceContainer', '--location', storage1_data)
     wl_call(base_config_dir, 'storage', 'create', 'local-cached',
             '--container', 'AliceContainer', '--location', storage2_data)
-    wl_call(base_config_dir, 'container', 'sync', '--target-remote', 'local-cached',
+    wl_call(base_config_dir, 'container', 'sync', '--target-storage', 'local-cached',
             'AliceContainer')
 
     time.sleep(1)
@@ -2209,6 +2316,45 @@ def test_cli_container_sync(tmpdir, cleanup):
     assert (storage2_data / 'testfile').exists()
     with open(storage2_data / 'testfile') as file:
         assert file.read() == 'test data'
+
+
+def test_cli_container_sync_oneshot(tmpdir):
+    base_config_dir = tmpdir / '.wildland'
+    base_data_dir = tmpdir / 'wldata'
+    storage1_data = base_data_dir / 'storage1'
+    storage2_data = base_data_dir / 'storage2'
+
+    os.mkdir(base_config_dir)
+    os.mkdir(base_data_dir)
+    os.mkdir(storage1_data)
+    os.mkdir(storage2_data)
+
+    wl_call(base_config_dir, 'user', 'create', 'Alice')
+    wl_call(base_config_dir, 'container', 'create',
+            '--owner', 'Alice', '--path', '/Alice', 'AliceContainer')
+    wl_call(base_config_dir, 'storage', 'create', 'local',
+            '--container', 'AliceContainer', '--location', storage1_data)
+    wl_call(base_config_dir, 'storage', 'create', 'local-cached',
+            '--container', 'AliceContainer', '--location', storage2_data)
+
+    with open(storage1_data / 'testfile', 'w') as f:
+        f.write("test data")
+
+    wl_call(base_config_dir, 'container', 'sync', '--target-storage', 'local-cached', '--one-shot',
+            'AliceContainer')
+
+    time.sleep(1)
+
+    assert (storage2_data / 'testfile').exists()
+    with open(storage2_data / 'testfile') as file:
+        assert file.read() == 'test data'
+
+    with open(storage1_data / 'testfile2', 'w') as f:
+        f.write("test data2")
+
+    time.sleep(1)
+
+    assert not (storage2_data / 'testfile2').exists()
 
 
 def test_cli_container_sync_tg_remote(tmpdir, cleanup):
@@ -2235,7 +2381,7 @@ def test_cli_container_sync_tg_remote(tmpdir, cleanup):
             '--container', 'AliceContainer', '--location', storage2_data)
     wl_call(base_config_dir, 'storage', 'create', 'local-dir-cached',
             '--container', 'AliceContainer', '--location', storage3_data)
-    wl_call(base_config_dir, 'container', 'sync', '--target-remote', 'local-dir-cached',
+    wl_call(base_config_dir, 'container', 'sync', '--target-storage', 'local-dir-cached',
             'AliceContainer')
 
     time.sleep(1)
@@ -2279,6 +2425,51 @@ def test_cli_container_sync_tg_remote(tmpdir, cleanup):
     assert not (storage2_data / 'testfile2').exists()
     with open(storage3_data / 'testfile2') as file:
         assert file.read() == "get value from config"
+
+
+def test_container_list_conflicts(tmpdir):
+    base_config_dir = tmpdir / '.wildland'
+    base_data_dir = tmpdir / 'wldata'
+    storage1_data = base_data_dir / 'storage1'
+    storage2_data = base_data_dir / 'storage2'
+    storage3_data = base_data_dir / 'storage3'
+
+    os.mkdir(base_config_dir)
+    os.mkdir(base_data_dir)
+    os.mkdir(storage1_data)
+    os.mkdir(storage2_data)
+    os.mkdir(storage3_data)
+
+    wl_call(base_config_dir, 'user', 'create', 'Alice')
+    wl_call(base_config_dir, 'container', 'create',
+            '--owner', 'Alice', '--path', '/Alice', 'AliceContainer', '--no-encrypt-manifest')
+    wl_call(base_config_dir, 'storage', 'create', 'local',
+            '--container', 'AliceContainer', '--location', storage1_data)
+    wl_call(base_config_dir, 'storage', 'create', 'local-cached',
+            '--container', 'AliceContainer', '--location', storage2_data)
+    wl_call(base_config_dir, 'storage', 'create', 'local-dir-cached',
+            '--container', 'AliceContainer', '--location', storage3_data)
+
+    with open(storage1_data / 'file1', mode='w') as f:
+        f.write('aaaa')
+    with open(storage2_data / 'file1', mode='w') as f:
+        f.write('bbbb')
+    with open(storage3_data / 'file1', mode='w') as f:
+        f.write('cccc')
+
+    output = wl_call_output(base_config_dir, 'container', 'list-conflicts', 'AliceContainer')
+    conflicts = output.decode().splitlines()
+    assert len(conflicts) == 4
+    assert conflicts[1] != conflicts[2] and conflicts[2] != conflicts[3]
+
+    os.unlink(storage1_data / 'file1')
+    os.unlink(storage2_data / 'file1')
+    os.mkdir(storage2_data / 'file1')
+
+    output = wl_call_output(base_config_dir, 'container', 'list-conflicts', 'AliceContainer')
+    conflicts = output.decode().splitlines()
+    assert len(conflicts) == 2
+    assert 'file1' in conflicts[1]
 
 
 # Encryption of inline storage manifests
@@ -2337,23 +2528,128 @@ def test_dump(tmpdir):
     assert 'encrypted' in dump_container
     assert yaml_container['object'] == 'container'
 
-# Storage sets
+# Storage sets/templates
 
 
-def setup_storage_sets(config_dir):
-    os.mkdir(config_dir / 'templates')
-    data_dict = {
-        'object': 'storage',
-        'location': f'{config_dir}' + '/{{ uuid }}',
-        'type': 'local'
-    }
-    yaml.dump(data_dict, open(config_dir / 'templates/t1.template.jinja', 'w'))
-    yaml.dump(data_dict, open(config_dir / 'templates/t2.template.jinja', 'w'))
-    yaml.dump(data_dict, open(config_dir / 'templates/t3.template.jinja', 'w'))
+def test_cli_storage_template_create(cli, base_dir):
+    cli('storage-template', 'create', 'local', '--location', '/foo', 't1')
+
+    with open(base_dir / 'templates/t1.template.jinja', 'r') as f:
+        read_data = load_yaml(f)
+        assert read_data == {'type': 'local',
+                             'location': '/foo{{ local_dir if local_dir is defined else \'/\' }}',
+                             'read-only': False}
+
+
+def test_cli_storage_template_create_custom_access(cli, base_dir):
+    cli('user', 'create', 'UserA', '--key', '0xaaa')
+    cli('user', 'create', 'UserB', '--key', '0xbbb')
+    cli('storage-template', 'create', 'local', '--location', '/foo',
+        '--access', 'UserA', '--access', 'UserB', 't1')
+
+    with open(base_dir / 'templates/t1.template.jinja', 'r') as f:
+        read_data = load_yaml(f)
+        assert read_data == {'type': 'local',
+                             'location': '/foo{{ local_dir if local_dir is defined else \'/\' }}',
+                             'read-only': False,
+                             'access': [{'user': '0xaaa'}, {'user': '0xbbb'}]}
+
+    cli('storage-template', 'create', 'local', '--location', '/foo',
+        '--access', '*', 't2')
+
+    with open(base_dir / 'templates/t2.template.jinja', 'r') as f:
+        read_data = load_yaml(f)
+        assert read_data == {'type': 'local',
+                             'location': '/foo{{ local_dir if local_dir is defined else \'/\' }}',
+                             'read-only': False,
+                             'access': [{'user': '*'}]}
+
+    with pytest.raises(CliError, match='Failed to create storage template: User not found: *'):
+        cli('storage-template', 'create', 'local', '--location', '/foo',
+            '--access', '*', '--access', 'UserA', 't3')
+
+
+def test_cli_storage_template_filename_exists(cli):
+    cli('storage-template', 'create', 'local', '--location', '/foo', 't1')
+
+    with pytest.raises(CliError, match='already exists'):
+        cli('storage-template', 'create', 'local', '--location', '/foo', 't1')
+
+
+def test_cli_remove_storage_template(cli, base_dir):
+    cli('storage-template', 'create', 'local', '--location', '/foo', 't1')
+
+    assert Path(base_dir / 'templates/t1.template.jinja').exists()
+
+    cli('storage-template', 'remove', 't1')
+
+    assert not Path(base_dir / 'templates/t1.template.jinja').exists()
+
+
+def test_cli_remove_nonexisting_storage_template(cli):
+    with pytest.raises(CliError, match='does not exist'):
+        cli('storage-template', 'remove', 't1')
+
+
+def test_cli_remove_assigned_storage_template(cli):
+    cli('storage-template', 'create', 'local', '--location', '/foo', 't1')
+    cli('storage-set', 'add', '--template', 't1', 'set1')
+
+    with pytest.raises(CliError, match=r'Template (.+?) is attached to following sets: (.+?)'):
+        cli('storage-template', 'remove', 't1')
+
+
+def test_cli_remove_assigned_storage_template_force(cli, base_dir):
+    cli('storage-template', 'create', 'local', '--location', '/foo', 't1')
+    cli('storage-set', 'add', '--template', 't1', 'set1')
+
+    cli('storage-template', 'remove', 't1', '--force')
+
+    assert not Path(base_dir / 'templates/t1.template.jinja').exists()
+    assert Path(base_dir / 'templates/set1.set.yaml').exists()
+
+
+def test_cli_remove_assigned_storage_template_cascade(cli, base_dir):
+    cli('storage-template', 'create', 'local', '--location', '/foo', 't1')
+    cli('storage-set', 'add', '--template', 't1', 'set1')
+
+    cli('storage-template', 'remove', 't1', '--cascade')
+
+    assert not Path(base_dir / 'templates/t1.template.jinja').exists()
+    assert not Path(base_dir / 'templates/set1.set.yaml').exists()
+
+
+def test_template_parsing(cli, base_dir):
+    cli('user', 'create', 'User')
+    cli('storage-template', 'create', 'webdav',
+        '--url', 'https://{{ paths|first }}/{{ title }}',
+        '--login', '{{ categories | first }}',
+        '--password', '{{ categories | last }}',
+        't1')
+    cli('storage-set', 'add', '--inline', 't1', 'set1')
+    cli('container', 'create', 'Container', '--path', '/PATH',
+        '--storage-set', 'set1', '--no-encrypt-manifest',
+        '--title', 'foobar', '--category', '/boo!foo:hoo', '--category', '/żółć')
+
+    with open(base_dir / 'containers/Container.container.yaml') as f:
+        documents = list(load_yaml_all(f))
+        uuid_path = documents[1]['paths'][0]
+
+    data = (base_dir / 'containers/Container.container.yaml').read_text()
+
+    assert f'url: https://{uuid_path}/foobar' in data
+    assert 'login: /boo!foo:hoo' in data
+    assert 'password: "/\\u017C\\xF3\\u0142\\u0107"' in data
+
+
+def setup_storage_sets(cli, config_dir):
+    cli('storage-template', 'create', 'local', '--location', f'{config_dir}' + '/{{ uuid }}', 't1')
+    cli('storage-template', 'create', 'local', '--location', f'{config_dir}' + '/{{ uuid }}', 't2')
+    cli('storage-template', 'create', 'local', '--location', f'{config_dir}' + '/{{ uuid }}', 't3')
 
 
 def test_cli_set_add(cli, base_dir):
-    setup_storage_sets(base_dir)
+    setup_storage_sets(cli, base_dir)
     cli('storage-set', 'add', '--template', 't1', '--inline', 't2', 'set1')
     cli('storage-set', 'add', '--inline', 't3', '--inline', 't2', 'set2')
 
@@ -2372,7 +2668,7 @@ def test_cli_set_add(cli, base_dir):
 
 
 def test_cli_set_modify(cli, base_dir):
-    setup_storage_sets(base_dir)
+    setup_storage_sets(cli, base_dir)
     cli('storage-set', 'add', '--template', 't1', 'set1')
 
     with open(base_dir / 'templates/set1.set.yaml', 'r') as f:
@@ -2398,18 +2694,18 @@ def test_cli_set_modify(cli, base_dir):
                                  [{'file': 't1.template.jinja', 'type': 'file'},
                                   {'file': 't3.template.jinja', 'type': 'inline'}]}
 
-    with pytest.raises(CliError):
+    with pytest.raises(WildlandError):
         cli('storage-set', 'modify', 'add-template', '-t', 't2', 'set123')
-    with pytest.raises(CliError):
+    with pytest.raises(WildlandError):
         cli('storage-set', 'modify', 'del-template', '-t', 't2', 'set123')
-    with pytest.raises(CliError):
+    with pytest.raises(WildlandError):
         cli('storage-set', 'modify', 'add-template', '-t', 't2123', 'set1')
-    with pytest.raises(CliError):
+    with pytest.raises(WildlandError):
         cli('storage-set', 'modify', 'del-template', '-t', 't2', 'set123')
 
 
 def test_cli_set_list(cli, base_dir):
-    setup_storage_sets(base_dir)
+    setup_storage_sets(cli, base_dir)
     cli('storage-set', 'add', '--template', 't1', '--inline', 't2', 'set1')
     cli('storage-set', 'add', '--inline', 't3', '--inline', 't2', 'set2')
 
@@ -2423,7 +2719,7 @@ def test_cli_set_list(cli, base_dir):
 
 
 def test_cli_set_del(cli, base_dir):
-    setup_storage_sets(base_dir)
+    setup_storage_sets(cli, base_dir)
     cli('storage-set', 'add', '--template', 't1', '--inline', 't2', 'set1')
 
     expected_file = base_dir / 'templates/set1.set.yaml'
@@ -2511,7 +2807,7 @@ def test_cli_set_missing_param(cli, base_dir):
     cli('storage-set', 'add', '--inline', 'title', 'set1')
     cli('user', 'create', 'User')
 
-    with pytest.raises(CliError, match='\'title\' is undefined'):
+    with pytest.raises(WildlandError, match='\'title\' is undefined'):
         cli('container', 'create',
             'Container', '--path', '/PATH', '--storage-set', 'set1', capture=True)
 
@@ -2542,7 +2838,7 @@ def test_cli_set_local_dir(cli, base_dir):
 
 
 def test_user_create_default_set(cli, base_dir):
-    setup_storage_sets(base_dir)
+    setup_storage_sets(cli, base_dir)
     cli('user', 'create', 'User')
     cli('storage-set', 'add', '--template', 't1', '--inline', 't2', 'set')
     cli('storage-set', 'set-default', '--user', 'User', 'set')
@@ -2556,7 +2852,7 @@ def test_user_create_default_set(cli, base_dir):
 
 
 def test_cli_set_use_default(cli, base_dir):
-    setup_storage_sets(base_dir)
+    setup_storage_sets(cli, base_dir)
     cli('user', 'create', 'User')
     cli('storage-set', 'add', '--template', 't1', 'set')
     cli('storage-set', 'set-default', '--user', 'User', 'set')
@@ -2569,7 +2865,7 @@ def test_cli_set_use_default(cli, base_dir):
 
 
 def test_cli_set_use_def_storage(cli, base_dir):
-    setup_storage_sets(base_dir)
+    setup_storage_sets(cli, base_dir)
     cli('user', 'create', 'User')
     cli('storage-set', 'add', '--template', 't1', 'set')
     cli('storage-set', 'set-default', '--user', 'User', 'set')
@@ -2815,8 +3111,8 @@ def test_only_subcontainers(cli, base_dir, control_client):
 
     parent_container_path = base_dir / 'containers/Parent.container.yaml'
     child_container_path = base_dir / 'containers/Child.container.yaml'
-    child_storage_dir = (base_dir / 'foo')
-    child_storage_file = (base_dir / 'foo/file')
+    child_storage_dir = base_dir / 'foo'
+    child_storage_file = base_dir / 'foo/file'
 
     child_storage_dir.mkdir()
     child_storage_file.write_text('hello')
@@ -2869,21 +3165,24 @@ def test_only_subcontainers(cli, base_dir, control_client):
     control_client.expect('mount')
     cli('container', 'mount', 'Parent')
 
+    uuid_parent = get_container_uuid_from_uuid_path(uuid_path_parent)
+    uuid_child = get_container_uuid_from_uuid_path(uuid_path_child)
+
     parent_paths = [
-        f'/.users/0xaaa{uuid_path_parent}',
-        f'/.users/0xaaa{uuid_path_parent}/.backends/{backend_id_parent}',
+        f'/.backends/{uuid_parent}/{backend_id_parent}',
+        f'/.users/0xaaa/.backends/{uuid_parent}/{backend_id_parent}',
+        f'/.users/0xaaa/.uuid/{uuid_parent}',
         '/.users/0xaaa/PATH_PARENT',
-        uuid_path_parent,
-        f'{uuid_path_parent}/.backends/{backend_id_parent}',
+        f'/.uuid/{uuid_parent}',
         '/PATH_PARENT',
     ]
 
     child_paths = [
-        f'/.users/0xaaa{uuid_path_child}',
-        f'/.users/0xaaa{uuid_path_child}/.backends/{backend_id_child}',
+        f'/.backends/{uuid_child}/{backend_id_child}',
+        f'/.users/0xaaa/.backends/{uuid_child}/{backend_id_child}',
+        f'/.users/0xaaa/.uuid/{uuid_child}',
         '/.users/0xaaa/PATH_CHILD',
-        uuid_path_child,
-        f'{uuid_path_child}/.backends/{backend_id_child}',
+        f'/.uuid/{uuid_child}',
         '/PATH_CHILD',
     ]
 
@@ -2916,14 +3215,7 @@ def test_only_subcontainers(cli, base_dir, control_client):
     # Verify the mounted paths
     command = control_client.calls['mount']['items']
     assert len(command) == 1
-    assert sorted(command[0]['paths']) == [
-        f'/.users/0xaaa{uuid_path_child}',
-        f'/.users/0xaaa{uuid_path_child}/.backends/{backend_id_child}',
-        '/.users/0xaaa/PATH_CHILD',
-        uuid_path_child,
-        f'{uuid_path_child}/.backends/{backend_id_child}',
-        '/PATH_CHILD',
-    ]
+    assert sorted(command[0]['paths']) == child_paths
 
 
 def test_user_refresh(cli, base_dir, tmpdir):
@@ -2956,3 +3248,82 @@ def test_user_refresh(cli, base_dir, tmpdir):
 
     user_data = (base_dir / 'users/Alice.user.yaml').read_text()
     assert 'paths:\n- /MEH' in user_data
+
+
+def test_file_find(cli, base_dir, control_client, tmpdir):
+    control_client.expect('status', {})
+    storage_dir = tmpdir / 'storage'
+    os.mkdir(storage_dir)
+    (storage_dir / 'file.txt').write('foo')
+
+    cli('user', 'create', 'User', '--key', '0xaaa')
+    cli('container', 'create', 'Container', '--path', '/PATH', '--no-encrypt-manifest')
+    cli('storage', 'create', 'local', 'Storage', '--location', storage_dir,
+        '--container', 'Container')
+
+    with open(base_dir / 'containers/Container.container.yaml') as f:
+        documents = list(yaml.safe_load_all(f))
+    uuid_path  = documents[1]['paths'][0]
+    backend_id = documents[1]['backends']['storage'][0]['backend-id']
+
+    control_client.expect('paths', {})
+    control_client.expect('mount')
+
+    cli('container', 'mount', 'Container')
+
+    control_client.expect('fileinfo', {
+        'storage': {
+            'container-path': uuid_path,
+            'backend-id': backend_id,
+            'owner': '0xaaa',
+            'read-only': False,
+            'id': 'aaa',
+        },
+        'token': 'bbb'
+    })
+
+    result = cli('container', 'find', f'{base_dir}/mnt/PATH/file.txt', capture=True)
+
+    assert result.splitlines() == [
+        f'Container: wildland:0xaaa:{uuid_path}:',
+        f'Backend id: {backend_id}',
+        'Local containers:',
+        f'  {base_dir}/containers/Container.container.yaml',
+    ]
+
+    control_client.expect('fileinfo', {})
+
+    with pytest.raises(CliError, match='File was not found in any storage'):
+        cli('container', 'find', f'{base_dir}/mnt/PATH/not_existing.txt', capture=True)
+
+# Forest
+
+def test_forest_create(cli, tmp_path):
+    cli('user', 'create', 'Alice', '--key', '0xaaa')
+    cli('storage-template', 'create', 'local', '--location', f'/{tmp_path}/wl-forest',
+        '--base-url', f'file:///{tmp_path}/wl-forest', '--manifest-pattern', '/{path}.yaml', 'rw')
+    cli('storage-template', 'create', 'local', '--location', f'/{tmp_path}/wl-forest',
+        '--read-only', '--manifest-pattern', '/{path}.yaml', 'ro')
+    cli('storage-set', 'add', '--inline', 'rw', '--inline', 'ro', 'my-set')
+
+    cli('forest', 'create', '--manifest-local-dir', '/manifests', '--data-local-dir', '/storage',
+        'Alice', 'my-set')
+
+    assert Path(f'/{tmp_path}/wl-forest/manifests/Alice.yaml').exists()
+    assert Path(f'/{tmp_path}/wl-forest/manifests/Alice-index.yaml').exists()
+    assert Path(f'/{tmp_path}/wl-forest/manifests/.manifests/.manifests.yaml').exists()
+    assert Path(f'/{tmp_path}/wl-forest/manifests/.manifests/home/Alice.yaml').exists()
+
+## Global options (--help, --version etc.)
+
+def test_wl_help(cli):
+    result = cli('--help', capture=True)
+    assert 'Usage:' in result
+    assert 'Options:' in result
+    assert 'Commands:' in result
+    assert 'Aliases:' in result
+
+
+def test_wl_version(cli):
+    result = cli('--version', capture=True)
+    assert 'version' in result

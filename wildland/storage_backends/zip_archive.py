@@ -91,6 +91,7 @@ class ZipArchiveStorageBackend(CachedStorageMixin, StorageBackend):
         }
     })
     TYPE = 'zip-archive'
+    LOCATION_PARAM = 'location'
 
     def __init__(self, **kwds):
         super().__init__(**kwds)
@@ -112,7 +113,7 @@ class ZipArchiveStorageBackend(CachedStorageMixin, StorageBackend):
     @classmethod
     def cli_create(cls, data):
         return {
-            'path': data['path'],
+            'location': data['location'],
         }
 
     def watcher(self):

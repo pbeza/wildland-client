@@ -30,7 +30,6 @@ import pathlib
 import posixpath
 import stat
 import urllib.parse
-from collections import namedtuple
 from dataclasses import dataclass
 from pathlib import PurePosixPath, Path
 from typing import Optional, Dict, Type, Any, List, Iterable, Tuple
@@ -42,12 +41,10 @@ import yaml
 from ..manifest.sig import SigContext
 from ..manifest.manifest import Manifest
 from ..manifest.schema import Schema
-from ..hashdb import HashDb
+from ..hashdb import HashDb, HashCache
 
 BLOCK_SIZE = 1024 ** 2
 logger = logging.getLogger('storage')
-
-HashCache = namedtuple('HashCache', ['hash', 'token'])
 
 
 class StorageError(BaseException):
@@ -88,24 +85,24 @@ class Attr:
 
         return stat.S_ISDIR(self.mode)
 
-    @staticmethod
-    def file(size: int = 0, timestamp: int = 0) -> 'Attr':
+    @classmethod
+    def file(cls, size: int=0, timestamp: int=0) -> 'Attr':
         """
         Simple file with default access mode.
         """
 
-        return Attr(
+        return cls(
             mode=stat.S_IFREG | 0o644,
             size=size,
             timestamp=timestamp)
 
-    @staticmethod
-    def dir(size: int = 0, timestamp: int = 0) -> 'Attr':
+    @classmethod
+    def dir(cls, size: int=0, timestamp: int=0) -> 'Attr':
         """
         Simple directory with default access mode.
         """
 
-        return Attr(
+        return cls(
             mode=stat.S_IFDIR | 0o755,
             size=size,
             timestamp=timestamp)
@@ -129,7 +126,7 @@ class File(metaclass=abc.ABCMeta):
         """
         raise NotImplementedError()
 
-    def read(self, length: Optional[int] = None, offset: int = 0) -> bytes:
+    def read(self, length: Optional[int]=None, offset: int=0) -> bytes:
         """
         Read data from an open file. This method is a proxy for
         :meth:`wildland.storage_backends.base.StorageBackend.read`.
@@ -164,6 +161,27 @@ class StorageBackend(metaclass=abc.ABCMeta):
 
     Any implementation should inherit from this class.
 
+    This abstract class exposes the following constants.
+
+    .. code-block::
+
+        TYPE:           str    (required) - a unique name for backend's type (eg. dropbox, s3,
+                                            local)
+        SCHEMA:         Schema (optional) - a jsonschema compatible Schema object used to validate
+                                            storage manifest syntax and accepted values
+        LOCATION_PARAM: str    (optional) - the key in storage params which holds a path or uri that
+                                            points to a location in storage backend.
+
+                                            Some backends (eg. dateproxy) don't specify any
+                                            locationsas they are merely proxying actual backends.
+                                            In those cases this costant should be omited.
+
+                                            Examples:
+                                            - `location` for `local` storage as it points to a
+                                              directory in `local` storage
+                                            - `s3_url` for `s3` storage as it's the s3's location
+                                              identifier
+
     Currently the storage should implement an interface similar to FUSE.
     This implementation detail might change in the future.
 
@@ -181,6 +199,7 @@ class StorageBackend(metaclass=abc.ABCMeta):
     """
     SCHEMA = Schema('storage')
     TYPE = ''
+    LOCATION_PARAM: Optional[str] = None
 
     _types: Dict[str, Type['StorageBackend']] = {}
     _cache: Dict[str, 'StorageBackend'] = {}
@@ -204,7 +223,7 @@ class StorageBackend(metaclass=abc.ABCMeta):
 
         self.watcher_instance = None
         self.hash_cache: Dict[PurePosixPath, HashCache] = {}
-        self.hash_db = None
+        self.hash_db: Optional[HashDb] = None
         self.mounted = 0
 
         # Hash guarantees uniqueness per backend's params while backend-id does not
@@ -351,6 +370,7 @@ class StorageBackend(metaclass=abc.ABCMeta):
         Set path to config dir. Used to store hashes in a local sqlite DB.
         """
         self.hash_db = HashDb(config_dir)
+
     # FUSE file operations. Return a File instance.
 
     @abc.abstractmethod
@@ -364,7 +384,7 @@ class StorageBackend(metaclass=abc.ABCMeta):
         """
         raise NotImplementedError()
 
-    def create(self, path: PurePosixPath, flags: int, mode: int = 0o666):
+    def create(self, path: PurePosixPath, flags: int, mode: int=0o666):
         """
         Create and open a file. If the file does not exist, first create it with the specified mode,
         and then open it. Flags are expressed in POSIX style (see os module flag constants). They
@@ -436,7 +456,7 @@ class StorageBackend(metaclass=abc.ABCMeta):
         """
         raise OptionalError()
 
-    def mkdir(self, path: PurePosixPath, mode: int = 0o777) -> None:
+    def mkdir(self, path: PurePosixPath, mode: int=0o777) -> None:
         """
         Create a directory with the given name. The directory permissions are encoded in ``mode``.
         """
@@ -481,7 +501,7 @@ class StorageBackend(metaclass=abc.ABCMeta):
         # used to implement hash caching; should provide a token that changes when the file changes.
         raise OptionalError()
 
-    def get_hash(self, path: PurePosixPath) -> str:
+    def get_hash(self, path: PurePosixPath) -> Optional[str]:
         """
         Return (and, if get_file_token is implemented, cache) sha256 hash for object at path.
         """
@@ -493,6 +513,8 @@ class StorageBackend(metaclass=abc.ABCMeta):
         if current_token:
             hash_cache = self.retrieve_hash(path)
             if hash_cache and current_token == hash_cache.token:
+                logger.debug('Retrieving hash %s from cache for file %s with token %s',
+                             hash_cache.hash, path, current_token)
                 return hash_cache.hash
 
         hasher = hashlib.sha256()
@@ -520,7 +542,7 @@ class StorageBackend(metaclass=abc.ABCMeta):
             self.hash_db.store_hash(self.backend_id, path, hash_cache)
         self.hash_cache[path] = hash_cache
 
-    def retrieve_hash(self, path) -> HashCache:
+    def retrieve_hash(self, path) -> Optional[HashCache]:
         """
         Get cached hash, if possible; priority is given to local dict, then to permanent storage.
         """
@@ -627,8 +649,19 @@ class StorageBackend(metaclass=abc.ABCMeta):
         return posixpath.join(self.params['base-url'],
             urllib.parse.quote_from_bytes(bytes(pathlib.PurePosixPath(path))))
 
+    def get_path_for_url(self, url):
+        """
+        Return a path relative to storage's root, under which a file given by
+        URL can be accessed.
+        """
+        # TODO unquote?
+        assert 'base-url' in self.params
+        assert url.startswith(self.params['base-url'])
+        return pathlib.PurePosixPath(
+            url[len(self.params['base-url']):].lstrip('/'))
 
-class StaticSubcontainerStorageMixin:
+
+class StaticSubcontainerStorageMixin(StorageBackend):
     """
     A backend storage mixin that is used in all backends that support ``subcontainers`` key in their
     manifests.
@@ -647,6 +680,7 @@ class StaticSubcontainerStorageMixin:
         }
 
     """
+    # pylint: disable=abstract-method
 
     def list_subcontainers(
         self,

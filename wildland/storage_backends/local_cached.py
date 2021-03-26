@@ -23,6 +23,7 @@ A cached version of local storage.
 
 from typing import Iterable, Tuple, Optional
 from pathlib import Path, PurePosixPath
+import logging
 import os
 import errno
 import time
@@ -34,6 +35,8 @@ from .buffered import FullBufferedFile, PagedFile, File
 from .base import StorageBackend, Attr, verify_local_access
 from .local import LocalStorageWatcher
 from ..manifest.schema import Schema
+
+logger = logging.getLogger('local-cached')
 
 
 class LocalCachedFile(FullBufferedFile):
@@ -204,7 +207,7 @@ class BaseCached(StorageBackend):
         os.rename(self._local(move_from), self._local(move_to))
         self.clear_cache()
 
-    def utimens(self, path: str, atime, mtime):
+    def utimens(self, path: PurePosixPath, atime, mtime):
         atime_ns = atime.tv_sec * 1e9 + atime.tv_nsec
         mtime_ns = mtime.tv_sec * 1e9 + mtime.tv_nsec
 
@@ -227,7 +230,7 @@ class BaseCached(StorageBackend):
         except NotADirectoryError:
             # can occur due to extreme file conflicts across storages
             return None
-        if abs(time.time() - current_timestamp) < 0.001:
+        if abs(time.time() - current_timestamp) < 1:
             # due to filesystem lack of resolution, two changes less than 1 millisecond apart
             # can have the same mtime. We assume 1 millisecond, as it's correct for EXT4,
             # but be warned: it can go as high as 2 seconds for FAT16/32
@@ -241,35 +244,63 @@ class LocalCachedStorageBackend(CachedStorageMixin, BaseCached):
     """
 
     TYPE = 'local-cached'
+    LOCATION_PARAM = 'location'
 
     def info_all(self) -> Iterable[Tuple[PurePosixPath, Attr]]:
         """
         Load information about all files and directories.
         """
-
         try:
             st = os.stat(self.root)
-        except IOError:
+        except IOError as e:
+            logger.error('Unable to stat [%s]. Details: %s', self.root, e)
             return
 
         yield PurePosixPath('.'), self._stat(st)
 
-        for root_s, dirs, files in os.walk(self.root):
+        for root_s, dirs, files in os.walk(self.root,
+                                           topdown=True,
+                                           onerror=self._walk_error_handler,
+                                           followlinks=True):
             root = Path(root_s)
             rel_root = PurePosixPath(root.relative_to(self.root))
+            outside_container_dir_symlinks = set()
+
             for dir_name in dirs:
+                dir_path = root / dir_name
+
+                if is_symlink_pointing_outside_container(self.root, dir_path):
+                    logger.debug('Skipping directory symlink [%s].', dir_path)
+                    outside_container_dir_symlinks.add(dir_name)
+                    continue
+
                 try:
-                    st = os.stat(root / dir_name)
-                except IOError:
+                    st = os.stat(dir_path)
+                except IOError as e:
+                    logger.error('Unable to stat directory [%s]. Details: {%s}', dir_path, e)
                     continue
                 yield rel_root / dir_name, self._stat(st)
 
+            # do not visit symlinks pointing to the directories outside the container
+            dirs[:] = [d for d in dirs if d not in outside_container_dir_symlinks]
+
             for file_name in files:
+                file_path = root / file_name
+
+                if is_symlink_pointing_outside_container(self.root, file_path):
+                    logger.debug('Skipping file symlink [%s].', file_path)
+                    continue
+
                 try:
-                    st = os.stat(root / file_name)
-                except IOError:
+                    st = os.stat(file_path)
+                except IOError as e:
+                    logger.error('Unable to stat file [%s]. Details: %s', file_path, e)
                     continue
                 yield rel_root / file_name, self._stat(st)
+
+    def _walk_error_handler(self, err: OSError) -> None:
+        logger.warning('Error handled when traversing [%s] directory tree, specifically [%s] '
+                       'file/directory. Details: %s', self.root, err.filename, err)
 
 
 class LocalDirectoryCachedStorageBackend(DirectoryCachedStorageMixin, BaseCached):
@@ -283,7 +314,28 @@ class LocalDirectoryCachedStorageBackend(DirectoryCachedStorageMixin, BaseCached
         """
         Load information about a single directory.
         """
-
         for name in os.listdir(self._local(path)):
-            attr = self._stat(os.stat(self._local(path) / name))
-            yield name, attr
+            file_path = self._local(path) / name
+            if not is_symlink_pointing_outside_container(self.root, file_path):
+                attr = self._stat(os.stat(file_path))
+                yield name, attr
+
+
+def is_symlink_pointing_outside_container(root: Path, path: Path) -> bool:
+    """
+    Checks whether given path refers to the symlink that points outside the container rooted in
+    given root path.
+    """
+    if not path.is_symlink():
+        return False
+
+    dst_path = path.resolve()
+
+    try:
+        dst_path.relative_to(root)
+    except ValueError:
+        logger.debug('Symlink [%s] points to [%s] which is outside of the container rooted in [%s]',
+                     path, dst_path, root)
+        return True
+
+    return False

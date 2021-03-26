@@ -24,7 +24,6 @@ Bear storage backend
 import errno
 import logging
 import os
-import re
 import sqlite3
 import threading
 from functools import partial
@@ -220,6 +219,7 @@ class BearDBStorageBackend(GeneratedStorageMixin, StorageBackend):
         }
     })
     TYPE = 'bear-db'
+    LOCATION_PARAM = 'path'
 
     def __init__(self, **kwds):
         super().__init__(**kwds)
@@ -262,9 +262,11 @@ class BearDBStorageBackend(GeneratedStorageMixin, StorageBackend):
 
         paths = [f'/.uuid/{ident}']
         categories = get_note_categories(tags)
+        if len (title) == 0:
+            title = f"{ident}"
         return {
             'object': 'container',
-            'title': title,
+            'title': '"' + title.replace ('/', '_') + '"',
             'paths': paths,
             'categories': categories,
             'backends': {'storage': [{
@@ -291,20 +293,19 @@ class BearDBStorageBackend(GeneratedStorageMixin, StorageBackend):
 
     def _dir_root(self):
         try:
-            for ident, title, _tags, timestamp in \
+            for ident, _, _tags, timestamp in \
                     self.bear_db.get_notes_with_metadata():
                 yield FileCachedDirEntry(
                     self.bear_db.path,
                     ident,
-                    partial(self._dir_note, ident, title, timestamp),
+                    partial(self._dir_note, ident, timestamp),
                     timestamp=timestamp)
         except sqlite3.DatabaseError:
             logger.exception('error loading database')
             return
 
-    def _dir_note(self, ident: str, title: str, timestamp: int):
-        name = re.sub(r'[\0\\/:*?"<>|]', '-', title)
-        yield StaticFileEntry(f'{name}.md', self._get_note(ident), timestamp=timestamp)
+    def _dir_note(self, ident: str, timestamp: int):
+        yield StaticFileEntry('note.md', self._get_note(ident), timestamp=timestamp)
 
     def _get_note(self, ident):
         note = self.bear_db.get_note(ident)

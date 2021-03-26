@@ -35,7 +35,9 @@ from .cli_base import (
 from . import (
     cli_common,
     cli_user,
+    cli_forest,
     cli_storage,
+    cli_storage_template,
     cli_storage_set,
     cli_container,
     cli_bridge,
@@ -51,17 +53,20 @@ from .. import __version__ as _version
 PROJECT_PATH = Path(__file__).resolve().parents[1]
 FUSE_ENTRY_POINT = PROJECT_PATH / 'wildland-fuse'
 
+
 @aliased_group('wl')
 @click.option('--dummy/--no-dummy', default=False,
-    help='use dummy signatures')
+              help='use dummy signatures')
 @click.option('--base-dir', default=None,
-    help='base directory for configuration')
+              help='base directory for configuration')
+@click.option('--debug/--no-debug', default=False,
+              help='print full traceback on exception')
 @click.option('--verbose', '-v', count=True,
               help='output logs (repeat for more verbosity)')
 @click.version_option(_version)
 @click.pass_context
-def main(ctx, base_dir, dummy, verbose):
-    # pylint: disable=missing-docstring
+def main(ctx, base_dir, dummy, debug, verbose):
+    # pylint: disable=missing-docstring, unused-argument
 
     client = Client(dummy=dummy, base_dir=base_dir)
     ctx.obj = ContextObj(client)
@@ -70,7 +75,9 @@ def main(ctx, base_dir, dummy, verbose):
 
 
 main.add_command(cli_user.user_)
+main.add_command(cli_forest.forest_)
 main.add_command(cli_storage.storage_)
+main.add_command(cli_storage_template.storage_template)
 main.add_command(cli_storage_set.storage_set_)
 main.add_command(cli_container.container_)
 main.add_command(cli_bridge.bridge_)
@@ -94,23 +101,30 @@ def _do_mount_containers(obj: ContextObj, to_mount):
         return
 
     fs_client = obj.fs_client
-
+    failed = []
+    commands = []
     for name in to_mount:
         click.echo(f'Resolving containers: {name}')
-        commands = []
         for container in obj.client.load_containers_from(name):
             user_paths = obj.client.get_bridge_paths_for_user(container.owner)
-            commands.extend(cli_container.prepare_mount(
-                obj, container, container.local_path, user_paths,
-                remount=False, with_subcontainers=True, subcontainer_of=None, quiet=True,
-                only_subcontainers=False))
+            try:
+                commands.extend(cli_container.prepare_mount(
+                    obj, container, str(container.local_path), user_paths,
+                    remount=False, with_subcontainers=True, subcontainer_of=None, quiet=True,
+                    only_subcontainers=False))
+            except WildlandError as we:
+                failed.append(f'Container {name} cannot be mounted: {we}')
+                continue
 
-        click.echo(f'Mounting {len(commands)}')
-        try:
-            fs_client.mount_multiple_containers(commands)
-        except IOError as e:
-            fs_client.unmount()
-            raise click.ClickException(f'Failed to mount containers: {e}')
+    click.echo(f'Mounting {len(commands)} containers.')
+
+    try:
+        fs_client.mount_multiple_containers(commands)
+    except WildlandError as e:
+        failed.append(f'Failed to mount: {e}')
+
+    if failed:
+        click.echo('Non-critical error(s) occurred:\n' + "\n".join(failed))
 
 
 @main.command(short_help='mount Wildland filesystem')
@@ -206,7 +220,6 @@ def status(obj: ContextObj, with_subcontainers):
             click.echo(f'  subcontainer-of: {storage["subcontainer_of"]}')
         click.echo()
 
-
 @main.command(short_help='renamed to "start"')
 def mount():
     """
@@ -226,7 +239,7 @@ def stop(obj: ContextObj):
     try:
         obj.fs_client.unmount()
     except WildlandError as ex:
-        raise CliError(ex) from ex
+        raise CliError(str(ex)) from ex
 
 
 @main.command(short_help='watch for changes')
@@ -247,4 +260,4 @@ def watch(obj: ContextObj, patterns, with_initial):
 
 
 if __name__ == '__main__':
-    main() # pylint: disable=no-value-for-parameter
+    main()  # pylint: disable=no-value-for-parameter

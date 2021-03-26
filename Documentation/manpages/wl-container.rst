@@ -16,6 +16,8 @@ Synopsis
 | :command:`wl container mount []`
 | :command:`wl container unmount`
 | :command:`wl container modify {add-path|del-path|add-category|del-category|set-title} [...] <file>`
+| :command:`wl container publish <container>`
+| :command:`wl container unpublish <container>`
 
 Description
 ===========
@@ -67,8 +69,8 @@ Delete a container from local filesystem.
 .. program:: wl-container-create
 .. _wl-container-create:
 
-:command:`wl container create [--owner <user>] --path <path> [--path <path2> ...] [--storage-set <storage-set>] [--encrypt-manifest/--no-encrypt-manifest] [--access <user>]`
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+:command:`wl container create [--owner <user>] [--path <path>] [--path <path2> ...] [--storage-set <storage-set>] [--encrypt-manifest/--no-encrypt-manifest] [--access <user>]`
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 Create a |~| new container manifest.
 
@@ -217,6 +219,10 @@ Example::
 This will attempt to mount, unmount and remount containers as the files matched
 by ``/*/*.yaml`` change.
 
+The pattern can be also a container WL path, either specific (like
+``wildland::/users/alice:/docs/notes:``), or wildcard (like
+``wildland::/users/alice:*:``).
+
 Make sure to use quotation marks, or the wildcard patterns will be expanded
 by the shell.
 
@@ -270,9 +276,17 @@ Stop the current mount-watch daemon.
 .. _wl-container-publish:
 
 :command:`wl container publish <container>`
-------------------------------------------------------
+-------------------------------------------
 
 Publish a container manifest into user's infrastructure container.
+
+.. program:: wl-container-unpublish
+.. _wl-container-unpublish:
+
+:command:`wl container unpublish <container>`
+---------------------------------------------
+
+Unublish a container manifest from all of user's infrastructure containers.
 
 .. _wl-container-sign:
 .. _wl-container-verify:
@@ -288,18 +302,26 @@ and :ref:`wl edit <wl-edit>` documentation.
 .. program:: wl-container-sync
 .. _wl-container-sync:
 
-:command:`wl container sync [--target-remote <id_or_type>] <container>`
------------------------------------------------------------------------
+:command:`wl container sync [--target-storage <id_or_type>] [--source-storage <id_or_type>] [--one-shot] <container>`
+---------------------------------------------------------------------------------------------------------------------
 
-Start synchronizing container's local storage with a remote storage (by default, first non-local
-storage in the manifest).
+Start synchronizing two of a container's storages, by default the first local storage with the
+first non-local storage in the manifest).
 
-.. option:: --target-remote <id_or_type>
+.. option:: --source-storage <id_or_type>
 
-   Specify which remote storage should be synced; can be specified as a backend-id or as storage
-   type (e.g. 's3'). The choice will be saved in config and used as default in future container
-   syncs.
+   Specify which should be the source storage for syncing; can be specified as a backend-id
+   or as storage type (e.g. 's3'). If not --one-shot, source and target storages are symmetric.
 
+.. option:: --target-storage <id_or_type>
+
+   Specify which should be the target storage for syncing; can be specified as a backend-id
+   or as storage type (e.g. 's3'). The choice will be saved in config and used as default in future container
+   syncs. If not --one-shot, source and target storages are symmetric.
+
+.. option:: --one-shot
+
+    Perform one-time sync, do not maintain sync.
 
 .. program:: wl-container-stop-sync
 .. _wl-container-stop-sync:
@@ -441,3 +463,9 @@ Encrypt manifest given by *<file>* so that it's only readable by its owner.
 
 Stop encrypting manifest given by *<file>*.
 
+.. _wl-container-find:
+
+:command:`wl container find <file>`
+-----------------------------------
+
+Show which container exposes the mounted file.

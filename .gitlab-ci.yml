@@ -31,6 +31,25 @@ lint:
   script:
     - ./ci/ci-lint
 
+mypy:
+  stage: test
+  image: $CONTAINER_TEST_IMAGE
+  script:
+    - ./ci/ci-mypy wildland
+  artifacts:
+    reports:
+      junit: artifacts/wildland-mypy.xml
+
+mypy-plugins:
+  allow_failure: true
+  stage: test
+  image: $CONTAINER_TEST_IMAGE
+  script:
+    - ./ci/ci-mypy --junit-xml artifacts/wildland-mypy-plugins.xml plugins
+  artifacts:
+    reports:
+      junit: artifacts/wildland-mypy-plugins.xml
+
 pytest:
   stage: test
   image: $CONTAINER_TEST_IMAGE
@@ -72,6 +91,12 @@ dropbox-test:
   image: $CONTAINER_TEST_IMAGE
   script:
     - ./ci/ci-dropbox $DROPBOX_TEST_ACCESS_TOKEN
+
+googledrive-test:
+  stage: test
+  image: $CONTAINER_TEST_IMAGE
+  script:
+    - ./ci/ci-googledrive "$GOOGLEDRIVE_TEST_ACCESS_TOKEN"
 
 smoke-test:
   stage: test

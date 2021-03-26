@@ -37,6 +37,7 @@ from .container import Container
 from .storage import Storage
 from .exc import WildlandError
 from .control_client import ControlClient
+from .entity.fileinfo import FileInfo
 
 logger = logging.getLogger('fs_client')
 
@@ -58,6 +59,7 @@ class WatchEvent:
     """
 
     event_type: str  # create, modify, delete
+    pattern: str  # pattern that generated this event
     path: PurePosixPath  # absolute path in Wildland namespace
 
 
@@ -216,9 +218,10 @@ class WildlandFSClient:
 
     def mount_multiple_containers(
             self,
-            params: Iterable[Tuple[Container, List[Storage], Iterable[PurePosixPath],
+            params: Iterable[Tuple[Container, Iterable[Storage], Iterable[PurePosixPath],
                                    Optional[Container]]],
-            remount: bool = False):
+            remount: bool = False,
+            unique_path_only: bool = False):
         """
         Mount multiple containers using a single command.
         """
@@ -227,7 +230,7 @@ class WildlandFSClient:
         commands = [
             self.get_command_for_mount_container(
                 container, storage, user_paths,
-                remount=remount, subcontainer_of=subcontainer_of)
+                remount=remount, subcontainer_of=subcontainer_of, unique_path_only=unique_path_only)
             for container, storages, user_paths, subcontainer_of in params
             for storage in storages
         ]
@@ -245,7 +248,7 @@ class WildlandFSClient:
         """
         Find primary storage ID for a given container.
         A primary storage is the one that mounts under all container paths and not just
-        under /.uuid/.../.backends/...
+        under /.backends/...
         """
 
         mount_path = self.get_user_path(container.owner, container.paths[0])
@@ -270,7 +273,10 @@ class WildlandFSClient:
         removed from the manifest since the last mount.
         """
         mounted_paths = self.get_unique_storage_paths(container)
-        valid_paths = [storage.get_mount_path(container) for storage in storages_to_mount]
+        valid_paths = [
+            PurePosixPath(f'/.users/{container.owner}') /
+                storage.get_mount_path(container).relative_to('/')
+            for storage in storages_to_mount]
 
         return list(set(mounted_paths) - set(valid_paths))
 
@@ -327,9 +333,9 @@ class WildlandFSClient:
         """
         Given a path, retrieve all mounted storages this path is inside.
 
-        Note that this doesn't include synthetic directories leading up to
-        mount path, e.g. if a storage is mounted under /a/b, then it will be
-        included as a storage for /a/b and /a/b/c, but not for /a.
+        Note that this doesn't include synthetic directories leading up to mount path, e.g. if a
+        storage is mounted under ``/a/b``, then it will be included as a storage for ``/a/b`` and
+        ``/a/b/c``, but not for ``/a``.
         """
 
         tree = self.get_path_tree()
@@ -342,6 +348,31 @@ class WildlandFSClient:
             relpath = PurePosixPath(*path.parts[i + 1:])
             for storage_id in tree.storage_ids:
                 yield storage_id, storage_path, relpath
+
+    def get_fileinfo(self, local_path: Path) -> Optional[FileInfo]:
+        """
+        Give a path to a mounted file, return diag information about the
+        file such as file's unique hash and storage that is exposing this
+        file.
+        """
+        try:
+            relpath = local_path.resolve().relative_to(self.mount_dir)
+        except ValueError:
+            return None
+
+        result = self.run_control_command('fileinfo', path=('/' + str(relpath)))
+
+        if not result:
+            return None
+
+        return FileInfo(
+            container_path=result['storage']['container-path'],
+            backend_id=result['storage']['backend-id'],
+            storage_owner=result['storage']['owner'],
+            storage_read_only=result['storage']['read-only'],
+            storage_id=result['storage']['id'],
+            file_token=result['token'],
+        )
 
     def find_trusted_owner(self, local_path: Path) -> Optional[str]:
         """
@@ -436,20 +467,22 @@ class WildlandFSClient:
         }
         return self.info_cache
 
-    def get_unique_storage_paths(self, container: Optional[Container] = None) \
-            -> Iterable[Path]:
+    def get_unique_storage_paths(self, container: Optional[Container] = None
+            ) -> Iterable[PurePosixPath]:
         """
-        Returns list of unique mount paths (ie '/.uuid/{container_uuid}/.backends/{backend_uuid}')
-        for every storage in a given container. If no container is given, return unique mount paths
-        for all mounted storages in every container.
+        Returns list of unique mount paths (ie ``/.backends/{container_uuid}/{backend_uuid}``) for
+        every mounted storage in a given container. If no container is given, return unique mount
+        paths for all mounted storages in every container.
         """
 
         paths = self.get_paths()
 
         if container:
-            path_regex = re.compile(fr'^/.uuid/{container.ensure_uuid()}/.backends/[0-9a-z-]+$')
+            pattern = fr'^/.users/{container.owner}/.backends/{container.ensure_uuid()}/[0-9a-z-]+$'
         else:
-            path_regex = re.compile(r'^/.uuid/[0-9a-z-]+/.backends/[0-9a-z-]+$')
+            pattern = r'^/.users/[0-9a-z-]+/.backends/[0-9a-z-]+/[0-9a-z-]+$'
+
+        path_regex = re.compile(pattern)
 
         for path, _storage_id in paths.items():
             if path_regex.match(str(path)):
@@ -485,19 +518,23 @@ class WildlandFSClient:
                                         storage: Storage,
                                         user_paths: Iterable[PurePosixPath],
                                         subcontainer_of: Optional[Container],
+                                        unique_path_only: bool = False,
                                         remount: bool = False):
         """
         Prepare parameters for the control client to mount a container
 
         Args:
-            container (Container): the container to be mounted
-            storages List(Storage): the storage selected for container
-            user_paths: paths to the owner, should include '/' for default user
-            remount: remount if mounted already (otherwise, will fail if
-            mounted already)
+            container (Container): the container to be mounted storages List(Storage): the storage
+            selected for container user_paths: paths to the owner, should include ``/`` for default
+            user unique_path_only: mount only under internal unique path
+            (``/.backends/{container_uuid}/{backend_id}``) remount: remount if mounted already
+            (otherwise, will fail if mounted already)
         """
 
-        mount_paths = self.get_storage_mount_paths(container, storage, user_paths)
+        if unique_path_only:
+            mount_paths = [self.get_primary_unique_mount_path(container, storage)]
+        else:
+            mount_paths = self.get_storage_mount_paths(container, storage, user_paths)
 
         trusted_owner: Optional[str]
         if storage.params.get('trusted'):
@@ -523,14 +560,14 @@ class WildlandFSClient:
         """
         Return all mount paths (incl. synthetic ones) for given storage.
 
-        Container paths always start with `/.uuid/{container_uuid}` path which must always be
+        Container paths always start with ``/.uuid/{container_uuid}`` path which must always be
         present (as defined in Container's constructor'). If a storage is a secondary storage, we
-        want to mount it solely under `/.uuid/{container_uuid}/.backends/{storage_uuid}` directory,
-        otherwise mount it under all directories.
-
-        Note that this function will return `/.uuid/{container_uuid}/.backends/{storage_id}`.
+        want to mount it solely under ``/.backends/{container_uuid}/{storage_uuid}`` and
+        ``/.users/{uid}/.backends/{container_uuid}/{storage_id}`` directory, otherwise mount it
+        additionally under ``/.users/{uid}/.uuid/{uuid}``, ``/.users/{uid}/{path}``,
+        ``/.uuid/{uuid}`` and ``/{path}``.
         """
-        paths = container.expanded_paths
+        paths = container.expanded_paths  # only primary storage is mounted in here
 
         unique_backend_path = storage.get_mount_path(container)
 
@@ -543,11 +580,22 @@ class WildlandFSClient:
             user_path / path.relative_to('/')
             for path in storage_paths
             for user_path in itertools.chain(
-                user_paths,
-                [self.get_user_path(container.owner, PurePosixPath('/'))])
+                [self.get_user_path(container.owner, PurePosixPath('/'))],
+                user_paths)
         ]
 
         return paths
+
+    def get_primary_unique_mount_path(self, container: Container, storage: Storage):
+        """
+        Return a primary unique mount path. This is the mount path that uniquely identify a
+        storage of a given container and also where the storage is always mounted -
+        regardless of user-provided paths.
+        """
+
+        unique_backend_path = storage.get_mount_path(container)
+        return self.get_user_path(container.owner, PurePosixPath('/')) \
+               / unique_backend_path.relative_to('/')
 
     @staticmethod
     def get_storage_tag(paths: List[PurePosixPath], params):
@@ -592,7 +640,7 @@ class WildlandFSClient:
                     logger.debug('watching %d:%s', storage_id, relpath)
                     watch_id = client.run_command(
                         'add-watch', storage_id=storage_id, pattern=str(relpath))
-                    watches[watch_id] = storage_path
+                    watches[watch_id] = (storage_path, pattern)
 
             if with_initial:
                 initial = []
@@ -601,7 +649,7 @@ class WildlandFSClient:
                     for file_path in glob.glob(str(local_path)):
                         fs_path = PurePosixPath('/') / Path(file_path).relative_to(
                             self.mount_dir)
-                        initial.append(WatchEvent('create', fs_path))
+                        initial.append(WatchEvent('create', pattern, fs_path))
                 if initial:
                     yield initial
 
@@ -609,10 +657,12 @@ class WildlandFSClient:
                 watch_events = []
                 for event in events:
                     watch_id = event['watch-id']
-                    storage_path = watches[watch_id]
+                    storage_path, pattern = watches[watch_id]
                     event_type = event['type']
                     path = PurePosixPath(event['path'])
-                    watch_events.append(WatchEvent(event_type, storage_path / path))
+                    watch_events.append(WatchEvent(event_type, pattern, storage_path / path))
                 yield watch_events
+        except GeneratorExit:
+            pass
         finally:
             client.disconnect()
