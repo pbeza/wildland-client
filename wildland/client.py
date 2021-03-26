@@ -30,7 +30,7 @@ import logging
 import os
 from graphlib import TopologicalSorter
 from pathlib import Path, PurePosixPath
-from typing import Dict, Iterable, Iterator, Optional, Set, Tuple, Union
+from typing import Dict, Iterable, Iterator, List, Optional, Set, Tuple, Union
 from urllib.parse import urlparse, quote
 
 import yaml
@@ -517,13 +517,22 @@ class Client:
             path.read_bytes(), path,
             trusted_owner=trusted_owner)
 
-    def ensure_mount_reference_container(self, containers):
+    def ensure_mount_reference_container(self, containers) -> Tuple[List[Container], str, bool]:
         '''
         Ensure that for any storage with MOUNT_REFERENCE_CONTAINER corresponding
         reference_container appears in sequence before the referencer.
         '''
+
         dependency_graph: Dict[Container, Set[Container]] = dict()
-        containers_to_process = list(containers)
+        exc_msg = ""
+        failed = False
+        containers_to_process = []
+        try:
+            for c in containers:
+                containers_to_process.append(c)
+        except WildlandError as ex:
+            failed = True
+            exc_msg += str(ex) + '\n'
         iter_obj = iter(containers_to_process)
 
         def open_node(container):
@@ -570,7 +579,7 @@ class Client:
                 continue
             final_order.append(i)
         final_order = dependencies_first + final_order
-        return final_order
+        return (final_order, exc_msg, failed)
 
     @functools.lru_cache
     def get_bridge_paths_for_user(self, user: Union[User, str], owner: Optional[User] = None) \

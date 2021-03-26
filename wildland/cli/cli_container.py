@@ -631,8 +631,10 @@ def mount(obj: ContextObj, container_names, remount, save, import_users: bool,
             continue
 
         try:
-            processed = obj.client.ensure_mount_reference_container(containers)
-            for container in processed:
+            reordered, exc_msg_cont, failed2 = obj.client.ensure_mount_reference_container(containers)
+            failed = failed or failed2
+            exc_msg += exc_msg_cont
+            for container in reordered:
                 try:
                     user_paths = obj.client.get_bridge_paths_for_user(container.owner)
                     params.extend(prepare_mount(
