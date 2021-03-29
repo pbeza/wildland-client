@@ -26,6 +26,9 @@ Storage backends
 .. autoclass:: wildland.storage_backends.delegate.DelegateProxyStorageBackend
    :members:
 
+.. autoclass:: wildland.storage_backends.encrypted.EncryptedStorageBackend
+   :members:
+
 .. autoclass:: wildland.storage_backends.dummy.DummyStorageBackend
    :members:
 
