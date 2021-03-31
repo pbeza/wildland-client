@@ -624,13 +624,17 @@ def mount(obj: ContextObj, container_names, remount, save, import_users: bool,
                 )
             else:
                 containers = obj.client.load_containers_from(container_name)
+
         except WildlandError as ex:
             failed = True
             exc_msg += str(ex) + '\n'
             continue
 
         try:
-            for container in containers:
+            reordered, em_cont, fail2 = obj.client.ensure_mount_reference_container(containers)
+            failed = failed or fail2
+            exc_msg += em_cont
+            for container in reordered:
                 try:
                     user_paths = obj.client.get_bridge_paths_for_user(container.owner)
                     params.extend(prepare_mount(

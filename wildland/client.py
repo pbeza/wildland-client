@@ -28,8 +28,9 @@ import functools
 import glob
 import logging
 import os
+from graphlib import TopologicalSorter
 from pathlib import Path, PurePosixPath
-from typing import Dict, Iterable, Iterator, Optional, Tuple, Union
+from typing import Dict, Iterable, Iterator, List, Optional, Set, Tuple, Union
 from urllib.parse import urlparse, quote
 
 import yaml
@@ -516,6 +517,70 @@ class Client:
             path.read_bytes(), path,
             trusted_owner=trusted_owner)
 
+    def ensure_mount_reference_container(self, containers) -> Tuple[List[Container], str, bool]:
+        '''
+        Ensure that for any storage with MOUNT_REFERENCE_CONTAINER corresponding
+        reference_container appears in sequence before the referencer.
+        '''
+
+        dependency_graph: Dict[Container, Set[Container]] = dict()
+        exc_msg = ""
+        failed = False
+        containers_to_process = []
+        try:
+            for c in containers:
+                containers_to_process.append(c)
+        except WildlandError as ex:
+            failed = True
+            exc_msg += str(ex) + '\n'
+        iter_obj = iter(containers_to_process)
+
+        def open_node(container):
+            for backend in container.backends:
+                if 'reference-container' not in backend:
+                    continue
+
+                backend_cls = StorageBackend.types()[backend['type']]
+                if not backend_cls.MOUNT_REFERENCE_CONTAINER:
+                    continue
+
+                container_url_or_dict = backend['reference-container']
+
+                if isinstance(container_url_or_dict, str):
+                    referenced = self.load_container_from_url(
+                        container_url_or_dict, container.owner
+                    )
+
+                else:
+                    referenced = self.load_container_from_dict(
+                        container_url_or_dict, container.owner
+                    )
+
+                if container in dependency_graph.keys():
+                    dependency_graph[container].add(referenced)
+                else:
+                    dependency_graph[container] = {referenced}
+                if referenced not in containers_to_process:
+                    containers_to_process.append(referenced)
+
+        while True:
+            try:
+                container = next(iter_obj)
+                open_node(container)
+            except StopIteration:
+                break
+
+        ts = TopologicalSorter(dependency_graph)
+        dependencies_first = list(ts.static_order())
+
+        final_order = []
+        for i in containers_to_process:
+            if i in dependencies_first:
+                continue
+            final_order.append(i)
+        final_order = dependencies_first + final_order
+        return (final_order, exc_msg, failed)
+
     @functools.lru_cache
     def get_bridge_paths_for_user(self, user: Union[User, str], owner: Optional[User] = None) \
             -> Iterable[PurePosixPath]:
@@ -716,9 +781,18 @@ class Client:
             # If there is a 'container' parameter with a backend URL, convert
             # it to an inline manifest.
             if 'reference-container' in storage.params:
-                storage.params['storage'] = self._select_reference_storage(
+                referenced_storage_and_path = self._select_reference_storage(
                     storage.params['reference-container'], container.owner, storage.trusted
                 )
+                if referenced_storage_and_path is None:
+                    logging.warning("Can't select reference storage: %s",
+                                    storage.params['reference-container'])
+                    continue
+                path, storage.params['storage'] = referenced_storage_and_path
+                backend_cls = StorageBackend.types()[storage.storage_type]
+                if backend_cls.MOUNT_REFERENCE_CONTAINER:
+                    storage_path = str(self.fs_client.mount_dir / path.relative_to('/'))
+                    storage.params['storage-path'] = storage_path
                 if storage.params['storage'] is None:
                     continue
 
@@ -771,11 +845,12 @@ class Client:
             self,
             container_url_or_dict: Union[str, Dict],
             owner: str,
-            trusted: bool) -> Optional[Dict]:
-        """
-        Select a "reference" storage based on URL or dictionary. This resolves a
-        container specification and then selects storage for the container.
-        """
+            trusted: bool) -> Optional[Tuple[PurePosixPath, Dict]]:
+        '''
+        Select an "reference" storage and default container path based on URL
+        or dictionary. This resolves a container specification and then selects
+        storage for the container.
+        '''
 
         # use custom caching that dumps *container_url_or_dict* to yaml,
         # because dict is not hashable (and there is no frozendict in python)
@@ -801,8 +876,9 @@ class Client:
             return None
 
         reference_storage = self.select_storage(container)
-        self._select_reference_storage_cache[cache_key] = reference_storage.params
-        return reference_storage.params
+        result = container.paths[0], reference_storage.params
+        self._select_reference_storage_cache[cache_key] = result
+        return result
 
     @staticmethod
     def _postprocess_subcontainer(container: Container,
