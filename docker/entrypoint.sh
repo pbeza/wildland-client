@@ -1,6 +1,5 @@
 #!/bin/bash -e
 
-sudo chown -R user:user /dev/null
 . /home/user/env/bin/activate
 
 pip install . plugins/*
