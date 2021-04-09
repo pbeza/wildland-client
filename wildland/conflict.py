@@ -32,7 +32,6 @@ import errno
 
 from .storage_backends.base import Attr
 
-
 @dataclasses.dataclass
 class Resolved:
     """
@@ -139,6 +138,18 @@ class MountDir:
             if first in self.children:
                 rest = path.relative_to(first)
                 yield from self.children[first].resolve(rest)
+
+    def relative_storage_ids(self):
+        """
+        Return storage ids relative to itself
+        """
+        for storage_id in self.storage_ids:
+            yield storage_id
+
+        for _, child in self.children.items():
+            if isinstance(child, MountDir):
+                for storage_id in child.relative_storage_ids():
+                    yield storage_id
 
 
 class ConflictResolver(metaclass=abc.ABCMeta):
@@ -381,6 +392,39 @@ class ConflictResolver(metaclass=abc.ABCMeta):
         # Nothing found.
         assert len(file_results) == len(dir_results) == 0
         raise FileNotFoundError(errno.ENOENT, '')
+
+    def find_storage_ids(self, path):
+        """
+        Return a list of storage ids that claim the given path
+        """
+        start_from = self.root
+
+        real_storages = []
+
+        # Try to resolve a physical (real) storages that claim this path
+        resolved = self._resolve(PurePosixPath(path))
+        for res in resolved:
+            st = handle_io_error(self.storage_getattr, res.ident, res.relpath)
+            if st and stat.S_ISDIR(st.mode):
+                real_storages.append(res.ident)
+
+        for part in path.parts:
+            if part in start_from.children:
+                if not isinstance(start_from.children[part], MountDir):
+                    # we've hit an actual, physical directory but we haven't traversed through
+                    # all parts
+                    return real_storages
+
+                # Move one level down in the mounted directories tree
+                start_from = start_from.children[part]
+            else:
+                # We couldn't reach end of path, returning possible physical storages only
+                return real_storages
+
+        # We've reached end of path and didn't hit the actual storage
+        # That means we were resolving a mounted path (container path)
+        # and return possible real storages discovered earlier
+        return real_storages + list(start_from.relative_storage_ids())
 
     @functools.lru_cache(500)
     def _resolve(self, real_path):
