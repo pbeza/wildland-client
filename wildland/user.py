@@ -25,7 +25,7 @@ from pathlib import Path, PurePosixPath
 from typing import List, Optional, Union
 import logging
 
-from .manifest.manifest import Manifest
+from .manifest.manifest import Manifest, WildlandObjectType
 from .manifest.schema import Schema
 
 
@@ -39,6 +39,7 @@ class User:
     """
 
     SCHEMA = Schema('user')
+    OBJECT_TYPE = WildlandObjectType.USER
 
     def __init__(self, *,
                  owner: str,
@@ -94,7 +95,7 @@ class User:
         """
 
         manifest = Manifest.from_fields({
-            'object': type(self).__name__.lower(),
+            'object': self.OBJECT_TYPE.value,
             'owner': self.owner,
             'paths': [str(p) for p in self.paths],
             'infrastructures': self.containers,
@@ -104,11 +105,12 @@ class User:
         manifest.apply_schema(self.SCHEMA)
         return manifest
 
-    def add_user_keys(self, sig_context):
+    def add_user_keys(self, sig_context, add_primary=True):
         """
-        Add all user keys (primary key and any keys listed in "pubkeys" field) to the given
-        sig_context.
+        Add user keys (primary key only if add_primary is True and any keys listed in "pubkeys"
+        field) to the given sig_context.
         """
-        sig_context.add_pubkey(self.pubkeys[0])
+        if add_primary:
+            sig_context.add_pubkey(self.pubkeys[0])
         for additional_pubkey in self.pubkeys[1:]:
             sig_context.add_pubkey(additional_pubkey, self.owner)
