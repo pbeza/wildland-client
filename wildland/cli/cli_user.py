@@ -21,8 +21,9 @@
 Manage users
 """
 
-from typing import Tuple, Iterable, Optional
+from typing import Tuple, Iterable, Optional, Dict, Union
 from pathlib import PurePosixPath, Path
+import logging
 import binascii
 import click
 
@@ -36,7 +37,10 @@ from ..exc import WildlandError
 from ..manifest.schema import SchemaError
 from ..manifest.sig import SigError
 from ..manifest.manifest import Manifest, WildlandObjectType
+from ..storage_driver import StorageDriver
+from ..storage import Storage
 
+logger = logging.getLogger('cli-user')
 
 @aliased_group('user', short_help='user management')
 def user_():
@@ -301,25 +305,93 @@ def _do_import_manifest(obj, path, force: bool = False) -> Tuple[Optional[Path],
     return destination, file_url
 
 
+def _find_user_manifest_within_infrastructures(obj, user: User) -> \
+    Optional[Tuple[Storage, PurePosixPath]]:
+    """
+    Mounts containers of the given user (infrastructures) and attempts to find that user's
+    manifest file within that infrastructure.
+
+    :param user: User
+    :return tuple of Storage where the user manifest was found and PurePosixPath path pointing
+    at that manifest in the storage
+
+    """
+    search_directories = ['users']
+
+    for container in user.containers:
+        try:
+            container_candidate = (
+                obj.client.load_object_from_url_or_dict(
+                    WildlandObjectType.CONTAINER, container, user.owner))
+
+            all_storages = obj.client.all_storages(container=container_candidate)
+
+            for storage_candidate in all_storages:
+                with StorageDriver.from_storage(storage_candidate) as driver:
+                    for directory_candidate in search_directories:
+                        root_path = PurePosixPath(directory_candidate)
+
+                        try:
+                            files = driver.storage_backend.readdir(root_path)
+
+                        except WildlandError as ex:
+                            logger.debug('Could not list directory [%s]. Exception: %s',
+                                         root_path, ex)
+                            continue
+
+                        for file in files:
+                            try:
+                                file_candidate = (root_path / file)
+                                file_content   = driver.read_file(file_candidate)
+
+                                file_user_obj = obj.client.load_object_from_bytes(
+                                            WildlandObjectType.USER, file_content)
+
+                                if file_user_obj.owner == user.owner:
+                                    return storage_candidate, file_candidate
+
+                            except WildlandError as ex:
+                                logger.debug('Could not read user manifest. Exception: %s', ex)
+        except WildlandError as ex:
+            logger.debug('Could not container manifest. Exception: %s', ex)
+
+    return None
+
+
 def _do_process_imported_manifest(
-        obj: ContextObj, copied_manifest_path: Path, manifest_url: str,
+        obj: ContextObj, copied_manifest_path: Path, user_manifest_location: Union[str, Dict],
         paths: Iterable[PurePosixPath], default_user: str):
     """
     Perform followup actions after importing a manifest: create a Bridge manifest for a user,
     import a Bridge manifest's target user
     :param obj: ContextObj
     :param copied_manifest_path: Path to where the manifest was copied
-    :param manifest_url: url to manifest (local or remote, depending on input)
+    :param user_manifest_location: url to manifest (local or remote, depending on input)
     :param paths: list of paths to use in created Bridge manifest
     :param default_user: owner of the manifests to be created
     """
     manifest = Manifest.from_file(copied_manifest_path, obj.session.sig)
 
     if manifest.fields['object'] == 'user':
-        user = User.from_manifest(manifest, manifest.fields['pubkeys'][0])
+        user   = User.from_manifest(manifest, manifest.fields['pubkeys'][0])
+        result = _find_user_manifest_within_infrastructures(obj, user)
+
+        if result:
+            storage, file_path = result
+
+            storage.owner = default_user
+            storage_manifest = storage.to_unsigned_manifest()
+            storage_manifest.skip_verification()
+
+            user_manifest_location = {
+                'object': 'link',
+                'file': str(('/' / file_path)),
+                'storage': storage_manifest.fields
+            }
+
         bridge = Bridge(
             owner=default_user,
-            user_location=manifest_url,
+            user_location=user_manifest_location,
             user_pubkey=user.primary_pubkey,
             paths=(paths if paths else user.paths),
         )
@@ -336,7 +408,6 @@ def _do_process_imported_manifest(
             bridge.owner = default_user
         copied_manifest_path.write_bytes(obj.session.dump_object(bridge))
         _do_import_manifest(obj, bridge.user_location)
-
 
 def import_manifest(obj: ContextObj, name, paths, bridge_owner, only_first):
     """
