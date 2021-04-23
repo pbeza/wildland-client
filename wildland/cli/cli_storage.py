@@ -22,7 +22,8 @@ Storage object
 """
 
 from typing import Type
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
+from urllib.parse import urlparse, urlunparse
 import functools
 import uuid
 
@@ -57,20 +58,20 @@ def _make_create_command(backend: Type[StorageBackend]):
     params = [
         click.Option(['--container'], metavar='CONTAINER',
                      required=True,
-                     help='Container this storage is for.'),
+                     help='Container this storage is for'),
         click.Option(['--trusted'], is_flag=True,
                      help='Make the storage trusted. Default: false'),
         click.Option(['--inline/--no-inline'], default=True,
                      help='Add the storage directly to container '
                      'manifest, instead of saving it to a file. Default: inline.'),
         click.Option(['--manifest-pattern'], metavar='GLOB',
-                     help='Set the manifest pattern for storage.'),
+                     help='Set the manifest pattern for storage'),
         click.Option(['--watcher-interval'], metavar='SECONDS', required=False,
                      help='Set the storage watcher-interval in seconds.'),
         click.Option(['--base-url'], metavar='BASEURL',
-                     help='Set public base URL.'),
+                     help='Set public base URL'),
         click.Option(['--access'], multiple=True, required=False, metavar='USER',
-                     help="Limit access to this storage to the provided users. "
+                     help="limit access to this storage to the provided users. "
                           "Default: same as the container."),
         click.Argument(['name'], metavar='NAME', required=False),
     ]
@@ -289,18 +290,37 @@ def do_create_storage_from_set(client, container, storage_set, local_dir):
         storage = Storage.from_manifest(manifest,
                                         local_owners=client.config.get('local-owners'))
 
-        try:
-            backend = StorageBackend.from_params(storage.params)
-            backend.mount()
+        storage_type = storage.params['type']
+        storage_cls = StorageBackend.types()[storage_type]
 
-            try:
-                backend.mkdir(PurePosixPath(''))
-            except Exception:
-                click.echo('WARNING: Cannot create storage root. Proceeding conditionally.')
-            finally:
-                backend.unmount()
-        except Exception:
-            click.echo('WARNING: Cannot mount storage. Proceeding conditionally.')
+        if (storage_cls.LOCATION_PARAM and
+            storage_cls.LOCATION_PARAM in storage.params and
+            storage.params[storage_cls.LOCATION_PARAM]):
+
+            # Template-generated paths/uris sanity check
+            orig_location = str(storage.params[storage_cls.LOCATION_PARAM])
+
+            if client.is_url(orig_location):
+                uri      = urlparse(orig_location)
+                path     = Path(uri.path).resolve()
+                location = urlunparse((uri.scheme, uri.netloc, str(path),
+                                       uri.params, uri.query, uri.fragment))
+            else:
+                path     = Path(orig_location)
+                location = orig_location
+
+            storage.params[storage_cls.LOCATION_PARAM] = str(location)
+
+            backend = StorageBackend.from_params(storage.params)
+
+            # Ensure that base path actually exists
+            if storage.is_writeable:
+                try:
+                    with backend:
+                        backend.mkdir(PurePosixPath(path))
+                        click.echo(f"Created base path: {path}")
+                except Exception as ex:
+                    print(f"FAIL: {ex}")
 
         click.echo(f'Adding storage {storage.backend_id} to container.')
         client.add_storage_to_container(container=container, storage=storage,
