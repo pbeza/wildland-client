@@ -268,8 +268,11 @@ def _do_import_manifest(obj, path, force: bool = False) -> Tuple[Optional[Path],
         file_name = Path(path).stem
         file_url = obj.client.local_url(Path(path).absolute())
     else:
-        file_data = obj.client.read_from_url(path, obj.client.config.get('@default'),
-                                             use_aliases=True)
+        try:
+            file_data = obj.client.read_from_url(path, use_aliases=True)
+        except FileNotFoundError as fnf:
+            raise CliError('File was not found') from fnf
+
         file_name = _remove_suffix(path.split('/')[-1], '.yaml')
         file_url = path
 
@@ -409,7 +412,7 @@ def _do_process_imported_manifest(
         copied_manifest_path.write_bytes(obj.session.dump_object(bridge))
         _do_import_manifest(obj, bridge.user_location)
 
-def import_manifest(obj: ContextObj, name, paths, bridge_owner, only_first):
+def import_manifest(obj: ContextObj, name, paths, wl_obj_type, bridge_owner, only_first):
     """
     Import a provided user or bridge manifest.
     Accepts a local path, an url or a Wildland path to manifest or to bridge.
@@ -424,8 +427,7 @@ def import_manifest(obj: ContextObj, name, paths, bridge_owner, only_first):
     if not default_user:
         raise CliError('Cannot import user or bridge without a --bridge-owner or a default user.')
 
-    if Path(name).exists() or obj.client.is_url_file_path(name):
-        # try to import manifest file
+    if wl_obj_type == WildlandObjectType.USER:
         copied_manifest_path, manifest_url = _do_import_manifest(obj, name)
         if not copied_manifest_path or not manifest_url:
             return
@@ -438,7 +440,7 @@ def import_manifest(obj: ContextObj, name, paths, bridge_owner, only_first):
                 f'Import error occurred. Removing created files: {str(copied_manifest_path)}')
             copied_manifest_path.unlink()
             raise CliError(f'Failed to import: {str(ex)}') from ex
-    else:
+    elif wl_obj_type == WildlandObjectType.BRIDGE:
         # this didn't work out, perhaps we have an url to a bunch of bridges?
         bridges = list(obj.client.read_bridge_from_url(name, use_aliases=True))
         if not bridges:
@@ -470,6 +472,8 @@ def import_manifest(obj: ContextObj, name, paths, bridge_owner, only_first):
                     f'Import error occurred. Removing created files: {str(file)}')
                 file.unlink(missing_ok=True)
             raise CliError(f'Failed to import: {str(ex)}') from ex
+    else:
+        raise CliError(f"[{wl_obj_type}] object type is not supported")
 
 
 @user_.command('import', short_help='import bridge or user manifest', alias=['im'])
@@ -495,7 +499,7 @@ def user_import(obj: ContextObj, path_or_url, paths, bridge_owner, only_first):
 
     obj.client.recognize_users()
 
-    import_manifest(obj, path_or_url, paths, bridge_owner, only_first)
+    import_manifest(obj, path_or_url, paths, WildlandObjectType.USER, bridge_owner, only_first)
 
 
 @user_.command('refresh', short_help='Iterate over bridges and pull latest user manifests',

@@ -143,7 +143,7 @@ def bridge_import(obj: ContextObj, path_or_url, paths, bridge_owner, only_first)
     """
     obj.client.recognize_users()
 
-    import_manifest(obj, path_or_url, paths, bridge_owner, only_first)
+    import_manifest(obj, path_or_url, paths, WildlandObjectType.BRIDGE, bridge_owner, only_first)
 
 
 bridge_.add_command(sign)
