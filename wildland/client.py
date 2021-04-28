@@ -110,6 +110,7 @@ class Client:
         self.session: Session = Session(sig)
 
         self.users: Dict[str, User] = {}
+        self.bridges: Set[Bridge] = set()
 
         self._select_reference_storage_cache = {}
 
@@ -126,6 +127,7 @@ class Client:
     def recognize_users(self, users: Optional[Iterable[User]] = None):
         """
         Load users and recognize their keys from the users directory or a given iterable.
+        This function loads also all (local) bridges, so it's possible to find paths for the users.
         """
         for user in users or self.load_all(WildlandObjectType.USER, decrypt=False):
             user.add_user_keys(self.session.sig)
@@ -133,6 +135,9 @@ class Client:
         # duplicated to decrypt infrastructures correctly
         for user in users or self.load_all(WildlandObjectType.USER):
             self.users[user.owner] = user
+
+        for bridge in self.load_all(WildlandObjectType.BRIDGE):
+            self.bridges.add(bridge)
 
     def find_local_manifest(self, object_type: Union[WildlandObjectType, None],
                             name: str) -> Optional[Path]:
@@ -419,6 +424,9 @@ class Client:
         self.recognize_users(
             [ustep.user for ustep in final_step.steps_chain()
              if ustep.user is not None])
+        self.bridges.update(
+            [ustep.bridge for ustep in final_step.steps_chain()
+             if ustep.bridge is not None])
 
     def load_containers_from(self, name: Union[str, WildlandPath],
                              aliases: Optional[dict] = None) -> Iterator[Container]:
@@ -607,7 +615,7 @@ class Client:
             return [[]]
 
         bridges_map: Dict[str, List[Bridge]] = {}
-        for bridge in self.load_all(WildlandObjectType.BRIDGE):
+        for bridge in self.bridges:
             bridges_map.setdefault(bridge.owner, []).append(bridge)
 
         if owner.owner in bridges_map:
