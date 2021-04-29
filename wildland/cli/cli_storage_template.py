@@ -140,7 +140,7 @@ def _do_create(
         if value is None or value == []:
             del params[param]
 
-    template_manager = TemplateManager(obj.client.dirs[WildlandObjectType.SET])
+    template_manager = TemplateManager(obj.client.dirs[WildlandObjectType.TEMPLATE])
 
     try:
         path = template_manager.create_storage_template(name, params)
@@ -158,7 +158,7 @@ def template_list(obj: ContextObj, show_filenames):
     Display known storage templates
     """
 
-    template_manager = TemplateManager(obj.client.dirs[WildlandObjectType.SET])
+    template_manager = TemplateManager(obj.client.dirs[WildlandObjectType.TEMPLATE])
 
     click.echo("Available templates:")
     templates = template_manager.available_templates()
@@ -168,29 +168,22 @@ def template_list(obj: ContextObj, show_filenames):
     else:
         for template in templates:
             if show_filenames:
-                click.echo(f"    {template} [{template_manager.template_dir / template.file_name}]")
+                click.echo(f"    {template} [{template_manager.get_file_path(str(template))}]")
             else:
                 click.echo(f"    {template}")
 
 
 @storage_template.command('remove', short_help='remove storage template', alias=['rm', 'd'])
-@click.option('--force', is_flag=True, default=False,
-              help="Force delete even if attached to a set.")
-@click.option('--cascade', is_flag=True, default=False,
-              help="Delete together with attached sets")
 @click.argument('name', required=True)
 @click.pass_obj
-def template_del(obj: ContextObj, name: str, force: bool, cascade: bool):
+def template_del(obj: ContextObj, name: str):
     """
     Remove a storage template set.
     """
 
-    if force and cascade:
-        raise CliError("Remove command accepts either force or cascade option, but not both.")
-
-    template_manager = TemplateManager(obj.client.dirs[WildlandObjectType.SET])
+    template_manager = TemplateManager(obj.client.dirs[WildlandObjectType.TEMPLATE])
     try:
-        template_manager.remove_storage_template(name, force, cascade)
+        template_manager.remove_storage_template(name)
     except FileNotFoundError as fnf:
         raise CliError(f"Template [{name}] does not exist.") from fnf
     except WildlandError as ex:
