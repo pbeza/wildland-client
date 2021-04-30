@@ -3471,9 +3471,8 @@ def test_import_forest_user_with_bridge_link_object(cli, tmp_path, base_dir):
 
     cli('storage-template', 'create', 'local', '--location', f'{tmp_path}/wl-forest',
         'forest-template')
-    cli('storage-set', 'add', '--template', 'forest-template', 'forest-set')
 
-    cli('forest', 'create', '--access', '*', 'Alice', 'forest-set')
+    cli('forest', 'create', '--access', '*', 'Alice', 'forest-template')
 
     shutil.copy(Path(f'{base_dir}/users/Alice.user.yaml'), Path(f'{tmp_path}/Alice.yaml'))
 
