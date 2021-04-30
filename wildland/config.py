@@ -206,7 +206,6 @@ class Config:
             'local-hostname': 'localhost',
             'local-owners': [],
             'default-containers': [],
-            'default-storage-set-for-user': {},
             'default-remote-for-container': {},
         }
 
