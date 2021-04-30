@@ -163,8 +163,9 @@ class ConflictResolver(metaclass=abc.ABCMeta):
 
     The conflict resolution rules are as follows:
     - If there are multiple directories with the same name, create a synthetic
-      directory with this name. The directory is read only (i.e. the list of
-      files cannot be modified, but the files themselves can).
+      directory with this name. If more that one backing storage is writable, the directory
+      is forced to be read only (i.e. the list of files cannot be modified,
+      but the files themselves can).
     - If there are multiple files with the same name, or a single file with the
       same name as directory, the file name is changed to '{name.stem}.wl_{storage}.{name.suffix}'
       (with stem and suffix being PurePosixPath semantic).
@@ -325,16 +326,21 @@ class ConflictResolver(metaclass=abc.ABCMeta):
             real_path = path
             ident = None
 
+        # use synthetic dir as a last resort (if relevant)
+        # FIXME: this is ugly, all those 'and synthetic_dir is [not] None' below
+        synthetic_dir = None
         if self.root.is_synthetic(real_path):
-            return Attr(
+            synthetic_dir = Attr(
                 mode=stat.S_IFDIR | 0o555,
-            ), None
+            )
 
         resolved = self._resolve(real_path)
         if len(resolved) == 0:
+            if synthetic_dir is not None:
+                return synthetic_dir, None
             raise FileNotFoundError(errno.ENOENT, '')
 
-        if len(resolved) == 1:
+        if len(resolved) == 1 and synthetic_dir is None:
             if ident is not None:
                 raise FileNotFoundError(errno.ENOENT, '')
 
@@ -356,22 +362,27 @@ class ConflictResolver(metaclass=abc.ABCMeta):
             else:
                 file_results.append((st, res))
 
-        if len(dir_results) == 1:
+        if len(dir_results) == 1 and synthetic_dir is None:
             # This is a directory in a single storage.
             if ident is not None:
                 raise FileNotFoundError(errno.ENOENT, '')
 
             return dir_results[0]
 
-        if len(dir_results) > 1:
-            # Multiple directories, return a synthetic read-only directory.
+        if len(dir_results) > 1 or synthetic_dir is not None:
+            # Multiple directories, return a synthetic read-only directory if writable storage
+            # cannot be unambiguously found.
             if ident is not None:
                 raise FileNotFoundError(errno.ENOENT, '')
 
-            st = Attr(
-                mode=stat.S_IFDIR | 0o555,
-            )
-            return (st, None)
+            writable_dirs = [res for res in dir_results
+                             if res[0].mode & 0o200]
+            if len(writable_dirs) != 1:
+                st = Attr(
+                    mode=stat.S_IFDIR | 0o555,
+                )
+                return (st, None)
+            return writable_dirs[0]
 
         if len(file_results) == 1:
             # This is a single file, not conflicting with anything.

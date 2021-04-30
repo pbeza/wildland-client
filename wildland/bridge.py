@@ -24,6 +24,7 @@ Bridge manifest object
 from pathlib import PurePosixPath, Path
 from typing import Optional, List, Iterable, Union
 
+from .container import Container
 from .manifest.manifest import Manifest, WildlandObjectType
 from .manifest.schema import Schema
 
@@ -82,6 +83,28 @@ class Bridge:
         })
         manifest.apply_schema(self.SCHEMA)
         return manifest
+
+    def to_placeholder_container(self, client) -> Container:
+        """
+        Create a placeholder container that shows how to mount the target user's forest.
+        """
+
+        # TODO: having to use client (or SigContext) just to get the fingerprint feels wrong...
+        # also, 'client' type annotation is missing intentionally, to avoid import loop
+        user = client.session.sig.fingerprint(self.user_pubkey)
+
+        return Container(
+            owner=user,
+            paths=[PurePosixPath('/')],
+            backends=[{
+                'type': 'static',
+                'content': {
+                    'WILDLAND-FOREST.txt': \
+                        f'This directory holds forest of user {user}.\n'
+                        f'Use \'wl forest mount\' command to get access to it.\n',
+                }
+            }]
+        )
 
     def __repr__(self):
         return f'<Bridge: {self.owner}: {", ".join([str(p) for p in self.paths])}>'
