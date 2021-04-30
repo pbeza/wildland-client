@@ -225,6 +225,19 @@ class Client:
                                             decrypt=decrypt)
         raise WildlandError(f'Unknown manifest type: {object_type.value}')
 
+    def read_link_object(self,
+                         storage: dict,
+                         file_path: PurePosixPath,
+                         expected_owner: Optional[str]) -> bytes:
+        """
+        Attempt to find file in storage (aka link object) and return its content
+        """
+        storage_obj = self.load_object_from_dict(WildlandObjectType.STORAGE, storage,
+                                                 expected_owner=expected_owner, container_path='/')
+        storage_backend = StorageBackend.from_params(storage_obj.params)
+        with StorageDriver(storage_backend, storage) as driver:
+            return driver.read_file(file_path.relative_to('/'))
+
     def load_object_from_dict(self,
                               object_type: Union[WildlandObjectType, None],
                               dictionary: dict,
@@ -247,13 +260,11 @@ class Client:
             encryption_warning = True
             if 'encrypted' in dictionary:
                 raise ManifestError('This inline storage cannot be decrypted')
+
         if dictionary.get('object', None) == 'link':
-            storage = self.load_object_from_dict(WildlandObjectType.STORAGE, dictionary['storage'],
-                                                 expected_owner=expected_owner, container_path='/')
-            storage_backend = StorageBackend.from_params(storage.params)
-            driver = StorageDriver(storage_backend, storage)
-            with driver:
-                content = driver.read_file(Path(dictionary['file']).relative_to('/'))
+            content = self.read_link_object(
+                dictionary['storage'], PurePosixPath(dictionary['file']), expected_owner)
+
             return self.load_object_from_bytes(object_type, content)
 
         if object_type:
@@ -284,7 +295,7 @@ class Client:
         content = ('---\n' + yaml.dump(dictionary)).encode()
 
         obj = self.session.load_object(content, object_type, local_owners=local_owners,
-                                        trusted_owner=expected_owner)
+                                       trusted_owner=expected_owner)
         if encryption_warning:
             logger.warning('Unexpected encrypted data encountered in %s', repr(obj))
 

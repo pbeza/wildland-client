@@ -21,10 +21,9 @@
 Manage users
 """
 
-from typing import Tuple, Iterable, Optional, Union, List
+from typing import Tuple, Optional, Union, List
 from pathlib import PurePosixPath, Path
 import logging
-import uuid
 import binascii
 import click
 
@@ -255,7 +254,8 @@ def _remove_suffix(s: str, suffix: str) -> str:
     return s
 
 
-def _do_import_manifest(obj, path, force: bool = False) -> Tuple[Optional[Path], Optional[str]]:
+def _do_import_manifest(obj, path_or_dict, manifest_owner: Optional[str] = None,
+                        force: bool = False) -> Tuple[Optional[Path], Optional[str]]:
     """
     Takes a manifest as pointed towards by path (can be local file path, url, wildland url),
     imports its public keys, copies the manifest itself.
@@ -264,18 +264,34 @@ def _do_import_manifest(obj, path, force: bool = False) -> Tuple[Optional[Path],
     :return: tuple of local path to copied manifest , url to manifest (local or remote, depending on
         input)
     """
-    if Path(path).exists():
-        file_data = Path(path).read_bytes()
-        file_name = Path(path).stem
-        file_url = obj.client.local_url(Path(path).absolute())
-    else:
-        try:
-            file_data = obj.client.read_from_url(path, use_aliases=True)
-        except FileNotFoundError as fnf:
-            raise CliError('File was not found') from fnf
 
-        file_name = _remove_suffix(path.split('/')[-1], '.yaml')
-        file_url = path
+    # TODOTODO: Accepting paths (string) should be deprecated and force using link objects
+    if isinstance(path_or_dict, dict):
+        if path_or_dict.get('object', None) != WildlandObjectType.LINK.value:
+            raise CliError(f'Dictionary object must be of type {WildlandObjectType.LINK.value}')
+
+        if not manifest_owner:
+            raise CliError('Unable to import a link object without specifying a trusted owner')
+
+        file_path = PurePosixPath(path_or_dict['file'])
+        file_data = obj.client.read_link_object(path_or_dict['storage'], file_path, manifest_owner)
+        file_name = file_path.name
+        file_url = None
+    else:
+        path = str(path_or_dict)
+
+        if Path(path).exists():
+            file_data = Path(path).read_bytes()
+            file_name = Path(path).stem
+            file_url = obj.client.local_url(Path(path).absolute())
+        else:
+            try:
+                file_data = obj.client.read_from_url(path, use_aliases=True)
+            except FileNotFoundError as fnf:
+                raise CliError('File was not found') from fnf
+
+            file_name = _remove_suffix(path.split('/')[-1], '.yaml')
+            file_url = path
 
     # load user pubkeys
     Manifest.verify_and_load_pubkeys(file_data, obj.session.sig)
@@ -350,7 +366,8 @@ def _find_user_manifest_within_infrastructures(obj, user: User) -> \
 
     return None
 
-def _sanitize_imported_paths(paths: Iterable[PurePosixPath]) -> List[PurePosixPath]:
+
+def _sanitize_imported_paths(paths: List[PurePosixPath], owner: str) -> List[PurePosixPath]:
     """
     Accept a list of imported paths (either from a user or a bridge manifest) and return only
     the first one with sanitised (safe) path.
@@ -358,17 +375,16 @@ def _sanitize_imported_paths(paths: Iterable[PurePosixPath]) -> List[PurePosixPa
     if not paths:
         raise CliError('No paths found to sanitize')
 
-    path = PurePosixPath(str(list(paths)[0]).strip('/'))
-    safety_uuid = uuid.uuid4()
+    path = PurePosixPath(str(paths[0]).strip('/'))
 
-    safe_path = f'/forests/{safety_uuid}-' + '_'.join(path.parts)
+    safe_path = f'/forests/{owner}-' + '_'.join(path.parts)
 
     return [PurePosixPath(safe_path)]
 
 
 def _do_process_imported_manifest(
         obj: ContextObj, copied_manifest_path: Path, user_manifest_location: str,
-        paths: Iterable[PurePosixPath], default_user: str):
+        paths: List[PurePosixPath], default_user: str):
     """
     Perform followup actions after importing a manifest: create a Bridge manifest for a user,
     import a Bridge manifest's target user
@@ -395,7 +411,7 @@ def _do_process_imported_manifest(
             storage_manifest.skip_verification()
 
             user_location = {
-                'object': 'link',
+                'object': WildlandObjectType.LINK.value,
                 'file': str(('/' / file_path)),
                 'storage': storage_manifest.fields
             }
@@ -404,7 +420,7 @@ def _do_process_imported_manifest(
             owner=default_user,
             user_location=user_location,
             user_pubkey=user.primary_pubkey,
-            paths=(paths if paths else _sanitize_imported_paths(user.paths)),
+            paths=(paths if paths else _sanitize_imported_paths(user.paths, user.owner)),
         )
 
         name = _remove_suffix(copied_manifest_path.stem, ".user")
@@ -412,17 +428,22 @@ def _do_process_imported_manifest(
         click.echo(f'Created: {bridge_path}')
     else:
         bridge = Bridge.from_manifest(manifest)
+
+        original_bridge_owner = bridge.owner
+
         # adjust imported bridge
+        if default_user:
+            bridge.owner = default_user
+
         if paths:
             bridge.paths = list(paths)
         else:
-            bridge.paths = _sanitize_imported_paths(bridge.paths)
-        if default_user:
-            bridge.owner = default_user
-        copied_manifest_path.write_bytes(obj.session.dump_object(bridge))
-        _do_import_manifest(obj, bridge.user_location)
+            bridge.paths = _sanitize_imported_paths(bridge.paths, original_bridge_owner)
 
-def import_manifest(obj: ContextObj, name, paths, wl_obj_type, bridge_owner, only_first):
+        copied_manifest_path.write_bytes(obj.session.dump_object(bridge))
+        _do_import_manifest(obj, bridge.user_location, bridge.owner)
+
+def import_manifest(obj: ContextObj, path_or_url, paths, wl_obj_type, bridge_owner, only_first):
     """
     Import a provided user or bridge manifest.
     Accepts a local path, an url or a Wildland path to manifest or to bridge.
@@ -438,7 +459,7 @@ def import_manifest(obj: ContextObj, name, paths, wl_obj_type, bridge_owner, onl
         raise CliError('Cannot import user or bridge without a --bridge-owner or a default user.')
 
     if wl_obj_type == WildlandObjectType.USER:
-        copied_manifest_path, manifest_url = _do_import_manifest(obj, name)
+        copied_manifest_path, manifest_url = _do_import_manifest(obj, path_or_url)
         if not copied_manifest_path or not manifest_url:
             return
         try:
@@ -451,8 +472,17 @@ def import_manifest(obj: ContextObj, name, paths, wl_obj_type, bridge_owner, onl
             copied_manifest_path.unlink()
             raise CliError(f'Failed to import: {str(ex)}') from ex
     elif wl_obj_type == WildlandObjectType.BRIDGE:
-        # this didn't work out, perhaps we have an url to a bunch of bridges?
-        bridges = list(obj.client.read_bridge_from_url(name, use_aliases=True))
+        if Path(path_or_url).exists():
+            path = Path(path_or_url)
+            bridges = [
+                obj.client.load_object_from_bytes(
+                    WildlandObjectType.BRIDGE, path.read_bytes(), file_path=path)
+            ]
+            name = path.stem
+        else:
+            bridges = list(obj.client.read_bridge_from_url(path_or_url, use_aliases=True))
+            name = path_or_url.replace(WILDLAND_URL_PREFIX, '')
+
         if not bridges:
             raise CliError('No bridges found.')
         if only_first:
@@ -467,15 +497,14 @@ def import_manifest(obj: ContextObj, name, paths, wl_obj_type, bridge_owner, onl
                     owner=default_user,
                     user_location=bridge.user_location,
                     user_pubkey=bridge.user_pubkey,
-                    paths=paths or bridge.paths,
+                    paths=(paths or _sanitize_imported_paths(bridge.paths, bridge.owner)),
                 )
-                bridge_name = name.replace(WILDLAND_URL_PREFIX, '')
-                bridge_name = bridge_name.replace(':', '_').replace('/', '_')
+                bridge_name = name.replace(':', '_').replace('/', '_')
                 bridge_path = obj.client.save_new_object(
                     WildlandObjectType.BRIDGE, new_bridge, bridge_name, None)
                 click.echo(f'Created: {bridge_path}')
                 copied_files.append(bridge_path)
-                _do_import_manifest(obj, bridge.user_location)
+                _do_import_manifest(obj, bridge.user_location, bridge.owner)
         except Exception as ex:
             for file in copied_files:
                 click.echo(
@@ -528,7 +557,7 @@ def user_refresh(obj: ContextObj, name):
             continue
 
         try:
-            _do_import_manifest(obj, bridge.user_location, force=True)
+            _do_import_manifest(obj, bridge.user_location, bridge.owner, force=True)
         except WildlandError as ex:
             click.echo(f"Error while refreshing bridge: {ex}")
 
