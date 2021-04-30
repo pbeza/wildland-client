@@ -448,13 +448,19 @@ def test_del_nested_field():
     assert res == nested_set
 
 
-## Storage
+# Storage
 
-def test_storage_create(cli, base_dir):
+
+def _create_user_container_storage(cli):
     cli('user', 'create', 'User', '--key', '0xaaa')
     cli('container', 'create', 'Container', '--path', '/PATH')
     cli('storage', 'create', 'local', 'Storage', '--location', '/PATH',
         '--container', 'Container', '--no-inline')
+
+
+def test_storage_create(cli, base_dir):
+    _create_user_container_storage(cli)
+
     with open(base_dir / 'storage/Storage.storage.yaml') as f:
         data = f.read()
 
@@ -473,10 +479,7 @@ def test_storage_create(cli, base_dir):
 
 
 def test_storage_create_not_inline(cli, base_dir):
-    cli('user', 'create', 'User', '--key', '0xaaa')
-    cli('container', 'create', 'Container', '--path', '/PATH')
-    cli('storage', 'create', 'local', 'Storage', '--location', '/PATH',
-        '--container', 'Container', '--no-inline')
+    _create_user_container_storage(cli)
 
     with open(base_dir / 'containers/Container.container.yaml') as f:
         data = f.read()
@@ -501,42 +504,154 @@ def test_storage_create_inline(cli, base_dir):
 
 
 def test_storage_delete(cli, base_dir):
-    cli('user', 'create', 'User', '--key', '0xaaa')
-    cli('container', 'create', 'Container', '--path', '/PATH')
-    cli('storage', 'create', 'local', 'Storage', '--location', '/PATH',
-        '--container', 'Container', '--no-inline')
+    _create_user_container_storage(cli)
 
     storage_path = base_dir / 'storage/Storage.storage.yaml'
     assert storage_path.exists()
 
     with pytest.raises(CliError, match='Storage is still used'):
-        cli('storage', 'delete', 'Storage')
+        cli('storage', 'delete', '--no-cascade', 'Storage')
 
-    cli('storage', 'delete', '--force', 'Storage')
+    cli('storage', 'delete', 'Storage')
+
     assert not storage_path.exists()
 
 
-def test_storage_delete_cascade(cli, base_dir):
+def test_storage_delete_force(cli, base_dir):
+    _create_user_container_storage(cli)
+
+    storage_path = base_dir / 'storage/Storage.storage.yaml'
+    assert storage_path.exists()
+
+    with open(base_dir / 'containers/Container.container.yaml') as f:
+        base_data = f.read().split('\n', 4)[-1]
+
+    with pytest.raises(CliError, match='Storage is still used'):
+        cli('storage', 'delete', '--no-cascade', 'Storage')
+
+    cli('storage', 'delete', '--no-cascade', '--force', 'Storage')
+
+    assert not storage_path.exists()
+    assert str(storage_path) in base_data
+
+
+def test_storage_delete_force_broken_manifest(cli, base_dir):
+    _create_user_container_storage(cli)
+
+    storage_path = base_dir / 'storage/Storage.storage.yaml'
+    assert storage_path.exists()
+
+    # broke manifest
+    with open(storage_path, 'r+') as f:
+        f.truncate()
+
+    with open(base_dir / 'containers/Container.container.yaml') as f:
+        base_data = f.read().split('\n', 4)[-1]
+
+    with pytest.raises(ManifestError):
+        cli('storage', 'delete', 'Storage')
+
+    cli('storage', 'delete', '--force', 'Storage')
+
+    assert not storage_path.exists()
+    assert str(storage_path) in base_data
+
+
+def test_storage_delete_inline(cli, base_dir):
     cli('user', 'create', 'User', '--key', '0xaaa')
-    cli('container', 'create', 'Container', '--path', '/PATH')
+    cli('container', 'create', 'Container', '--path', '/PATH', '--no-encrypt-manifest')
     cli('storage', 'create', 'local', 'Storage', '--location', '/PATH',
-        '--container', 'Container', '--no-inline')
+        '--container', 'Container', '--inline')
+
+    container_path = base_dir / 'containers/Container.container.yaml'
+    with open(container_path) as f:
+        documents = list(load_yaml_all(f))
+    backend_id = documents[1]['backends']['storage'][0]['backend-id']
+
+    with pytest.raises(CliError, match='Inline storage cannot be deleted'):
+        cli('storage', 'delete', '--no-cascade', str(backend_id))
+
+    cli('storage', 'delete', str(backend_id))
+
+    assert backend_id not in container_path.read_text()
+
+
+def test_storage_delete_inline_multiple_containers(cli, base_dir):
+    cli('user', 'create', 'User', '--key', '0xaaa')
+    cli('container', 'create', 'Container0', '--path', '/PATH',
+        '--no-encrypt-manifest')
+    cli('storage', 'create', 'local', 'Storage0', '--location', '/PATH',
+        '--container', 'Container0', '--inline')
+    cli('container', 'create', 'Container1', '--path', '/PATH',
+        '--no-encrypt-manifest')
+    cli('storage', 'create', 'local', 'Storage1', '--location', '/PATH',
+        '--container', 'Container1', '--inline')
+
+    container_0_path = base_dir / 'containers/Container0.container.yaml'
+    with open(container_0_path) as f:
+        documents = list(load_yaml_all(f))
+    backend_id = documents[1]['backends']['storage'][0]['backend-id']
+
+    # replace backend-id in Container1
+    container_1_path = base_dir / 'containers/Container1.container.yaml'
+    with open(container_1_path, 'r+') as f:
+        documents = list(yaml.safe_load_all(f))
+        documents[1]['backends']['storage'][0]['backend-id'] = backend_id
+        f.seek(0)
+        f.write('signature: |\n  dummy.0xaaa\n---\n')
+        f.write(yaml.safe_dump(documents[1]))
+
+    with pytest.raises(CliError, match='(...)(please specify container name with --container)'):
+        cli('storage', 'delete', str(backend_id))
+
+    cli('storage', 'delete', str(backend_id), '--container', 'Container0')
+
+    assert backend_id in container_1_path.read_text()
+    assert backend_id not in container_0_path.read_text()
+
+
+def test_storage_delete_inline_many_in_one(monkeypatch, cli, base_dir):
+    cli('user', 'create', 'User', '--key', '0xaaa')
+    cli('container', 'create', 'Container', '--path', '/PATH',
+        '--no-encrypt-manifest')
+    cli('storage', 'create', 'local', 'Storage0', '--location', '/PATH',
+        '--container', 'Container', '--inline')
+    cli('storage', 'create', 'local', 'Storage1', '--location', '/PATH',
+        '--container', 'Container', '--inline')
+
+    container_path = base_dir / 'containers/Container.container.yaml'
+    with open(container_path, 'r+') as f:
+        documents = list(yaml.safe_load_all(f))
+        backend_id = documents[1]['backends']['storage'][0]['backend-id']
+        documents[1]['backends']['storage'][1]['backend-id'] = backend_id
+        f.seek(0)
+        f.write('signature: |\n  dummy.0xaaa\n---\n')
+        f.write(yaml.safe_dump(documents[1]))
+
+    monkeypatch.setattr('sys.stdin.readline', lambda: "n")
+    cli('storage', 'delete', str(backend_id), '--container', 'Container')
+    assert backend_id in container_path.read_text()
+
+    monkeypatch.setattr('sys.stdin.readline', lambda: "y")
+    cli('storage', 'delete', str(backend_id), '--container', 'Container')
+    assert backend_id not in container_path.read_text()
+
+
+def test_storage_delete_cascade(cli, base_dir):
+    _create_user_container_storage(cli)
 
     storage_path = base_dir / 'storage/Storage.storage.yaml'
     assert storage_path.exists()
     container_path = base_dir / 'containers/Container.container.yaml'
     assert str(storage_path) in container_path.read_text()
 
-    cli('storage', 'delete', '--cascade', 'Storage')
+    cli('storage', 'delete', 'Storage')
     assert not storage_path.exists()
     assert str(storage_path) not in container_path.read_text()
 
 
 def test_storage_list(cli, base_dir):
-    cli('user', 'create', 'User', '--key', '0xaaa')
-    cli('container', 'create', 'Container', '--path', '/PATH')
-    cli('storage', 'create', 'local', 'Storage', '--location', '/PATH',
-        '--container', 'Container', '--no-inline')
+    _create_user_container_storage(cli)
 
     ok = [
         str(base_dir / 'storage/Storage.storage.yaml'),
@@ -551,10 +666,7 @@ def test_storage_list(cli, base_dir):
 
 
 def test_storage_edit(cli, base_dir):
-    cli('user', 'create', 'User', '--key', '0xaaa')
-    cli('container', 'create', 'Container', '--path', '/PATH')
-    cli('storage', 'create', 'local', 'Storage', '--location', '/PATH',
-        '--container', 'Container', '--no-inline')
+    _create_user_container_storage(cli)
 
     manifest = base_dir / 'storage/Storage.storage.yaml'
 
@@ -595,6 +707,7 @@ def test_storage_set_location(cli, base_dir):
     with open(manifest_path) as f:
         data = f.read()
     assert 'location: /OTHER' in data
+
 
 def test_multiple_storage_mount(cli, base_dir, control_client):
     control_client.expect('status', {})
@@ -932,10 +1045,7 @@ def test_container_duplicate_storage(cli, base_dir):
 
 
 def test_container_duplicate_noinline(cli, base_dir):
-    cli('user', 'create', 'User', '--key', '0xaaa')
-    cli('container', 'create', 'Container', '--path', '/PATH')
-    cli('storage', 'create', 'local', 'Storage', '--location', '/PATH',
-        '--container', 'Container', '--no-inline')
+    _create_user_container_storage(cli)
 
     cli('container', 'duplicate', '--new-name', 'Duplicate', 'Container')
 
