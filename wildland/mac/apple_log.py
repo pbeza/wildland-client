@@ -23,6 +23,7 @@ Apple's Unified Logging.
 
 # pylint: disable=import-error
 import logging
+import logging.config
 from PBRLogBridge import log_message
 
 class apple_log(logging.StreamHandler):
