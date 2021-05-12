@@ -1,0 +1,53 @@
+#!/usr/bin/make -f
+
+PLUGINS = $(subst /setup.py,,$(wildcard plugins/*/setup.py))
+
+# escape '/' with '...' for targets with wildcards
+PLUGINS_ESCAPE = $(subst /,...,$(PLUGINS))
+
+
+%:
+	dh $@ --with python3,sphinxdoc --buildsystem=pybuild
+
+
+### dh_auto_configure overrides
+
+dh_auto_configure-%:
+	PYBUILD_NAME=$(notdir $(subst -,_,$(subst ...,/,$*))) dh_auto_configure --sourcedirectory=$(subst ...,/,$*)
+
+override_dh_auto_configure: $(foreach plugin, $(PLUGINS_ESCAPE), dh_auto_configure-$(plugin))
+	PYBUILD_NAME=wildland dh_auto_configure
+
+
+### dh_auto_build overrides
+
+dh_auto_build-%:
+	PYBUILD_NAME=$(notdir $(subst -,_,$(subst ...,/,$*))) dh_auto_build --sourcedirectory=$(subst ...,/,$*)
+
+override_dh_auto_build: $(foreach plugin, $(PLUGINS_ESCAPE), dh_auto_build-$(plugin))
+	PYBUILD_NAME=wildland dh_auto_build
+
+
+### dh_auto_install overrides
+
+dh_auto_install-%:
+	PYBUILD_NAME=$(notdir $(subst -,_,$(subst ...,/,$*))) dh_auto_install --sourcedirectory=$(subst ...,/,$*)
+
+override_dh_auto_install: $(foreach plugin, $(PLUGINS_ESCAPE), dh_auto_install-$(plugin))
+	PYBUILD_NAME=wildland dh_auto_install
+
+	# wildland-client (alias wl)
+	install -d debian/wildland-client/usr/bin
+	install -m 0755 wildland-cli debian/wildland-client/usr/bin/wildland-cli
+	install -m 0755 wl debian/wildland-client/usr/bin/wl
+
+override_dh_sphinxdoc:
+	PYTHONPATH=debian/wildland-client/$(shell pybuild --print {install_dir}) python3 -m sphinx -W -N -bman Documentation Documentation/build/man
+	install -d debian/wildland-client/usr/share/man/man1
+	install -m 0644 Documentation/build/man/* debian/wildland-client/usr/share/man/man1
+
+
+### dh_auto_test overrides
+
+override_dh_auto_test:
+	true
