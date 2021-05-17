@@ -4,3 +4,6 @@ htmlcov
 env/
 *.egg-info
 build/
+.pybuild
+.mypy
+.tox
