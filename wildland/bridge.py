@@ -20,17 +20,18 @@
 """
 Bridge manifest object
 """
+import uuid
 
 from pathlib import PurePosixPath, Path
 from typing import Optional, List, Iterable, Union
 
 from .container import Container
-from .manifest.manifest import Manifest, WildlandObjectType
+from .manifest.manifest import Manifest, WildlandObjectType, Publishable
 from .manifest.schema import Schema
 from .manifest.sig import SigContext
 
 
-class Bridge:
+class Bridge(Publishable):
     """
     Bridge object: a wrapper for user manifests.
     """
@@ -50,9 +51,42 @@ class Bridge:
         self.user_location = user_location
         self.user_pubkey = user_pubkey
         self.user_id = user_id
-        self.paths: List[PurePosixPath] = list(paths)
+        self.paths: List[PurePosixPath] = sorted(list(paths),
+                                                 key=lambda p: p.parent != PurePosixPath('/.uuid/'))
         self.local_path = local_path
         self.manifest = manifest
+        self.ensure_uuid()
+
+    def ensure_uuid(self) -> str:
+        """
+        Get the UUID of this container, create if necessary.
+        """
+        return self.get_uuid_path().name
+
+    def get_uuid_path(self) -> PurePosixPath:
+        """
+        Find or create an UUID path for this container.
+        """
+        for path in self.paths:
+            if path.parent == PurePosixPath('/.uuid/'):
+                return path
+        path = PurePosixPath('/.uuid/') / str(uuid.uuid4())
+        self.paths.insert(0, path)
+        return path
+
+    def get_unique_publish_id(self) -> str:
+        return self.ensure_uuid()
+
+    def get_primary_publish_path(self) -> PurePosixPath:
+        return self.get_uuid_path()
+
+    def get_additional_publish_paths(self) -> List[PurePosixPath]:
+        paths = self.paths.copy()
+        paths.remove(self.get_uuid_path())
+        return paths
+
+    def get_publish_user_owner(self) -> str:
+        return self.owner
 
     @classmethod
     def from_manifest(cls, manifest: Manifest, sig_context: SigContext,

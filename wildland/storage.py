@@ -24,12 +24,12 @@ from pathlib import PurePosixPath, Path
 from typing import Dict, Any, Optional, List
 
 from .storage_backends.base import StorageBackend
-from .manifest.manifest import Manifest, ManifestError, WildlandObjectType
+from .manifest.manifest import Manifest, ManifestError, WildlandObjectType, Publishable
 from .manifest.schema import Schema
 from .container import Container
 
 
-class Storage:
+class Storage(Publishable):
     """
     A data transfer object representing Wildland storage.
     """
@@ -72,6 +72,18 @@ class Storage:
                 f'local_path={self.local_path!r}, '
                 f'access={self.access!r}, '
                 f'backend_id={self.params["backend-id"]!r})')
+
+    def get_unique_publish_id(self) -> str:
+        raise NotImplementedError
+
+    def get_primary_publish_path(self) -> PurePosixPath:
+        raise NotImplementedError
+
+    def get_additional_publish_paths(self) -> List[PurePosixPath]:
+        raise NotImplementedError
+
+    def get_publish_user_owner(self) -> str:
+        raise NotImplementedError
 
     @property
     def backend_id(self):

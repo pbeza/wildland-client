@@ -18,18 +18,20 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 '''
-Stuff related to publishing and unpublishing containers.
+Stuff related to publishing and unpublishing manifests.
 '''
 
 import collections.abc
 import logging
-import pathlib
+from pathlib import PurePosixPath
 from typing import Optional, Generator, cast
 
 from .client import Client
 from .container import Container
+from .user import User
+from .bridge import Bridge
 from .exc import WildlandError
-from .manifest.manifest import ManifestError, WildlandObjectType
+from .manifest.manifest import ManifestError, WildlandObjectType, Publishable
 from .storage_driver import StorageDriver
 from .storage import Storage
 
@@ -38,60 +40,60 @@ logger = logging.getLogger('publish')
 
 class Publisher:
     # Between two publish operations, things might have changed:
-    # - different container paths,
+    # - different manifests paths,
     # - different set of storages.
     # Things that (we assume) didn't change:
-    # - container uuid,
+    # - manifests uid (most likely a uuid),
     # - manifest-pattern,
     # - base-url.
 
     """
     A behavior for publishing and unpublishing manifests
 
-    >>> Publisher(client, container1).publish_manifest()
-    >>> Publisher(client, container2).unpublish_manifest()
+    >>> Publisher(client, manifest1).publish_manifest()
+    >>> Publisher(client, manifest2).unpublish_manifest()
     """
-    def __init__(self, client: Client, container: Container,
-            infrastructure: Optional[Container] = None):
+
+    def __init__(self, client: Client, manifest: Publishable,
+                 infrastructure: Optional[Container] = None):
+        assert issubclass(type(manifest), Publishable)
+
         self.client = client
-        self.container = container
+        self.manifest = manifest
 
         if infrastructure is not None:
             raise NotImplementedError(
                 'choosing infrastructure is not supported')
 
-        self.container_uuid_path = self.container.get_uuid_path()
-
-    def publish_container(self) -> None:
+    def publish_manifest(self) -> None:
         """
         Publish the manifest
         """
-        _StoragePublisher(self, next(self._get_storages_for_publish())
-            ).publish_container(False)
+        _StoragePublisher(self, next(self._get_storages_for_publish())).publish_manifest(False)
 
-    def unpublish_container(self) -> None:
+    def unpublish_manifest(self) -> None:
         """
         Unpublish the manifest
         """
-        for storage in self._get_storages_for_publish():
-            _StoragePublisher(self, storage).publish_container(True)
+        _StoragePublisher(self, next(self._get_storages_for_publish())).publish_manifest(True)
 
     def _get_storages_for_publish(self) -> Generator[Storage, None, None]:
         '''
-        Iterate over all suitable storages to publish container manifest.
+        Iterate over all suitable storages to publish manifest.
         '''
-        owner = self.client.load_object_from_name(WildlandObjectType.USER, self.container.owner)
+        owner = self.manifest.get_publish_user_owner()
+        user = self.client.load_object_from_name(WildlandObjectType.USER, owner)
 
         ok = False
         rejected = []
-        if not owner.containers:
-            rejected.append(f'user {owner.owner} has no infrastructure containers')
+        if not user.containers:
+            rejected.append(f'user {user.owner} has no infrastructure containers')
 
-        for c in owner.containers:
+        for c in user.containers:
             try:
                 container_candidate = (
                     self.client.load_object_from_url_or_dict(
-                        WildlandObjectType.CONTAINER, c, self.container.owner))
+                        WildlandObjectType.CONTAINER, c, owner))
 
                 all_storages = list(
                     self.client.all_storages(container=container_candidate))
@@ -165,8 +167,8 @@ class _StoragePublisher:
 
     def __init__(self, publisher: Publisher, infra_storage: Storage):
         self.client = publisher.client
-        self.container = publisher.container
-        self.container_uuid_path = publisher.container_uuid_path
+        self.manifest = publisher.manifest
+        self.manifest_unique_id = publisher.manifest.get_unique_publish_id()
 
         # TODO this requires a more subtle manifest-pattern rewrite including more types
         # of writeable and publisheable-to storages
@@ -174,105 +176,122 @@ class _StoragePublisher:
         assert self.infra_storage.params['manifest-pattern']['type'] == 'glob'
         self.pattern = self.infra_storage.params['manifest-pattern']['path']
 
-    def _get_relpath_for_storage_manifest(self, storage):
-        # we publish only a single manifest for a storage, under `/.uuid/` path
-        container_manifest = next(
-            self._get_relpaths_for_container_manifests(self.container))
-        return container_manifest.with_name(
-            container_manifest.name.removesuffix('.yaml')
-            + f'.{storage.params["backend-id"]}.yaml'
-        )
+    def _get_relpaths_for_manifests(self, manifest: Publishable):
+        manifest_primary_publish_path = manifest.get_primary_publish_path()
+        manifest_extra_publish_paths = manifest.get_additional_publish_paths()
 
-    def _get_relpaths_for_container_manifests(self, container):
-        path_pattern = self.pattern.replace('*', container.ensure_uuid())
+        path_pattern = self.pattern.replace('*', self.manifest_unique_id)
 
         # always return /.uuid/ path first
-        yield pathlib.PurePosixPath(
-            path_pattern.replace('{path}', str(self.container_uuid_path.relative_to('/')))
+        yield PurePosixPath(
+            path_pattern.replace('{path}', str(manifest_primary_publish_path.relative_to('/')))
         ).relative_to('/')
 
         if '{path}' in path_pattern:
-            for path in container.expanded_paths:
-                if path == self.container_uuid_path:
+            for path in manifest_extra_publish_paths:
+                if path == manifest_primary_publish_path:
                     continue
-                yield pathlib.PurePosixPath(path_pattern.replace(
+                yield PurePosixPath(path_pattern.replace(
                     '{path}', str(path.relative_to('/')))).relative_to('/')
 
-    def publish_container(self, just_unpublish: bool) -> None:
+    def publish_manifest(self, just_unpublish: bool) -> None:
         """
-        Publish a container to a container owner by the same user.
+        Publish a manifest to the manifest owner's catalog.
         """
         # Marczykowski-Górecki's Algorithm:
-        # 1) choose infrastructure container from container owner
-        #    - if the container was published earlier, the same infrastructure
+        # 1) choose infrastructure container from the manifest owner
+        #    - if the manifest was published earlier, the same infrastructure
         #      should be chosen; this will make sense when user will be able to
-        #      choose to which infrastructure the container should be published
-        # 2) generate all new relpaths for the container and storages
-        # 3) try to fetch container from new relpaths; check if the file
-        #    contains the same container; if yes, generate relpaths for old
+        #      choose to which infrastructure the manifest should be published
+        # 2) generate all new relpaths for the manifest and its storages (if applicable)
+        # 3) try to fetch the manifest from new relpaths; check if the file
+        #    contains the same manifest body; if yes, generate relpaths for old
         #    paths
-        # 4) remove old copies of manifest for container and storages (only
+        # 4) remove old copies of the manifest and its potential storages (only
         #    those that won't be overwritten later)
-        # 5) post new storage manifests
-        # 6) post new container manifests starting with /.uuid/ one
+        # 5) post new storage manifests (for containers)
+        # 6) post new manifest files starting with the /.uuid/ one
         #
         # For unpublishing, instead of 4), 5) and 6), all manifests are removed
         # from relpaths and no new manifests are published.
 
-        container_relpaths = list(
-            self._get_relpaths_for_container_manifests(self.container))
+        manifest_relpaths = list(self._get_relpaths_for_manifests(self.manifest))
         storage_relpaths = {}
         old_relpaths_to_remove = set()
 
         with StorageDriver.from_storage(self.infra_storage) as driver:
-            for i in range(len(self.container.backends)):
-                if isinstance(self.container.backends[i],
-                        collections.abc.Mapping):
-                    continue
-                backend = self.client.load_object_from_url(WildlandObjectType.STORAGE,
-                    cast(str, self.container.backends[i]), self.container.owner)
-                relpath = self._get_relpath_for_storage_manifest(backend)
-                assert relpath not in storage_relpaths
-                storage_relpaths[relpath] = backend
-                self.container.backends[i] = (
-                    driver.storage_backend.get_url_for_path(relpath))
+            if isinstance(self.manifest, Container):
+                # DONOTMERGE-DONOTMERGE-DONOTMERGE
+                #
+                # TODO: This it not the right place to handle such logic but it requires
+                # more investigation on how this can be handled differently
+                for i in range(len(self.manifest.backends)):
+                    if isinstance(self.manifest.backends[i], collections.abc.Mapping):
+                        continue
+
+                    backend = self.client.load_object_from_url(
+                        WildlandObjectType.STORAGE,
+                        cast(str, self.manifest.backends[i]),
+                        self.manifest.get_publish_user_owner()
+                    )
+
+                    # we publish only a single manifest for a storage, under `/.uuid/` path
+                    container_manifest = next(
+                        self._get_relpaths_for_manifests(self.manifest))
+
+                    relpath = container_manifest.with_name(
+                        container_manifest.name.removesuffix('.yaml')
+                        + f'.{backend.params["backend-id"]}.yaml'
+                    )
+
+                    assert relpath not in storage_relpaths
+
+                    storage_relpaths[relpath] = backend
+                    self.manifest.backends[i] = driver.storage_backend.get_url_for_path(relpath)
 
             # fetch from /.uuid path
             try:
-                old_container_manifest_data = driver.read_file(
-                    container_relpaths[0])
+                old_manifest_data = driver.read_file(manifest_relpaths[0])
             except FileNotFoundError:
                 pass
             else:
-                old_container = self.client.session.load_object(
-                    old_container_manifest_data, WildlandObjectType.CONTAINER)
-                assert isinstance(old_container, Container)
+                old_manifest = self.client.session.load_object(old_manifest_data)
+                assert issubclass(type(old_manifest), Publishable)
 
-                if not old_container.ensure_uuid() == self.container.ensure_uuid():
-                    # we just downloaded this file from container_relpaths[0], so
+                if not old_manifest.get_unique_publish_id() == self.manifest_unique_id:
+                    # we just downloaded this file from manifest_relpaths[0], so
                     # things are very wrong here
                     raise WildlandError(
-                        f'old version of container manifest at storage '
+                        f'old version of manifest at storage '
                         f'{driver.storage.params["backend-id"]} has serious '
                         f'problems; please remove it manually')
 
                 old_relpaths_to_remove.update(set(
-                    self._get_relpaths_for_container_manifests(old_container)))
-                for url_or_dict in old_container.backends:
-                    if isinstance(url_or_dict, collections.abc.Mapping):
-                        continue
-                    old_relpaths_to_remove.add(
-                        driver.storage_backend.get_path_for_url(url_or_dict))
+                    self._get_relpaths_for_manifests(old_manifest)))
+
+                if isinstance(self.manifest, Container):
+                    # DONOTMERGE-DONOTMERGE-DONOTMERGE
+                    #
+                    # TODO: This it not the right place to handle such logic but it requires
+                    # more investigation on how this can be handled differently
+                    assert isinstance(old_manifest, Container)
+
+                    for url_or_dict in old_manifest.backends:
+                        if isinstance(url_or_dict, collections.abc.Mapping):
+                            continue
+                        old_relpaths_to_remove.add(
+                            driver.storage_backend.get_path_for_url(url_or_dict))
 
             if just_unpublish:
-                old_relpaths_to_remove.update(container_relpaths)
+                old_relpaths_to_remove.update(manifest_relpaths)
                 old_relpaths_to_remove.update(storage_relpaths)
             else:
-                old_relpaths_to_remove.difference_update(container_relpaths)
+                old_relpaths_to_remove.difference_update(manifest_relpaths)
                 old_relpaths_to_remove.difference_update(storage_relpaths)
 
             # remove /.uuid path last, if present (bool sorts False < True)
-            for relpath in sorted(old_relpaths_to_remove,
+            for relpath in sorted(
+                    old_relpaths_to_remove,
                     key=(lambda path: path.parts[:2] == ('/', '.uuid'))):
                 try:
                     driver.remove_file(relpath)
@@ -282,10 +301,23 @@ class _StoragePublisher:
             if not just_unpublish:
                 for relpath, storage in storage_relpaths.items():
                     driver.makedirs(relpath.parent)
-                    driver.write_file(relpath,
-                        self.client.session.dump_object(storage))
+                    driver.write_file(
+                        relpath,
+                        self.client.session.dump_object(storage)
+                    )
 
-                for relpath in container_relpaths:
+                for relpath in manifest_relpaths:
                     driver.makedirs(relpath.parent)
-                    driver.write_file(relpath,
-                        self.client.session.dump_object(self.container))
+
+                    # TODO: This must be refactored together with #379
+                    if isinstance(self.manifest, User):
+                        data = self.client.session.dump_user(self.manifest)
+                    else:
+                        assert isinstance(self.manifest, (Container, Storage, Bridge))
+
+                        data = self.client.session.dump_object(self.manifest)
+
+                    driver.write_file(
+                        relpath,
+                        data
+                    )

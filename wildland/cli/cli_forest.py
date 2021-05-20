@@ -246,7 +246,7 @@ def _boostrap_forest(ctx: click.Context,
             manifests_backend.mkdir(PurePosixPath('users'))
 
         _boostrap_manifest(manifests_backend, forest_owner.local_path, Path('forest-owner.yaml'))
-        Publisher(obj.client, infra_container).publish_container()
+        Publisher(obj.client, infra_container).publish_manifest()
     except Exception as ex:
         raise CliError(f'Could not create a Forest. {ex}') from ex
     finally:

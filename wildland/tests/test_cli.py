@@ -1358,6 +1358,8 @@ def test_container_publish_rewrite(cli, tmp_path):
 
     cli('container', 'publish', 'Container')
 
+    print(list(tmp_path.glob('*.yaml')))
+
     # “Always two there are. No more, no less. A master and an apprentice.”
     m1, m2 = tmp_path.glob('*.yaml')
 
@@ -1593,6 +1595,11 @@ def test_container_mount_with_bridges(cli, base_dir, control_client):
     uuid = get_container_uuid_from_uuid_path(uuid_path)
     assert documents_container[1]['paths'][1] == '/PATH'
 
+    with open(base_dir / 'bridges/br-other.bridge.yaml') as f:
+        documents_bridge = list(load_yaml_all(f))
+
+    bridge_uuid_path = documents_bridge[1]['paths'][0]
+
     backend_id = documents_container[1]['backends']['storage'][0]['backend-id']
 
     # add infrastructure container
@@ -1628,6 +1635,10 @@ def test_container_mount_with_bridges(cli, base_dir, control_client):
         f'/.users/0xbbb:/.uuid/{uuid}',
         '/.users/0xbbb:/PATH',
         '/.users/0xbbb:/other_/path',
+        f'{bridge_uuid_path}:/.backends/{uuid}/{backend_id}',
+        f'{bridge_uuid_path}:/.uuid/{uuid}',
+        f'{bridge_uuid_path}:/PATH',
+        f'{bridge_uuid_path}:/other_/path',
         f'/people_/other:/.backends/{uuid}/{backend_id}',
         f'/people_/other:/.uuid/{uuid}',
         '/people_/other:/PATH',
@@ -1651,13 +1662,13 @@ def test_container_mount_with_multiple_bridges(cli, base_dir, control_client):
                             '--ref-user-path', '/people/bob',
                             '--ref-user-location',
                             'file://%s' % (base_dir / 'users/Bob.user.yaml'),
-                            'br-bob')
+                            'br-alice-bob')
     cli('bridge', 'create', '--owner', 'Alice',
                             '--ref-user', 'Charlie',
                             '--ref-user-path', '/users/charlie',
                             '--ref-user-location',
                             'file://%s' % (base_dir / 'users/Charlie.user.yaml'),
-                            'br-charlie')
+                            'br-alice-charlie')
     cli('bridge', 'create', '--owner', 'Charlie',
                             '--ref-user', 'Bob',
                             '--ref-user-path', '/users/bob',
@@ -1670,7 +1681,7 @@ def test_container_mount_with_multiple_bridges(cli, base_dir, control_client):
                             '--ref-user-path', '/users/alice',
                             '--ref-user-location',
                             'file://%s' % (base_dir / 'users/Alice.user.yaml'),
-                            'br-alice-bob')
+                            'br-bob-alice')
     cli('container', 'create', 'Container', '--owner', 'Bob', '--path', '/PATH',
         '--no-encrypt-manifest')
     cli('storage', 'create', 'local', 'Storage', '--location', '/PATH',
@@ -1683,6 +1694,28 @@ def test_container_mount_with_multiple_bridges(cli, base_dir, control_client):
     uuid = get_container_uuid_from_uuid_path(uuid_path)
     backend_id = documents_container[1]['backends']['storage'][0]['backend-id']
 
+    with open(base_dir / 'bridges/br-alice-bob.bridge.yaml') as f:
+        br_alice_bob_uuid_path = list(load_yaml_all(f))[1]['paths'][0]
+
+    with open(base_dir / 'bridges/br-alice-charlie.bridge.yaml') as f:
+        br_alice_charlie_uuid_path = list(load_yaml_all(f))[1]['paths'][0]
+
+    with open(base_dir / 'bridges/br-charlie-bob.bridge.yaml') as f:
+        br_charlie_bob_uuid_path = list(load_yaml_all(f))[1]['paths'][0]
+
+    with open(base_dir / 'bridges/br-bob-alice.bridge.yaml') as f:
+        br_bob_alice_uuid_path = list(load_yaml_all(f))[1]['paths'][0]
+
+    print('-----------------------')
+    print('br_alice_bob_uuid_path')
+    print(br_alice_bob_uuid_path)
+    print('br_alice_charlie_uuid_path')
+    print(br_alice_charlie_uuid_path)
+    print('br_charlie_bob_uuid_path')
+    print(br_charlie_bob_uuid_path)
+    print('br_bob_alice_uuid_path')
+    print(br_bob_alice_uuid_path)
+
     control_client.expect('paths', {})
     control_client.expect('mount')
 
@@ -1690,20 +1723,32 @@ def test_container_mount_with_multiple_bridges(cli, base_dir, control_client):
 
     command = control_client.calls['mount']['items']
     assert command[0]['storage']['owner'] == '0xbbb'
-    assert sorted(command[0]['paths']) == [
+    assert sorted(command[0]['paths']) == sorted([
         f'/.users/0xbbb:/.backends/{uuid}/{backend_id}',
         f'/.users/0xbbb:/.uuid/{uuid}',
         '/.users/0xbbb:/PATH',
+        f'{br_alice_charlie_uuid_path}:{br_charlie_bob_uuid_path}:/.backends/{uuid}/{backend_id}',
+        f'{br_alice_charlie_uuid_path}:{br_charlie_bob_uuid_path}:/.uuid/{uuid}',
+        f'{br_alice_charlie_uuid_path}:{br_charlie_bob_uuid_path}:/PATH',
+        f'{br_alice_charlie_uuid_path}:/users/bob:/.backends/{uuid}/{backend_id}',
+        f'{br_alice_charlie_uuid_path}:/users/bob:/.uuid/{uuid}',
+        f'{br_alice_charlie_uuid_path}:/users/bob:/PATH',
+        f'{br_alice_bob_uuid_path}:/.backends/{uuid}/{backend_id}',
+        f'{br_alice_bob_uuid_path}:/.uuid/{uuid}',
+        f'{br_alice_bob_uuid_path}:/PATH',
         f'/people/bob:/.backends/{uuid}/{backend_id}',
         f'/people/bob:/.uuid/{uuid}',
         '/people/bob:/PATH',
         f'/users/bob:/.backends/{uuid}/{backend_id}',
         f'/users/bob:/.uuid/{uuid}',
         '/users/bob:/PATH',
+        f'/users/charlie:{br_charlie_bob_uuid_path}:/.backends/{uuid}/{backend_id}',
+        f'/users/charlie:{br_charlie_bob_uuid_path}:/.uuid/{uuid}',
+        f'/users/charlie:{br_charlie_bob_uuid_path}:/PATH',
         f'/users/charlie:/users/bob:/.backends/{uuid}/{backend_id}',
         f'/users/charlie:/users/bob:/.uuid/{uuid}',
         '/users/charlie:/users/bob:/PATH',
-    ]
+    ])
 
 
 def test_container_mount_infra_err(cli, base_dir, control_client):
@@ -2596,254 +2641,6 @@ def wl_call_output(base_config_dir, *args):
     return subprocess.check_output(['./wl', '--base-dir', base_config_dir, *args])
 
 
-# container-sync
-
-
-def test_cli_container_sync(tmpdir, cleanup):
-    base_config_dir = tmpdir / '.wildland'
-    base_data_dir = tmpdir / 'wldata'
-    storage1_data = base_data_dir / 'storage1'
-    storage2_data = base_data_dir / 'storage2'
-
-    os.mkdir(base_config_dir)
-    os.mkdir(base_data_dir)
-    os.mkdir(storage1_data)
-    os.mkdir(storage2_data)
-
-    cleanup(lambda: wl_call(base_config_dir, 'container', 'stop-sync', 'AliceContainer'))
-
-    wl_call(base_config_dir, 'user', 'create', 'Alice')
-    wl_call(base_config_dir, 'container', 'create',
-            '--owner', 'Alice', '--path', '/Alice', 'AliceContainer')
-    wl_call(base_config_dir, 'storage', 'create', 'local',
-            '--container', 'AliceContainer', '--location', storage1_data)
-    wl_call(base_config_dir, 'storage', 'create', 'local-cached',
-            '--container', 'AliceContainer', '--location', storage2_data)
-    wl_call(base_config_dir, 'container', 'sync', '--target-storage', 'local-cached',
-            'AliceContainer')
-
-    time.sleep(1)
-
-    with open(storage1_data / 'testfile', 'w') as f:
-        f.write("test data")
-
-    time.sleep(1)
-
-    assert (storage2_data / 'testfile').exists()
-    with open(storage2_data / 'testfile') as file:
-        assert file.read() == 'test data'
-
-
-def test_cli_container_sync_oneshot(tmpdir):
-    base_config_dir = tmpdir / '.wildland'
-    base_data_dir = tmpdir / 'wldata'
-    storage1_data = base_data_dir / 'storage1'
-    storage2_data = base_data_dir / 'storage2'
-
-    os.mkdir(base_config_dir)
-    os.mkdir(base_data_dir)
-    os.mkdir(storage1_data)
-    os.mkdir(storage2_data)
-
-    wl_call(base_config_dir, 'user', 'create', 'Alice')
-    wl_call(base_config_dir, 'container', 'create',
-            '--owner', 'Alice', '--path', '/Alice', 'AliceContainer')
-    wl_call(base_config_dir, 'storage', 'create', 'local',
-            '--container', 'AliceContainer', '--location', storage1_data)
-    wl_call(base_config_dir, 'storage', 'create', 'local-cached',
-            '--container', 'AliceContainer', '--location', storage2_data)
-
-    with open(storage1_data / 'testfile', 'w') as f:
-        f.write("test data")
-
-    wl_call(base_config_dir, 'container', 'sync', '--target-storage', 'local-cached', '--one-shot',
-            'AliceContainer')
-
-    time.sleep(1)
-
-    assert (storage2_data / 'testfile').exists()
-    with open(storage2_data / 'testfile') as file:
-        assert file.read() == 'test data'
-
-    with open(storage1_data / 'testfile2', 'w') as f:
-        f.write("test data2")
-
-    time.sleep(1)
-
-    assert not (storage2_data / 'testfile2').exists()
-
-
-def test_cli_container_sync_tg_remote(tmpdir, cleanup):
-    base_config_dir = tmpdir / '.wildland'
-    base_data_dir = tmpdir / 'wldata'
-    storage1_data = base_data_dir / 'storage1'
-    storage2_data = base_data_dir / 'storage2'
-    storage3_data = base_data_dir / 'storage3'
-
-    os.mkdir(base_config_dir)
-    os.mkdir(base_data_dir)
-    os.mkdir(storage1_data)
-    os.mkdir(storage2_data)
-    os.mkdir(storage3_data)
-
-    cleanup(lambda: wl_call(base_config_dir, 'container', 'stop-sync', 'AliceContainer'))
-
-    wl_call(base_config_dir, 'user', 'create', 'Alice')
-    wl_call(base_config_dir, 'container', 'create',
-            '--owner', 'Alice', '--path', '/Alice', 'AliceContainer', '--no-encrypt-manifest')
-    wl_call(base_config_dir, 'storage', 'create', 'local',
-            '--container', 'AliceContainer', '--location', storage1_data)
-    wl_call(base_config_dir, 'storage', 'create', 'local-cached',
-            '--container', 'AliceContainer', '--location', storage2_data)
-    wl_call(base_config_dir, 'storage', 'create', 'local-dir-cached',
-            '--container', 'AliceContainer', '--location', storage3_data)
-    wl_call(base_config_dir, 'container', 'sync', '--target-storage', 'local-dir-cached',
-            'AliceContainer')
-
-    time.sleep(1)
-
-    with open(storage1_data / 'testfile', 'w') as f:
-        f.write("test data")
-
-    time.sleep(1)
-
-    assert (storage3_data / 'testfile').exists()
-    assert not (storage2_data / 'testfile').exists()
-    with open(storage3_data / 'testfile') as file:
-        assert file.read() == 'test data'
-
-    with open(base_config_dir / 'containers/AliceContainer.container.yaml') as f:
-        cont_data = f.read().split('\n', 4)[-1]
-        cont_yaml = load_yaml(cont_data)
-
-    container_id = cont_yaml['paths'][0][7:]
-    assert cont_yaml['backends']['storage'][2]['type'] == 'local-dir-cached'
-    backend_id = cont_yaml['backends']['storage'][2]['backend-id']
-
-    with open(base_config_dir / 'config.yaml') as f:
-        data = f.read()
-
-    config = load_yaml(data)
-    default_storage = config["default-remote-for-container"]
-    assert default_storage[container_id] == backend_id
-
-    wl_call(base_config_dir, 'container', 'stop-sync', 'AliceContainer')
-    wl_call(base_config_dir, 'container', 'sync', 'AliceContainer')
-
-    time.sleep(1)
-
-    with open(storage1_data / 'testfile2', 'w') as f:
-        f.write("get value from config")
-
-    time.sleep(1)
-
-    assert (storage3_data / 'testfile2').exists()
-    assert not (storage2_data / 'testfile2').exists()
-    with open(storage3_data / 'testfile2') as file:
-        assert file.read() == "get value from config"
-
-
-def test_container_list_conflicts(tmpdir):
-    base_config_dir = tmpdir / '.wildland'
-    base_data_dir = tmpdir / 'wldata'
-    storage1_data = base_data_dir / 'storage1'
-    storage2_data = base_data_dir / 'storage2'
-    storage3_data = base_data_dir / 'storage3'
-
-    os.mkdir(base_config_dir)
-    os.mkdir(base_data_dir)
-    os.mkdir(storage1_data)
-    os.mkdir(storage2_data)
-    os.mkdir(storage3_data)
-
-    wl_call(base_config_dir, 'user', 'create', 'Alice')
-    wl_call(base_config_dir, 'container', 'create',
-            '--owner', 'Alice', '--path', '/Alice', 'AliceContainer', '--no-encrypt-manifest')
-    wl_call(base_config_dir, 'storage', 'create', 'local',
-            '--container', 'AliceContainer', '--location', storage1_data)
-    wl_call(base_config_dir, 'storage', 'create', 'local-cached',
-            '--container', 'AliceContainer', '--location', storage2_data)
-    wl_call(base_config_dir, 'storage', 'create', 'local-dir-cached',
-            '--container', 'AliceContainer', '--location', storage3_data)
-
-    with open(storage1_data / 'file1', mode='w') as f:
-        f.write('aaaa')
-    with open(storage2_data / 'file1', mode='w') as f:
-        f.write('bbbb')
-    with open(storage3_data / 'file1', mode='w') as f:
-        f.write('cccc')
-
-    output = wl_call_output(base_config_dir, 'container', 'list-conflicts', 'AliceContainer')
-    conflicts = output.decode().splitlines()
-    assert len(conflicts) == 4
-    assert conflicts[1] != conflicts[2] and conflicts[2] != conflicts[3]
-
-    os.unlink(storage1_data / 'file1')
-    os.unlink(storage2_data / 'file1')
-    os.mkdir(storage2_data / 'file1')
-
-    output = wl_call_output(base_config_dir, 'container', 'list-conflicts', 'AliceContainer')
-    conflicts = output.decode().splitlines()
-    assert len(conflicts) == 2
-    assert 'file1' in conflicts[1]
-
-
-# Encryption of inline storage manifests
-
-
-def test_container_edit_inline_storage(tmpdir):
-    base_config_dir = tmpdir / '.wildland'
-    base_data_dir = tmpdir / 'wldata'
-    storage1_data = base_data_dir / 'storage1'
-
-    alice_output = wl_call_output(base_config_dir, 'user', 'create', 'Alice')
-    alice_key = alice_output.decode().splitlines()[0].split(' ')[2]
-    wl_call(base_config_dir, 'user', 'create', 'Bob')
-
-    wl_call(base_config_dir, 'container', 'create',
-            '--owner', 'Alice', '--path', '/Alice', '--access', 'Bob', 'AliceContainer')
-
-    wl_call(base_config_dir, 'storage', 'create', 'local',
-            '--container', 'AliceContainer', '--location', storage1_data, '--access', 'Alice')
-
-    os.unlink(base_config_dir / f'keys/{alice_key}.sec')
-
-    container_list = wl_call_output(base_config_dir, 'container', 'list').decode()
-    assert '/Alice' in container_list  # main container data is decrypted
-    assert 'encrypted' in container_list  # but the storage is encrypted
-    assert 'location' not in container_list  # and it's data is inaccesible
-
-
-def test_dump(tmpdir):
-    base_config_dir = tmpdir / '.wildland'
-    base_data_dir = tmpdir / 'wldata'
-    storage1_data = base_data_dir / 'storage1'
-
-    alice_output = wl_call_output(base_config_dir, 'user', 'create', 'Alice')
-    alice_key = alice_output.decode().splitlines()[0].split(' ')[2]
-    wl_call(base_config_dir, 'user', 'create', 'Bob')
-
-    wl_call(base_config_dir, 'container', 'create',
-            '--owner', 'Alice', '--path', '/Alice', '--access', 'Bob', 'AliceContainer')
-
-    wl_call(base_config_dir, 'storage', 'create', 'local',
-            '--container', 'AliceContainer', '--location', storage1_data, '--access', 'Alice')
-
-    dump_container = wl_call_output(base_config_dir, 'container', 'dump', 'AliceContainer').decode()
-    yaml_container = yaml.safe_load(dump_container)
-    assert 'enc' not in dump_container
-    assert '/Alice' in dump_container
-
-    assert yaml_container['object'] == 'container'
-
-    os.unlink(base_config_dir / f'keys/{alice_key}.sec')
-
-    dump_container = wl_call_output(base_config_dir, 'container', 'dump', 'AliceContainer').decode()
-    yaml_container = yaml.safe_load(dump_container)
-
-    assert 'encrypted' in dump_container
-    assert yaml_container['object'] == 'container'
-
 # Storage sets/templates
 
 
@@ -3033,6 +2830,7 @@ owner: '{owner}'
 user: {location}
 pubkey: key.{pubkey}
 paths:
+- /.uuid/79a10d15-86bd-4db4-9223-684af24971b3
 - /IMPORT
 '''
 
@@ -3054,7 +2852,10 @@ def test_import_user(cli, base_dir, tmpdir):
     assert 'owner: \'0xaaa\'' in bridge_data
     assert f'user: file://localhost{destination}' in bridge_data
     assert 'pubkey: key.0xbbb' in bridge_data
-    assert re.match(r'[\S\s]+paths:\n- /forests/0xbbb-PATH[\S\s]+', bridge_data)
+    assert re.match(
+        r'[\S\s]+paths:\n- /.uuid/[a-f0-9-]{36}\n- /forests/0xbbb-PATH[\S\s]+',
+        bridge_data
+    )
 
     destination.write(_create_user_manifest('0xccc'))
     cli('user', 'import', '--path', '/IMPORT', '--path', '/FOO', str(destination))
@@ -3066,7 +2867,10 @@ def test_import_user(cli, base_dir, tmpdir):
     assert 'owner: \'0xaaa\'' in bridge_data
     assert f'user: file://localhost{destination}' in bridge_data
     assert 'pubkey: key.0xccc' in bridge_data
-    assert re.match(r'[\S\s]+paths:\n- /IMPORT[\S\s]+', bridge_data)
+    assert re.match(
+        r'[\S\s]+paths:\n- /.uuid/[a-f0-9-]{36}\n- /IMPORT[\S\s]+',
+        bridge_data
+    )
 
     destination.write(_create_user_manifest('0xeee'))
     cli('user', 'import', '--path', '/IMPORT', 'file://' + str(destination))
@@ -3096,7 +2900,10 @@ def test_import_bridge(cli, base_dir, tmpdir):
     assert 'owner: \'0xaaa\'' in bridge_data
     assert f'user: file://localhost{user_destination}' in bridge_data
     assert 'pubkey: key.0xbbb' in bridge_data
-    assert re.match(r'[\S\s]+paths:\n- /forests/0xbbb-IMPORT[\S\s]+', bridge_data)
+    assert re.match(
+        r'[\S\s]+paths:\n- /.uuid/[a-f0-9-]{36}\n- /forests/0xbbb-IMPORT[\S\s]+',
+        bridge_data
+    )
 
 
 def test_import_bridge_with_object_location(cli, base_dir, tmpdir):
@@ -3127,7 +2934,10 @@ def test_import_bridge_with_object_location(cli, base_dir, tmpdir):
     assert 'object: bridge' in bridge_data
     assert 'owner: \'0xaaa\'' in bridge_data
     assert 'pubkey: key.0xbbb' in bridge_data
-    assert re.match(r'[\S\s]+paths:\n- /forests/0xbbb-IMPORT[\S\s]+', bridge_data)
+    assert re.match(
+        r'[\S\s]+paths:\n- /.uuid/[a-f0-9-]{36}\n- /forests/0xbbb-IMPORT[\S\s]+',
+        bridge_data
+    )
 
 
 def test_import_user_wl_path(cli, base_dir, tmpdir):
@@ -3151,7 +2961,10 @@ def test_import_user_wl_path(cli, base_dir, tmpdir):
     assert 'owner: \'0xaaa\'' in bridge_data
     assert 'user: wildland:0xaaa:/STORAGE:/Bob.user.yaml' in bridge_data
     assert 'pubkey: key.0xbbb' in bridge_data
-    assert re.match(r'[\S\s]+paths:\n- /forests/0xbbb-PATH[\S\s]+', bridge_data)
+    assert re.match(
+        r'[\S\s]+paths:\n- /.uuid/[a-f0-9-]{36}\n- /forests/0xbbb-PATH[\S\s]+',
+        bridge_data
+    )
 
 
 def test_import_bridge_wl_path(cli, base_dir, tmpdir):
@@ -3188,7 +3001,10 @@ def test_import_bridge_wl_path(cli, base_dir, tmpdir):
     assert 'owner: \'0xddd\'' in bridge_data
     assert f'file://localhost{bob_manifest_location}' in bridge_data
     assert 'pubkey: key.0xbbb' in bridge_data
-    assert re.match(r'[\S\s]+paths:\n- /forests/0xaaa-IMPORT[\S\s]+', bridge_data)
+    assert re.match(
+        r'[\S\s]+paths:\n- /.uuid/[a-f0-9-]{36}\n- /forests/0xaaa-IMPORT[\S\s]+',
+        bridge_data
+    )
 
     assert (base_dir / 'users/Bob.user.yaml').read_bytes() == bob_user_manifest
 
@@ -3209,7 +3025,10 @@ def test_import_user_bridge_owner(cli, base_dir, tmpdir):
     assert 'owner: \'0xccc\'' in bridge_data
     assert f'user: file://localhost{destination}' in bridge_data
     assert 'pubkey: key.0xbbb' in bridge_data
-    assert re.match(r'[\S\s]+paths:\n- /forests/0xbbb-PATH[\S\s]+', bridge_data)
+    assert re.match(
+        r'[\S\s]+paths:\n- /.uuid/[a-f0-9-]{36}\n- /forests/0xbbb-PATH[\S\s]+',
+        bridge_data
+    )
 
 
 def test_import_user_existing(cli, base_dir, tmpdir):
@@ -3743,6 +3562,255 @@ def test_import_forest_user_with_bridge_link_object(cli, tmp_path, base_dir):
     assert data['user']['object'] == 'link'
     assert data['user']['file'] == '/forest-owner.yaml'
     assert data['user']['storage']['type'] == 'local'
+
+# container-sync
+
+
+def test_cli_container_sync(tmpdir, cleanup):
+    base_config_dir = tmpdir / '.wildland'
+    base_data_dir = tmpdir / 'wldata'
+    storage1_data = base_data_dir / 'storage1'
+    storage2_data = base_data_dir / 'storage2'
+
+    os.mkdir(base_config_dir)
+    os.mkdir(base_data_dir)
+    os.mkdir(storage1_data)
+    os.mkdir(storage2_data)
+
+    cleanup(lambda: wl_call(base_config_dir, 'container', 'stop-sync', 'AliceContainer'))
+
+    wl_call(base_config_dir, 'user', 'create', 'Alice')
+    wl_call(base_config_dir, 'container', 'create',
+            '--owner', 'Alice', '--path', '/Alice', 'AliceContainer')
+    wl_call(base_config_dir, 'storage', 'create', 'local',
+            '--container', 'AliceContainer', '--location', storage1_data)
+    wl_call(base_config_dir, 'storage', 'create', 'local-cached',
+            '--container', 'AliceContainer', '--location', storage2_data)
+    wl_call(base_config_dir, 'container', 'sync', '--target-storage', 'local-cached',
+            'AliceContainer')
+
+    time.sleep(1)
+
+    with open(storage1_data / 'testfile', 'w') as f:
+        f.write("test data")
+
+    time.sleep(1)
+
+    assert (storage2_data / 'testfile').exists()
+    with open(storage2_data / 'testfile') as file:
+        assert file.read() == 'test data'
+
+
+def test_cli_container_sync_oneshot(tmpdir):
+    base_config_dir = tmpdir / '.wildland'
+    base_data_dir = tmpdir / 'wldata'
+    storage1_data = base_data_dir / 'storage1'
+    storage2_data = base_data_dir / 'storage2'
+
+    os.mkdir(base_config_dir)
+    os.mkdir(base_data_dir)
+    os.mkdir(storage1_data)
+    os.mkdir(storage2_data)
+
+    wl_call(base_config_dir, 'user', 'create', 'Alice')
+    wl_call(base_config_dir, 'container', 'create',
+            '--owner', 'Alice', '--path', '/Alice', 'AliceContainer')
+    wl_call(base_config_dir, 'storage', 'create', 'local',
+            '--container', 'AliceContainer', '--location', storage1_data)
+    wl_call(base_config_dir, 'storage', 'create', 'local-cached',
+            '--container', 'AliceContainer', '--location', storage2_data)
+
+    with open(storage1_data / 'testfile', 'w') as f:
+        f.write("test data")
+
+    wl_call(base_config_dir, 'container', 'sync', '--target-storage', 'local-cached', '--one-shot',
+            'AliceContainer')
+
+    time.sleep(1)
+
+    assert (storage2_data / 'testfile').exists()
+    with open(storage2_data / 'testfile') as file:
+        assert file.read() == 'test data'
+
+    with open(storage1_data / 'testfile2', 'w') as f:
+        f.write("test data2")
+
+    time.sleep(1)
+
+    assert not (storage2_data / 'testfile2').exists()
+
+
+def test_cli_container_sync_tg_remote(tmpdir, cleanup):
+    base_config_dir = tmpdir / '.wildland'
+    base_data_dir = tmpdir / 'wldata'
+    storage1_data = base_data_dir / 'storage1'
+    storage2_data = base_data_dir / 'storage2'
+    storage3_data = base_data_dir / 'storage3'
+
+    os.mkdir(base_config_dir)
+    os.mkdir(base_data_dir)
+    os.mkdir(storage1_data)
+    os.mkdir(storage2_data)
+    os.mkdir(storage3_data)
+
+    cleanup(lambda: wl_call(base_config_dir, 'container', 'stop-sync', 'AliceContainer'))
+
+    wl_call(base_config_dir, 'user', 'create', 'Alice')
+    wl_call(base_config_dir, 'container', 'create',
+            '--owner', 'Alice', '--path', '/Alice', 'AliceContainer', '--no-encrypt-manifest')
+    wl_call(base_config_dir, 'storage', 'create', 'local',
+            '--container', 'AliceContainer', '--location', storage1_data)
+    wl_call(base_config_dir, 'storage', 'create', 'local-cached',
+            '--container', 'AliceContainer', '--location', storage2_data)
+    wl_call(base_config_dir, 'storage', 'create', 'local-dir-cached',
+            '--container', 'AliceContainer', '--location', storage3_data)
+    wl_call(base_config_dir, 'container', 'sync', '--target-storage', 'local-dir-cached',
+            'AliceContainer')
+
+    time.sleep(1)
+
+    with open(storage1_data / 'testfile', 'w') as f:
+        f.write("test data")
+
+    time.sleep(1)
+
+    assert (storage3_data / 'testfile').exists()
+    assert not (storage2_data / 'testfile').exists()
+    with open(storage3_data / 'testfile') as file:
+        assert file.read() == 'test data'
+
+    with open(base_config_dir / 'containers/AliceContainer.container.yaml') as f:
+        cont_data = f.read().split('\n', 4)[-1]
+        cont_yaml = load_yaml(cont_data)
+
+    container_id = cont_yaml['paths'][0][7:]
+    assert cont_yaml['backends']['storage'][2]['type'] == 'local-dir-cached'
+    backend_id = cont_yaml['backends']['storage'][2]['backend-id']
+
+    with open(base_config_dir / 'config.yaml') as f:
+        data = f.read()
+
+    config = load_yaml(data)
+    default_storage = config["default-remote-for-container"]
+    assert default_storage[container_id] == backend_id
+
+    wl_call(base_config_dir, 'container', 'stop-sync', 'AliceContainer')
+    wl_call(base_config_dir, 'container', 'sync', 'AliceContainer')
+
+    time.sleep(1)
+
+    with open(storage1_data / 'testfile2', 'w') as f:
+        f.write("get value from config")
+
+    time.sleep(1)
+
+    assert (storage3_data / 'testfile2').exists()
+    assert not (storage2_data / 'testfile2').exists()
+    with open(storage3_data / 'testfile2') as file:
+        assert file.read() == "get value from config"
+
+
+def test_container_list_conflicts(tmpdir):
+    base_config_dir = tmpdir / '.wildland'
+    base_data_dir = tmpdir / 'wldata'
+    storage1_data = base_data_dir / 'storage1'
+    storage2_data = base_data_dir / 'storage2'
+    storage3_data = base_data_dir / 'storage3'
+
+    os.mkdir(base_config_dir)
+    os.mkdir(base_data_dir)
+    os.mkdir(storage1_data)
+    os.mkdir(storage2_data)
+    os.mkdir(storage3_data)
+
+    wl_call(base_config_dir, 'user', 'create', 'Alice')
+    wl_call(base_config_dir, 'container', 'create',
+            '--owner', 'Alice', '--path', '/Alice', 'AliceContainer', '--no-encrypt-manifest')
+    wl_call(base_config_dir, 'storage', 'create', 'local',
+            '--container', 'AliceContainer', '--location', storage1_data)
+    wl_call(base_config_dir, 'storage', 'create', 'local-cached',
+            '--container', 'AliceContainer', '--location', storage2_data)
+    wl_call(base_config_dir, 'storage', 'create', 'local-dir-cached',
+            '--container', 'AliceContainer', '--location', storage3_data)
+
+    with open(storage1_data / 'file1', mode='w') as f:
+        f.write('aaaa')
+    with open(storage2_data / 'file1', mode='w') as f:
+        f.write('bbbb')
+    with open(storage3_data / 'file1', mode='w') as f:
+        f.write('cccc')
+
+    output = wl_call_output(base_config_dir, 'container', 'list-conflicts', 'AliceContainer')
+    conflicts = output.decode().splitlines()
+    assert len(conflicts) == 4
+    assert conflicts[1] != conflicts[2] and conflicts[2] != conflicts[3]
+
+    os.unlink(storage1_data / 'file1')
+    os.unlink(storage2_data / 'file1')
+    os.mkdir(storage2_data / 'file1')
+
+    output = wl_call_output(base_config_dir, 'container', 'list-conflicts', 'AliceContainer')
+    conflicts = output.decode().splitlines()
+    assert len(conflicts) == 2
+    assert 'file1' in conflicts[1]
+
+
+# Encryption of inline storage manifests
+
+
+def test_container_edit_inline_storage(tmpdir):
+    base_config_dir = tmpdir / '.wildland'
+    base_data_dir = tmpdir / 'wldata'
+    storage1_data = base_data_dir / 'storage1'
+
+    alice_output = wl_call_output(base_config_dir, 'user', 'create', 'Alice')
+    alice_key = alice_output.decode().splitlines()[0].split(' ')[2]
+    wl_call(base_config_dir, 'user', 'create', 'Bob')
+
+    wl_call(base_config_dir, 'container', 'create',
+            '--owner', 'Alice', '--path', '/Alice', '--access', 'Bob', 'AliceContainer')
+
+    wl_call(base_config_dir, 'storage', 'create', 'local',
+            '--container', 'AliceContainer', '--location', storage1_data, '--access', 'Alice')
+
+    os.unlink(base_config_dir / f'keys/{alice_key}.sec')
+
+    container_list = wl_call_output(base_config_dir, 'container', 'list').decode()
+    assert '/Alice' in container_list  # main container data is decrypted
+    assert 'encrypted' in container_list  # but the storage is encrypted
+    assert 'location' not in container_list  # and it's data is inaccesible
+
+
+def test_dump(tmpdir):
+    base_config_dir = tmpdir / '.wildland'
+    base_data_dir = tmpdir / 'wldata'
+    storage1_data = base_data_dir / 'storage1'
+
+    alice_output = wl_call_output(base_config_dir, 'user', 'create', 'Alice')
+    alice_key = alice_output.decode().splitlines()[0].split(' ')[2]
+    wl_call(base_config_dir, 'user', 'create', 'Bob')
+
+    wl_call(base_config_dir, 'container', 'create',
+            '--owner', 'Alice', '--path', '/Alice', '--access', 'Bob', 'AliceContainer')
+
+    wl_call(base_config_dir, 'storage', 'create', 'local',
+            '--container', 'AliceContainer', '--location', storage1_data, '--access', 'Alice')
+
+    dump_container = wl_call_output(base_config_dir, 'container', 'dump', 'AliceContainer').decode()
+    yaml_container = yaml.safe_load(dump_container)
+    assert 'enc' not in dump_container
+    assert '/Alice' in dump_container
+
+    assert yaml_container['object'] == 'container'
+
+    os.unlink(base_config_dir / f'keys/{alice_key}.sec')
+
+    dump_container = wl_call_output(base_config_dir, 'container', 'dump', 'AliceContainer').decode()
+    yaml_container = yaml.safe_load(dump_container)
+
+    assert 'encrypted' in dump_container
+    assert yaml_container['object'] == 'container'
+
 
 ## Global options (--help, --version etc.)
 

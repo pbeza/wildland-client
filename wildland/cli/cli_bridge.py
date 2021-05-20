@@ -28,6 +28,7 @@ import click
 
 from ..manifest.manifest import ManifestError, WildlandObjectType
 from ..bridge import Bridge
+from ..publish import Publisher
 from .cli_base import aliased_group, ContextObj, CliError
 from .cli_common import sign, verify, edit, dump
 from .cli_user import import_manifest
@@ -141,6 +142,33 @@ def bridge_import(obj: ContextObj, path_or_url, paths, bridge_owner, only_first)
     """
 
     import_manifest(obj, path_or_url, paths, WildlandObjectType.BRIDGE, bridge_owner, only_first)
+
+
+@bridge_.command(short_help='publish bridge manifest')
+@click.argument('bridge', metavar='BRIDGE')
+@click.pass_obj
+def publish(obj: ContextObj, bridge):
+    """
+    Publish a bridge manifest to an infrastructure container.
+    """
+
+    print(f'Publishing {bridge}...')
+    manifest = obj.client.load_object_from_name(WildlandObjectType.BRIDGE, bridge)
+    Publisher(obj.client, manifest).publish_manifest()
+
+
+@bridge_.command(short_help='unpublish bridge manifest')
+@click.argument('bridge', metavar='BRIDGE')
+@click.pass_obj
+def unpublish(obj: ContextObj, bridge):
+    '''
+    Attempt to unpublish a bridge manifest under a given wildland path
+    from all infrastructure containers.
+    '''
+
+    print(f'Unpublishing {bridge}...')
+    manifest = obj.client.load_object_from_name(WildlandObjectType.BRIDGE, bridge)
+    Publisher(obj.client, manifest).unpublish_manifest()
 
 
 bridge_.add_command(sign)

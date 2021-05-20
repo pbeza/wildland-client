@@ -210,8 +210,9 @@ def publish(obj: ContextObj, cont):
     Publish a container manifest to an infrastructure container.
     """
 
-    container = obj.client.load_object_from_name(WildlandObjectType.CONTAINER, cont)
-    Publisher(obj.client, container).publish_container()
+    print(f'Publishing {cont}...')
+    manifest = obj.client.load_object_from_name(WildlandObjectType.CONTAINER, cont)
+    Publisher(obj.client, manifest).publish_manifest()
 
 
 @container_.command(short_help='unpublish container manifest')
@@ -223,8 +224,9 @@ def unpublish(obj: ContextObj, cont):
     from all infrastructure containers.
     '''
 
-    container = obj.client.load_object_from_name(WildlandObjectType.CONTAINER, cont)
-    Publisher(obj.client, container).unpublish_container()
+    print(f'Unpublishing {cont}...')
+    manifest = obj.client.load_object_from_name(WildlandObjectType.CONTAINER, cont)
+    Publisher(obj.client, manifest).unpublish_manifest()
 
 
 def _container_info(client, container):

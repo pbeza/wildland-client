@@ -21,11 +21,12 @@
 Classes for handling signed Wildland manifests
 """
 
-from typing import Tuple, Optional, Dict
+from typing import Tuple, Optional, Dict, List
+from pathlib import PurePosixPath
+import abc
 import re
 import enum
 import logging
-
 import yaml
 
 from .schema import Schema
@@ -710,3 +711,34 @@ class HeaderParser:
         if not parsed_lines:
             raise ManifestError('Block literal cannot be empty')
         return '\n'.join(parsed_lines)
+
+
+class Publishable(metaclass=abc.ABCMeta):
+    """
+    An interface for Manifests objects that can be published
+    """
+    @abc.abstractmethod
+    def get_unique_publish_id(self) -> str:
+        """
+        Return unique id for publishable manifest. In most cases it's going to be an uuid of
+        the container while users, for example, may return their signature.
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def get_primary_publish_path(self) -> PurePosixPath:
+        """
+        Return primary path where the manifest is going to be published, by convention it's
+        a path that starts with /.uuid/
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def get_additional_publish_paths(self) -> List[PurePosixPath]:
+        """Return additionals paths where the manifest is going to be published"""
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def get_publish_user_owner(self) -> str:
+        """Return user's owner, whose catalog is used to publish manifests"""
+        raise NotImplementedError

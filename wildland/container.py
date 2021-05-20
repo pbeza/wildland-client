@@ -26,12 +26,12 @@ import uuid
 from typing import Optional, List, Union, Any
 import itertools
 
-from .manifest.manifest import Manifest, WildlandObjectType, ManifestError
+from .manifest.manifest import Manifest, WildlandObjectType, ManifestError, Publishable
 from .manifest.schema import Schema
 from .wlpath import WildlandPath
 
 
-class Container:
+class Container(Publishable):
     """Wildland container"""
     SCHEMA = Schema('container')
     OBJECT_TYPE = WildlandObjectType.CONTAINER
@@ -74,6 +74,18 @@ class Container:
         path = PurePosixPath('/.uuid/') / str(uuid.uuid4())
         self.paths.insert(0, path)
         return path
+
+    def get_unique_publish_id(self) -> str:
+        return self.ensure_uuid()
+
+    def get_primary_publish_path(self) -> PurePosixPath:
+        return self.get_uuid_path()
+
+    def get_additional_publish_paths(self) -> List[PurePosixPath]:
+        return self.expanded_paths
+
+    def get_publish_user_owner(self) -> str:
+        return self.owner
 
     def __str__(self):
         """Friendly text representation of the container."""

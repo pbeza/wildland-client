@@ -25,14 +25,14 @@ from pathlib import Path, PurePosixPath
 from typing import List, Optional, Union
 import logging
 
-from .manifest.manifest import Manifest, WildlandObjectType
+from .manifest.manifest import Manifest, WildlandObjectType, Publishable
 from .manifest.schema import Schema
 
 
 logger = logging.getLogger('user')
 
 
-class User:
+class User(Publishable):
     """
     A data transfer object representing Wildland user.
     Can be converted from/to a self-signed user manifest.
@@ -54,6 +54,18 @@ class User:
         self.local_path = local_path
         self.pubkeys = pubkeys
         self.manifest = manifest
+
+    def get_unique_publish_id(self) -> str:
+        return self.owner
+
+    def get_primary_publish_path(self) -> PurePosixPath:
+        return PurePosixPath('/.uuid/') / self.get_unique_publish_id()
+
+    def get_additional_publish_paths(self) -> List[PurePosixPath]:
+        return self.paths
+
+    def get_publish_user_owner(self) -> str:
+        return self.owner
 
     @property
     def primary_pubkey(self):

@@ -32,6 +32,7 @@ from ..user import User
 from .cli_base import aliased_group, ContextObj, CliError
 from ..wlpath import WILDLAND_URL_PREFIX
 from ..bridge import Bridge
+from ..publish import Publisher
 from .cli_common import sign, verify, edit, modify_manifest, add_field, del_field, dump
 from ..exc import WildlandError
 from ..manifest.schema import SchemaError
@@ -373,14 +374,20 @@ def _sanitize_imported_paths(paths: List[PurePosixPath], owner: str) -> List[Pur
     if not paths:
         raise CliError('No paths found to sanitize')
 
-    path = paths[0]
+    if len(paths) > 1 and paths[0].parent == PurePosixPath('/.uuid/'):
+        path = paths[1]
+    else:
+        path = paths[0]
 
     if path.is_relative_to('/'):
         path = path.relative_to('/')
 
-    safe_path = f'/forests/{owner}-' + '_'.join(path.parts)
+    safe_path = PurePosixPath(f'/forests/{owner}-' + '_'.join(path.parts))
 
-    return [PurePosixPath(safe_path)]
+    if len(paths) == 1:
+        return [safe_path]
+
+    return [paths[0], safe_path]
 
 
 def _do_process_imported_manifest(
@@ -496,12 +503,14 @@ def import_manifest(obj: ContextObj, path_or_url, paths, wl_obj_type, bridge_own
         copied_files = []
         try:
             for bridge in bridges:
+
                 new_bridge = Bridge(
                     owner=default_user,
                     user_location=deepcopy(bridge.user_location),
                     user_pubkey=bridge.user_pubkey,
                     user_id=obj.client.session.sig.fingerprint(bridge.user_pubkey),
-                    paths=(paths or _sanitize_imported_paths(bridge.paths, bridge.owner)),
+                    paths=([PurePosixPath(p) for p in paths] or
+                           _sanitize_imported_paths(bridge.paths, bridge.owner)),
                 )
                 bridge_name = name.replace(':', '_').replace('/', '_')
                 bridge_path = obj.client.save_new_object(
@@ -561,6 +570,33 @@ def user_refresh(obj: ContextObj, name):
             _do_import_manifest(obj, bridge.user_location, bridge.owner, force=True)
         except WildlandError as ex:
             click.echo(f"Error while refreshing bridge: {ex}")
+
+
+@user_.command(short_help='publish user manifest')
+@click.argument('user', metavar='USER')
+@click.pass_obj
+def publish(obj: ContextObj, user):
+    """
+    Publish a user manifest to an infrastructure container.
+    """
+
+    print(f'Publishing {user}...')
+    manifest = obj.client.load_object_from_name(WildlandObjectType.USER, user)
+    Publisher(obj.client, manifest).publish_manifest()
+
+
+@user_.command(short_help='unpublish user manifest')
+@click.argument('user', metavar='USER')
+@click.pass_obj
+def unpublish(obj: ContextObj, user):
+    '''
+    Attempt to unpublish a user manifest under a given wildland path
+    from all infrastructure containers.
+    '''
+
+    print(f'Unpublishing {user}...')
+    manifest = obj.client.load_object_from_name(WildlandObjectType.USER, user)
+    Publisher(obj.client, manifest).unpublish_manifest()
 
 
 user_.add_command(sign)
