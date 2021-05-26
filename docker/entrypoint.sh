@@ -1,8 +1,9 @@
 #!/bin/bash -e
 
+sudo chown -R user:user /dev/null
 . /home/user/env/bin/activate
 
-pip install . plugins/*
+pip install . plugins/* gunicorn uvloop httptools easywebdav Pillow
 
 export EDITOR=nano
 export PATH=/home/user/wildland-client:/home/user/wildland-client/docker:$PATH
@@ -15,6 +16,10 @@ sudo chmod 666 /dev/fuse
 
 export __fish_prompt_hostname="wildland-client"
 export EDITOR=vim
+
+mkdir /home/user/gunicorn
+cd /home/user/wildland-client/wildland/api
+gunicorn -c /home/user/wildland-client/gunicorn.py --daemon
 
 sudo /etc/init.d/apache2 start
 
