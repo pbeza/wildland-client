@@ -109,22 +109,10 @@ class Container(WildlandObject, obj_type=WildlandObject.Type.CONTAINER):
         return path
 
     def __str__(self):
-        """Friendly text representation of the container."""
-        local_str = ''
-        if self.local_path:
-            local_str = f' ({self.local_path})'
-        return f'{self.owner}:{[str(p) for p in self.paths]}' + local_str
+        return self.to_str()
 
     def __repr__(self):
-        return (f'container('
-                f'owner={self.owner!r}, '
-                f'paths={self.paths!r}, '
-                f'backends={[cache.storage for cache in self._storage_cache]!r}, '
-                f'title={self.title!r}, '
-                f'categories={self.categories!r}, '
-                f'local_path={self.local_path!r}, '
-                f'manifest={self.manifest!r}, '
-                f'access={self.access!r})')
+        return self.to_str()
 
     def __eq__(self, other):
         if not isinstance(other, Container):
@@ -141,6 +129,30 @@ class Container(WildlandObject, obj_type=WildlandObject.Type.CONTAINER):
             self.title,
             frozenset(self.categories),
         ))
+
+    def to_str(self, include_sensitive=False):
+        """
+        Return string representation
+        """
+        array_repr = [
+            f"owner={self.owner!r}",
+            f"paths={[str(p) for p in self.paths]}"
+        ]
+        if self.local_path:
+            array_repr += [f"local_path={self.local_path!r}"]
+        if include_sensitive:
+            array_repr += [
+                f"backends={[cache.storage for cache in self._storage_cache]!r}",
+                f"manifest={self.manifest!r}"
+            ]
+        if self.title:
+            array_repr += [f"title={self.title!r}"]
+        if self.categories:
+            array_repr += [f"categories={self.categories!r}"]
+        if self.access:
+            array_repr += [f"access={self.access!r}"]
+        str_repr = "container(" + ", ".join(array_repr) + ")"
+        return str_repr
 
     @classmethod
     def parse_fields(cls, fields: dict, client, manifest: Optional[Manifest] = None, **kwargs):
