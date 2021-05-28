@@ -815,6 +815,12 @@ class Client:
             return self.load_object_from_bytes(None,
                                                target_bytes, trusted_owner=trusted_owner,
                                                expected_owner=container.owner)
+
+        if isinstance(subcontainer_obj, bytes):
+            return self.load_object_from_bytes(None,
+                                               subcontainer_obj, trusted_owner=trusted_owner,
+                                               expected_owner=container.owner)
+
         return subcontainer_obj.get_container(container)
 
     def all_subcontainers(self, container: Container) -> Iterator[Union[Container, Bridge]]:

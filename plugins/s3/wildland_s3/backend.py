@@ -273,12 +273,12 @@ class S3StorageBackend(FileSubcontainersMixin, CachedStorageMixin, StorageBacken
         except botocore.exceptions.ClientError as ex:
             raise WildlandError(f"Could not connect to AWS with Exception: {ex}") from ex
 
-        if self.with_index and not self.read_only:
-            self.refresh()
-            with self.s3_dirs_lock:
-                s3_dirs = list(self.s3_dirs)
-            for path in s3_dirs:
-                self._update_index(path)
+        # if self.with_index and not self.read_only:
+        #     self.refresh()
+        #     with self.s3_dirs_lock:
+        #         s3_dirs = list(self.s3_dirs)
+        #     for path in s3_dirs:
+        #         self._update_index(path)
 
     def key(self, path: PurePosixPath, is_dir: bool = False) -> str:
         """

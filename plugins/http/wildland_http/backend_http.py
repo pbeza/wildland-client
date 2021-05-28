@@ -26,12 +26,18 @@ from pathlib import PurePosixPath
 from typing import Iterable, Tuple
 from urllib.parse import urljoin, urlparse, quote
 import logging
+import asyncio
+import aiohttp
 from io import BytesIO
 
 import click
 from lxml import etree
 import requests
 
+from wildland.link import Link
+from wildland.manifest.manifest import Manifest
+from wildland.container import ContainerStub
+from wildland.storage_backends.file_subcontainers import FileSubcontainersMixin
 from wildland.storage_backends.base import StorageBackend, Attr
 from wildland.storage_backends.buffered import PagedFile
 from wildland.storage_backends.cached import DirectoryCachedStorageMixin
@@ -67,10 +73,12 @@ class PagedHttpFile(PagedFile):
         return resp.content
 
 
-class HttpStorageBackend(DirectoryCachedStorageMixin, StorageBackend):
+class HttpStorageBackend(FileSubcontainersMixin, DirectoryCachedStorageMixin, StorageBackend):
     """
     A read-only HTTP storage that gets its information from directory listings.
     """
+
+    CACHE_TIMEOUT = 5
 
     SCHEMA = Schema({
         "title": "Storage manifest (HTTP index)",
@@ -190,6 +198,28 @@ class HttpStorageBackend(DirectoryCachedStorageMixin, StorageBackend):
             attr = self._get_single_file_attr(url)
 
         return attr
+
+    async def _get(self, res_path, res_obj):
+        assert isinstance(res_obj, Link)
+        assert res_obj.storage_driver.storage_backend is self
+
+        url = self.make_url(res_obj.file_path.relative_to('/'), is_dir=False)
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                html = await response.read()
+
+                return res_path, html
+
+    async def _boohoo(self, go):
+        return await asyncio.gather(*[self._get(res_path, res_obj) for res_path, res_obj in go])
+
+    def get_children(self, query_path: PurePosixPath = PurePosixPath('*')) -> \
+            Iterable[Tuple[PurePosixPath, Link]]:
+
+        togo = super().get_children(query_path)
+        loop = asyncio.get_event_loop()
+        return loop.run_until_complete(self._boohoo(togo))
 
     def open(self, path: PurePosixPath, _flags: int) -> PagedHttpFile:
         url = self.make_url(path, is_dir=self.getattr(path).is_dir())
