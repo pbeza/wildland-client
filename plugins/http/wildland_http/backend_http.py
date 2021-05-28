@@ -32,6 +32,7 @@ import click
 from lxml import etree
 import requests
 
+from wildland.storage_backends.file_subcontainers import FileSubcontainersMixin
 from wildland.storage_backends.base import StorageBackend, Attr
 from wildland.storage_backends.buffered import PagedFile
 from wildland.storage_backends.cached import DirectoryCachedStorageMixin
@@ -67,7 +68,7 @@ class PagedHttpFile(PagedFile):
         return resp.content
 
 
-class HttpStorageBackend(DirectoryCachedStorageMixin, StorageBackend):
+class HttpStorageBackend(FileSubcontainersMixin, DirectoryCachedStorageMixin, StorageBackend):
     """
     A read-only HTTP storage that gets its information from directory listings.
     """
