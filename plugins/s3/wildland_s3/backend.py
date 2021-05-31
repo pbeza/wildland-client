@@ -162,12 +162,6 @@ class S3StorageBackend(FileSubcontainersMixin, CachedStorageMixin, StorageBacken
                 "type": "boolean",
                 "description": "Maintain index.html files with directory listings (default: False)",
             },
-            "subcontainers" : {
-                "type": "array",
-                "items": {
-                    "$ref": "types.json#rel-path",
-                }
-            },
             "manifest-pattern": {
                 "oneOf": [
                     {"$ref": "/schemas/types.json#pattern-glob"},
@@ -179,7 +173,7 @@ class S3StorageBackend(FileSubcontainersMixin, CachedStorageMixin, StorageBacken
     TYPE = 's3'
     LOCATION_PARAM = 's3_url'
 
-    INDEX_NAME = 'index.html'
+    INDEX_NAME = '/'
 
     def __init__(self, **kwds):
         super().__init__(**kwds)
@@ -273,12 +267,16 @@ class S3StorageBackend(FileSubcontainersMixin, CachedStorageMixin, StorageBacken
         except botocore.exceptions.ClientError as ex:
             raise WildlandError(f"Could not connect to AWS with Exception: {ex}") from ex
 
-        if self.with_index and not self.read_only:
-            self.refresh()
-            with self.s3_dirs_lock:
-                s3_dirs = list(self.s3_dirs)
-            for path in s3_dirs:
-                self._update_index(path)
+        # TODO
+        # Commenting out as it makes S3 with-index completely unusable
+        # https://gitlab.com/wildland/wildland-client/-/issues/435
+        #
+        # if self.with_index and not self.read_only:
+        #     self.refresh()
+        #     with self.s3_dirs_lock:
+        #         s3_dirs = list(self.s3_dirs)
+        #     for path in s3_dirs:
+        #         self._update_index(path)
 
     def key(self, path: PurePosixPath, is_dir: bool = False) -> str:
         """
@@ -291,11 +289,14 @@ class S3StorageBackend(FileSubcontainersMixin, CachedStorageMixin, StorageBacken
 
         return str(path.relative_to('/'))
 
-    def url(self, path: PurePosixPath) -> str:
-        """
-        Convert path to relative S3 URL.
-        """
-        return str(self.base_path / path)
+    @staticmethod
+    def _index_entry_href(path: PurePosixPath, is_dir: bool = False) -> str:
+        resolved_path = str(path)
+
+        if is_dir:
+            resolved_path += '/'
+
+        return resolved_path
 
     @staticmethod
     def _stat(obj) -> Attr:
@@ -535,7 +536,7 @@ class S3StorageBackend(FileSubcontainersMixin, CachedStorageMixin, StorageBacken
 
         self.client.put_object(
             Bucket=self.bucket,
-            Key=self.key(path / self.INDEX_NAME),
+            Key=self.key(path, is_dir=True),
             Body=BytesIO(data.encode()),
             ContentType='text/html')
 
@@ -543,7 +544,11 @@ class S3StorageBackend(FileSubcontainersMixin, CachedStorageMixin, StorageBacken
         # (name, url, is_dir)
         entries: List[Tuple[str, str, Attr]] = []
         if path != PurePosixPath('.'):
-            entries.append(('..', self.url(path.parent), Attr.dir()))
+            entries.append((
+                '..',
+                self._index_entry_href(PurePosixPath('..'), is_dir=True),
+                Attr.dir())
+            )
 
         try:
             names = list(self.readdir(path))
@@ -555,7 +560,7 @@ class S3StorageBackend(FileSubcontainersMixin, CachedStorageMixin, StorageBacken
                 attr = self.getattr(path / name)
             except IOError:
                 continue
-            entry = (name, self.url(path / name), attr)
+            entry = (name, self._index_entry_href(PurePosixPath(name), attr.is_dir()), attr)
             entries.append(entry)
 
         # Sort directories first
@@ -588,8 +593,6 @@ class S3StorageBackend(FileSubcontainersMixin, CachedStorageMixin, StorageBacken
             if attr.is_dir():
                 icon = '&#x1F4C1;'
                 name += '/'
-                if url != '/':
-                    url += '/'
             else:
                 icon = '&#x1F4C4;'
 
