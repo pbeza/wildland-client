@@ -131,7 +131,10 @@ def _do_create(
                 raise CliError(f'Failed to create storage template: {ex}') from ex
 
     if backend.LOCATION_PARAM:
-        params[backend.LOCATION_PARAM] = str(params[backend.LOCATION_PARAM]).rstrip('/') + \
+        _location = params[backend.LOCATION_PARAM]
+        location_param = str(_location).rstrip('/') if _location else ''
+
+        params[backend.LOCATION_PARAM] = location_param.rstrip('/') + \
                                              '{{ local_dir if local_dir is defined else "/" }}' + \
                                              '/{{ uuid }}'
 
