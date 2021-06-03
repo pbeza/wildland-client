@@ -3,6 +3,7 @@
 set -ex
 
 /home/user/env/bin/pip install . plugins/*
+make -f Makefile.tutorials -C Documentation tutorials
 make -C Documentation/ \
     SPHINXBUILD=/home/user/env/bin/sphinx-build \
     SPHINXOPTS=-W \

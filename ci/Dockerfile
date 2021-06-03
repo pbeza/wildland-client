@@ -31,7 +31,8 @@ RUN apt-get -qy update && apt-get install -y \
       jq \
       procps \
       gocryptfs \
-      encfs
+      encfs \
+      pandoc
 
 # add IPFS client
 RUN ARCH=$(arch) && CHECKSUM="" \

@@ -15,6 +15,8 @@ services:
     volumes:
       - ..:/home/user/wildland-client:ro
       - ../artifacts/:/home/user/wildland-client/artifacts:rw
+      - ../artifacts/intro:/home/user/wildland-client/Documentation/intro:rw
+      - ../artifacts/howtos:/home/user/wildland-client/Documentation/howtos:rw
 
   wildland-client-ci-imap:
     build:
