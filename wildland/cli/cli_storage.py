@@ -341,6 +341,16 @@ def do_create_storage_from_templates(
             storage_cls.LOCATION_PARAM in storage.params and
             storage.params[storage_cls.LOCATION_PARAM]):
 
+            if 'reference-container' in storage.params:
+                referenced_storage_and_path = client.select_reference_storage(
+                    storage.params['reference-container'], container.owner, False)
+
+                if referenced_storage_and_path is None:
+                    raise CliError("Can't select reference storage: "
+                                   f"{storage.params['reference-container']}")
+
+                _, storage.params['storage'] = referenced_storage_and_path
+
             # Template-generated paths/uris sanity check
             orig_location = str(storage.params[storage_cls.LOCATION_PARAM])
 
@@ -356,6 +366,9 @@ def do_create_storage_from_templates(
             storage.params[storage_cls.LOCATION_PARAM] = str(location)
 
             backend = StorageBackend.from_params(storage.params)
+
+            if storage.params['storage']:
+                del storage.params['storage']
 
         to_process.append((storage, backend))
 

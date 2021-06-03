@@ -160,7 +160,7 @@ def create(obj: ContextObj, owner, path, name, update_user, access, no_publish,
         backends=[],
         client=obj.client,
         title=title,
-        categories=category,
+        categories=[PurePosixPath(p) for p in category] if category else [],
         access=access
     )
 
