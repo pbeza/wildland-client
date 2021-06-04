@@ -1,0 +1,21 @@
+.PHONY: generate
+
+# Wildland-specific custom target
+tutorials: \
+	intro/Wildland\ Introduction.rst \
+	howtos/Access\ Control\ HOWTO.rst \
+	howtos/Encryption\ backend\ HOWTO.rst \
+	howtos/Group\ users\ HOWTO.rst \
+	howtos/Sharing\ and\ access\ control\ HOWTO.rst \
+	howtos/Storage\ Migration\ HOWOTO.rst \
+	howtos/Wildland\ Quick\ Start.rst
+
+# enter target directory, to have correct relative image paths
+
+intro/%.rst: tutorials/intro/%.md
+	mkdir -p intro
+	cd intro; pandoc -t rst --resource-path=../tutorials/intro --extract-media=images --output="../$@" "../$<"
+
+howtos/%.rst: tutorials/HOWTO/%.md
+	mkdir -p howtos
+	cd howtos; pandoc -t rst --resource-path=../tutorials/intro --extract-media=images --output="../$@" "../$<"

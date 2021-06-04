@@ -1,0 +1,3 @@
+[submodule "Documentation/tutorials"]
+	path = Documentation/tutorials
+	url = ../wildland-tutorials.git

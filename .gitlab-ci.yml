@@ -4,9 +4,10 @@ stages:
   - docs
 
 before_script:
-  - mkdir -p --mode=0777 artifacts artifacts/htmlcov
+  - mkdir -p --mode=0777 artifacts artifacts/htmlcov artifacts/intro artifacts/howtos
 
 variables:
+  GIT_SUBMODULE_STRATEGY: recursive
   CONTAINER_TEST_IMAGE: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG
   CONTAINER_TEST_IMAGE_IMAP: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG-imap
   CONTAINER_RELEASE_IMAGE: $CI_REGISTRY_IMAGE:latest

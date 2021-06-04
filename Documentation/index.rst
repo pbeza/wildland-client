@@ -10,20 +10,9 @@ Welcome to Wildland's documentation!
    :maxdepth: 2
    :caption: Contents:
 
-   setup
-   fuse-driver
-   conflict
-   manifests
-   paths
-   cli
-   internals
-   proxy
-   categorization
-   subcontainers
-   sync
-   deprecated
-   contributing
-   plugins-howto
+   intro
+   howtos
+   devindex
 
 Indices and tables
 ==================
