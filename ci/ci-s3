@@ -23,7 +23,8 @@ MINIO_ACCESS_KEY='dmr' MINIO_SECRET_KEY='/.,/.,/.,' /tmp/minio server /tmp/minio
 
 ./wl user create s3-user
 ./wl container create s3-con --path /s3
-./wl storage create s3 --access-key 'dmr' --secret-key '/.,/.,/.,' --container s3-con --s3-url s3://the-bucket/ --endpoint-url 'http://127.0.0.1:9000' s3-storage
+./wl storage create s3 --access-key 'dmr' --secret-key '/.,/.,/.,' --container s3-con --s3-url s3://the-bucket/ --endpoint-url 'http://127.0.0.1:9000' --with-index s3-storage
+
 ./wl start --container s3-con
 
 # Test files
@@ -50,4 +51,14 @@ time -p chronic /bin/bash -c '$(rm ~/wildland/s3/abbott)'
 
 time -p chronic /bin/bash -c '[[ ! -f ~/wildland/s3/subdir/abbott ]]'
 
+./wl container create s3-http --path /http
+./wl storage create http --url 'http://127.0.0.1:9000'
+./wl container mount s3-http
+
+
+time -p chronic /bin/bash -c '[[ $(cat ~/wildland/http/file) == "foo" ]]'
+time -p chronic /bin/bash -c '[[ $(cat ~/wildland/http/subdir/file) == "bar" ]]'
+
+time -p chronic /bin/bash -c '[[ $(cat ~/wildland/http/abbott) == "copy_me" ]]'
+time -p chronic /bin/bash -c '[[ $(cat ~/wildland/http/floating) == "move_me" ]]'
 
