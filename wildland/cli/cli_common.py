@@ -20,7 +20,8 @@
 """
 Common commands (sign, edit, ...) for multiple object types
 """
-
+import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Callable, List, Any, Optional
@@ -28,19 +29,17 @@ from typing import Callable, List, Any, Optional
 import click
 import yaml
 
+from wildland import __version__
+from wildland.wildland_object.wildland_object import WildlandObject
 from .cli_base import ContextObj, CliError
 from ..client import Client
-from ..user import User
 from ..container import Container
-from ..storage import Storage
-from ..bridge import Bridge
 from ..manifest.sig import SigError
 from ..manifest.manifest import (
     HEADER_SEPARATOR,
     Manifest,
     ManifestError,
     split_header,
-    WildlandObjectType
 )
 from ..manifest.schema import SchemaError
 from ..exc import WildlandError
@@ -51,7 +50,7 @@ def find_manifest_file(client: Client, name, manifest_type) -> Path:
     CLI helper: load a manifest by name.
     """
     try:
-        object_type: Optional[WildlandObjectType] = WildlandObjectType(manifest_type)
+        object_type: Optional[WildlandObject.Type] = WildlandObject.Type(manifest_type)
     except ValueError:
         object_type = None
 
@@ -66,24 +65,43 @@ def validate_manifest(manifest: Manifest, manifest_type, client: Client):
     """
     CLI helper: validate a manifest.
     """
+    try:
+        wl_type: Optional[WildlandObject.Type] = WildlandObject.Type(manifest_type)
+    except ValueError:
+        wl_type = None
+    obj = WildlandObject.from_manifest(manifest, client, wl_type)
 
-    if manifest_type == 'user':
-        manifest.apply_schema(User.SCHEMA)
-    if manifest_type == 'container':
-        manifest.apply_schema(Container.SCHEMA)
-        manifest.skip_verification()
-        for storage in manifest.fields['backends']['storage']:
-            if isinstance(storage, str):
-                continue
-            storage_obj = client.load_object_from_dict(WildlandObjectType.STORAGE, storage,
-                                                       manifest.fields['owner'],
-                                                       manifest.fields['paths'][0])
-            storage_obj.validate()
+    if isinstance(obj, Container):
+        for backend in obj.load_backends(include_url=False):
+            backend.validate()
 
-    if manifest_type == 'storage':
-        manifest.apply_schema(Storage.BASE_SCHEMA)
-    if manifest_type == 'bridge':
-        manifest.apply_schema(Bridge.SCHEMA)
+
+@click.command(short_help='Wildland version')
+def version():
+    """
+    Returns Wildland version
+    """
+    # Fallback version
+    wildland_version = __version__
+    commit_hash = None
+
+    cmd = ["git", "describe", "--always"]
+    try:
+        result = subprocess.run(cmd, capture_output=True, check=True,
+                                cwd=Path(__file__).resolve().parents[1])
+        output = result.stdout.decode('utf-8').strip('\n')
+        # version 'vX.Y.Z' or 'vX.Y.Z-L-g<ABBREVIATED_COMMIT_HASH>'
+        version_regex = r'v(([0-9]+\.[0-9]+\.[0-9]+)(-[0-9]+-g([0-9a-f]+))?)$'
+        parsed_output = re.match(version_regex, output)
+        if parsed_output:
+            wildland_version = parsed_output.group(2)
+            if len(parsed_output.groups()) == 4:
+                commit_hash = parsed_output.group(4)
+    except subprocess.CalledProcessError:
+        pass
+    if commit_hash:
+        wildland_version = f"{wildland_version} (commit {commit_hash})"
+    print(wildland_version)
 
 
 @click.command(short_help='manifest signing tool')
@@ -120,12 +138,17 @@ def sign(ctx: click.Context, input_file, output_file, in_place):
         data = sys.stdin.buffer.read()
 
     manifest = Manifest.from_unsigned_bytes(data, obj.client.session.sig)
+    manifest.skip_verification()
     if manifest_type:
         try:
             validate_manifest(manifest, manifest_type, obj.client)
         except SchemaError as se:
             raise CliError(f'Invalid manifest: {se}') from se
 
+    if manifest_type == 'user' or manifest.fields.get('object') == 'user':
+        # for user manifests, allow loading keys for signing even if the manifest was
+        # previously malformed and couldn't be loaded
+        obj.client.session.sig.use_local_keys = True
     try:
         manifest.encrypt_and_sign(obj.client.session.sig,
                                   only_use_primary_key=(manifest_type == 'user'))
@@ -182,12 +205,16 @@ def verify(ctx: click.Context, input_file):
     help='decrypt manifest (if applicable)')
 @click.argument('input_file', metavar='FILE')
 @click.pass_context
-def dump(ctx: click.Context, input_file, decrypt):
+def dump(ctx: click.Context, input_file, decrypt, **_callback_kwargs):
     """
     Dump the input manifest in a machine-readable format (currently just json). By default decrypts
     the manifest, if possible.
     """
     obj: ContextObj = ctx.obj
+
+    if obj.client.is_url(input_file):
+        raise CliError('This command supports only an absolute path to a file. Consider using '
+                       'dump command for a specific object, e.g. wl container dump')
 
     manifest_type = ctx.parent.command.name if ctx.parent else None
     if manifest_type == 'main':
@@ -213,12 +240,16 @@ def dump(ctx: click.Context, input_file, decrypt):
     help='remount mounted container')
 @click.argument('input_file', metavar='FILE')
 @click.pass_context
-def edit(ctx: click.Context, editor, input_file, remount):
+def edit(ctx: click.Context, editor, input_file, remount, **_callback_kwargs):
     """
     Edit and sign a manifest in a safe way. The command will launch an editor
     and validate the edited file before signing and replacing it.
     """
     obj: ContextObj = ctx.obj
+
+    if obj.client.is_url(input_file):
+        raise CliError('This command supports only an local path to a file. Consider using '
+                       'edit command for a specific object, e.g. wl container edit')
 
     provided_manifest_type = ctx.parent.command.name if ctx.parent else None
     if provided_manifest_type == 'main':
@@ -252,6 +283,7 @@ def edit(ctx: click.Context, editor, input_file, remount):
 
         try:
             manifest = Manifest.from_unsigned_bytes(data, obj.client.session.sig)
+            manifest.skip_verification()
         except (ManifestError, WildlandError) as e:
             click.echo(f'Manifest parse error: {e}')
             if click.confirm('Do you want to edit the manifest again to fix the error?'):
@@ -268,6 +300,10 @@ def edit(ctx: click.Context, editor, input_file, remount):
                     continue
                 click.echo('Changes not saved.')
                 return
+        if manifest_type == 'user':
+            # for user manifests, allow loading keys for signing even if the manifest was
+            # previously malformed and couldn't be loaded
+            obj.client.session.sig.use_local_keys = True
 
         try:
             manifest.encrypt_and_sign(obj.client.session.sig,
@@ -283,7 +319,7 @@ def edit(ctx: click.Context, editor, input_file, remount):
     click.echo(f'Saved: {path}')
 
     if remount and manifest_type == 'container' and obj.fs_client.is_mounted():
-        container = obj.client.load_object_from_file_path(WildlandObjectType.CONTAINER, path)
+        container = obj.client.load_object_from_file_path(WildlandObject.Type.CONTAINER, path)
         if obj.fs_client.find_primary_storage_id(container) is not None:
             click.echo('Container is mounted, remounting')
 
@@ -294,18 +330,20 @@ def edit(ctx: click.Context, editor, input_file, remount):
                 container, storages, user_paths, remount=remount)
 
 
-def modify_manifest(ctx: click.Context, name: str, edit_func: Callable[..., dict], *args, **kwargs):
+def modify_manifest(pass_ctx: click.Context, input_file: str, edit_func: Callable[..., dict],
+                    *args, **kwargs):
     """
     Edit manifest (identified by `name`) fields using a specified callback.
     This module provides three common callbacks: `add_field`, `del_field` and `set_field`.
     """
-    obj: ContextObj = ctx.obj
+    obj: ContextObj = pass_ctx.obj
 
-    manifest_type = ctx.parent.parent.command.name if ctx.parent and ctx.parent.parent else None
+    manifest_type = (pass_ctx.parent.parent.command.name
+                        if pass_ctx.parent and pass_ctx.parent.parent else None)
     if manifest_type == 'main':
         manifest_type = None
 
-    manifest_path = find_manifest_file(obj.client, name, manifest_type)
+    manifest_path = find_manifest_file(obj.client, input_file, manifest_type)
 
     sig_ctx = obj.client.session.sig
     manifest = Manifest.from_file(manifest_path, sig_ctx)

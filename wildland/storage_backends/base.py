@@ -32,16 +32,17 @@ import stat
 import urllib.parse
 from dataclasses import dataclass
 from pathlib import PurePosixPath, Path
-from typing import Optional, Dict, Type, Any, List, Iterable, Tuple
+from typing import Optional, Dict, Type, Any, List, Iterable, Tuple, Union
 from uuid import UUID
 
 import click
 import yaml
 
-from ..manifest.sig import SigContext
-from ..manifest.manifest import Manifest
 from ..manifest.schema import Schema
+from ..manifest.manifest import Manifest
 from ..hashdb import HashDb, HashCache
+from ..link import Link
+from ..container import ContainerStub
 
 BLOCK_SIZE = 1024 ** 2
 logger = logging.getLogger('storage')
@@ -117,6 +118,8 @@ class File(metaclass=abc.ABCMeta):
 
     # pylint: disable=missing-docstring, no-self-use
 
+    created: bool
+
     @abc.abstractmethod
     def release(self, flags: int) -> None:
         """
@@ -149,6 +152,9 @@ class File(metaclass=abc.ABCMeta):
     def flush(self) -> None:
         pass
 
+    def fsync(self, isfsyncfile: bool) -> None:
+        pass
+
     def __enter__(self):
         return self
 
@@ -173,8 +179,8 @@ class StorageBackend(metaclass=abc.ABCMeta):
                                             points to a location in storage backend.
 
                                             Some backends (eg. dateproxy) don't specify any
-                                            locationsas they are merely proxying actual backends.
-                                            In those cases this costant should be omited.
+                                            locations as they are merely proxying actual backends.
+                                            In those cases this costant should be omitted.
 
                                             Examples:
                                             - `location` for `local` storage as it points to a
@@ -200,6 +206,8 @@ class StorageBackend(metaclass=abc.ABCMeta):
     SCHEMA = Schema('storage')
     TYPE = ''
     LOCATION_PARAM: Optional[str] = None
+
+    MOUNT_REFERENCE_CONTAINER = False
 
     _types: Dict[str, Type['StorageBackend']] = {}
     _cache: Dict[str, 'StorageBackend'] = {}
@@ -230,25 +238,42 @@ class StorageBackend(metaclass=abc.ABCMeta):
         self.backend_id = self.params['backend-id']
         self.hash = self.generate_hash(self.params)
 
+    def __str__(self):
+        return self.to_str()
+
     def __repr__(self):
-        return (f'{type(self).__name__}('
-                f'type={self.TYPE!r}, '
-                f'params={self.params!r})'
-        )
+        return self.to_str()
+
+    def to_str(self, include_sensitive=False):
+        """
+        Return string representation
+        """
+        array_repr = [
+            f"backend_id={self.backend_id}"
+        ]
+        if include_sensitive:
+            array_repr += [
+                f"params={self.params!r}"
+            ]
+        str_repr = f"{self.TYPE!r}(" + ", ".join(array_repr) + ")"
+        return str_repr
 
     @classmethod
     def cli_options(cls) -> List[click.Option]:
         """
-        Provide a list of command-line options needed to create this storage.
+        Provide a list of command-line options needed to create this storage. If using mixins,
+        check if a super() call is needed.
         """
-        raise OptionalError()
+        return []
 
     @classmethod
     def cli_create(cls, data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Convert provided command-line arguments to a list of storage parameters.
+        Convert provided command-line arguments to a list of storage parameters. If using mixins,
+        check if a super() call is needed.
         """
-        raise OptionalError()
+        # pylint: disable=unused-argument
+        return {}
 
     @staticmethod
     def types() -> Dict[str, Type['StorageBackend']]:
@@ -348,11 +373,11 @@ class StorageBackend(metaclass=abc.ABCMeta):
     def watcher(self):
         """
         Create a StorageWatcher (see watch.py) for this storage, if supported. If the storage
-        manifest contains a 'watcher-interval' parameter, SimpleStorageWatcher (which is a naive,
+        manifest contains a ``watcher-interval`` parameter, SimpleStorageWatcher (which is a naive,
         brute-force watcher that scans the entire storage every watcher-interval seconds) will be
         used. If a given StorageBackend provides a better solution, it's recommended to overwrite
         this method to provide it. It is recommended to still use SimpleStorageWatcher if the user
-        explicitly specifies watcher-interval in the manifest. See local.py for a simple super()
+        explicitly specifies watcher-interval in the manifest. See local.py for a simple ``super()``
         implementation that avoids duplicating code.
 
         Note that changes originating from FUSE are reported without using this
@@ -380,7 +405,7 @@ class StorageBackend(metaclass=abc.ABCMeta):
         is permitted. Flags are expressed in POSIX style (see os module flag constants).
         Caution: flags such as read-only may be ignored by backends, this is not checked
         anywhere in base storage backend. For example of testing if flags are respected, see
-        test_backend.test_read_only_flags
+        ``test_backend.test_read_only_flags``.
         """
         raise NotImplementedError()
 
@@ -429,6 +454,13 @@ class StorageBackend(metaclass=abc.ABCMeta):
 
     def flush(self, _path: PurePosixPath, obj: File) -> None:
         obj.flush()
+
+    def fsync(self, _path: PurePosixPath, isfsyncfile: bool, obj: File) -> None:
+        """
+        Flush dirty information about the file to disk. If ``isfsyncfile`` is ``True``, only data
+        needs to be flushed (without metadata).
+        """
+        obj.fsync(isfsyncfile)
 
     # Other FUSE operations
 
@@ -480,7 +512,7 @@ class StorageBackend(metaclass=abc.ABCMeta):
         """
         raise OptionalError()
 
-    def rename(self, move_from: PurePosixPath, move_to: PurePosixPath):
+    def rename(self, move_from: PurePosixPath, move_to: PurePosixPath) -> None:
         """
         Move file/directory. Optional.
         """
@@ -574,29 +606,32 @@ class StorageBackend(metaclass=abc.ABCMeta):
             if file_obj_atr.is_dir():
                 yield from self.walk(full_path)
 
-    def list_subcontainers(
-            self,
-            sig_context: Optional[SigContext] = None,
-        ) -> Iterable[dict]:
+    def get_children(self, query_path: PurePosixPath = PurePosixPath('*')) -> \
+            Iterable[Tuple[PurePosixPath, Union[Link, ContainerStub]]]:
         """
-        List sub-containers provided by this storage.
+        List all subcontainers provided by this storage.
 
-        This method should return an iterable of dict representation of partial manifests.
-        Specifically, 'owner' field must not be filled in (will be inherited from
-        the parent container).
+        This method should provide an Iterable of tuples:
+        - PurePosixPath to object (needed for search)
+        - Link or ContainerStub of the object
 
         Storages of listed containers, when set as 'delegate' backend,
         may reference parent (this) container via Wildland URL:
         `wildland:@default:@parent-container:`
+        """
+        raise OptionalError()
 
-        :return:
+    def get_subcontainer_watch_pattern(self, query_path: PurePosixPath):
+        """
+        This function must return pattern usable by mount-watch and by search's resolve
+        mechanism.
         """
         raise OptionalError()
 
     @staticmethod
     def from_params(params, read_only=False, deduplicate=False) -> 'StorageBackend':
         """
-        Construct a Storage from fields originating from manifest.
+        Construct a ``StorageBackend`` from fields originating from manifest.
 
         Assume the fields have been validated before.
 
@@ -618,7 +653,6 @@ class StorageBackend(metaclass=abc.ABCMeta):
         storage_type = params['type']
         cls = StorageBackend.types()[storage_type]
         backend = cls(params=params, read_only=read_only)
-
         if deduplicate:
             StorageBackend._cache[deduplicate_key] = backend
         return backend
@@ -631,7 +665,7 @@ class StorageBackend(metaclass=abc.ABCMeta):
         return storage_type in StorageBackend.types()
 
     @staticmethod
-    def validate_manifest(manifest):
+    def validate_manifest(manifest: Manifest) -> None:
         """
         Validate manifest, assuming it's of a supported type.
         """
@@ -645,9 +679,9 @@ class StorageBackend(metaclass=abc.ABCMeta):
         Return a URL, under which a file can be accessed.
         """
         assert not path.is_absolute()
-        if 'base-url' not in self.params:
+        if 'public-url' not in self.params:
             return None
-        return posixpath.join(self.params['base-url'],
+        return posixpath.join(self.params['public-url'],
             urllib.parse.quote_from_bytes(bytes(pathlib.PurePosixPath(path))))
 
     def get_path_for_url(self, url):
@@ -656,55 +690,11 @@ class StorageBackend(metaclass=abc.ABCMeta):
         URL can be accessed.
         """
         # TODO unquote?
-        assert 'base-url' in self.params
-        assert url.startswith(self.params['base-url'])
+        assert 'public-url' in self.params
+        assert url.startswith(self.params['public-url'])
         return pathlib.PurePosixPath(
-            url[len(self.params['base-url']):].lstrip('/'))
+            url[len(self.params['public-url']):].lstrip('/'))
 
-
-class StaticSubcontainerStorageMixin(StorageBackend):
-    """
-    A backend storage mixin that is used in all backends that support ``subcontainers`` key in their
-    manifests.
-
-    The ``subcontainers`` key is an array that holds a list of relative paths to the subcontainers
-    manifests within the storage itself. The paths are relative to the storage's root (i.e. ``path``
-    for Local storage backend).
-
-    When adding this mixin, you should append the following snippet to the backend's ``SCHEMA``::
-
-        "subcontainers" : {
-            "type": "array",
-            "items": {
-                "$ref": "types.json#rel-path",
-            }
-        }
-
-    """
-    # pylint: disable=abstract-method
-
-    def list_subcontainers(
-        self,
-        sig_context: Optional[SigContext] = None,
-    ) -> Iterable[dict]:
-        """
-        Return list of subcontainers manifest fields based and perform an integrity check on each
-        container.
-        """
-        if not sig_context:
-            raise ValueError('Signature context must be defined for static subcontainers')
-
-        trusted_owner = self.params.get('owner') if self.params.get('trusted') else None
-        for subcontainer_path in self.params.get('subcontainers', []):
-            with self.open(PurePosixPath(subcontainer_path), os.O_RDONLY) as file:
-                manifest = Manifest.from_bytes(
-                    data=file.read(None, 0),
-                    sig_context=sig_context,
-                    trusted_owner=trusted_owner,
-                )
-
-                if self.params.get('owner') == manifest.fields.get('owner'):
-                    yield manifest.fields
 
 def _inner_proxy(method_name):
     def method(self, *args, **kwargs):

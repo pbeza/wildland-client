@@ -25,7 +25,7 @@ Create the "reference" container, and directory with files::
 
    $ ./wl container create Inner --path /reference
 
-   $ ./wl storage create local Inner --path $HOME/proxy-data \
+   $ ./wl storage create local Inner --location $HOME/proxy-data \
        --container Inner
    $ mkdir ~/proxy-data
    $ touch ~/proxy-data/file1.txt -t 202005010000
@@ -157,8 +157,8 @@ Here we can see the original container of the ``0xee4052832df4976d6445`` user
 (mounted independently, earlier). It is another's user container, and is
 available only under ``.users/0xee4052832df4976d6445`` path::
 
-   $ tree mnt/.users/0xee4052832df4976d6445/
-   mnt/.users/0xee4052832df4976d6445/
+   $ tree wildland/.users/0xee4052832df4976d6445/
+   wildland/.users/0xee4052832df4976d6445/
    `-- container
        `-- path
            |-- directory
@@ -171,8 +171,8 @@ available only under ``.users/0xee4052832df4976d6445`` path::
 
 And here we can see a part of that container mounted using ``delegate`` storage::
 
-   $ tree  mnt/proxy/
-   mnt/proxy/
+   $ tree  wildland/proxy/
+   wildland/proxy/
    `-- reference-file.txt
 
    0 directories, 1 file

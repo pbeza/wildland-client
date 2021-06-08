@@ -27,6 +27,7 @@ from pathlib import Path
 import click
 
 from wildland.exc import WildlandError
+from wildland.wildland_object.wildland_object import WildlandObject
 from .cli_base import (
     aliased_group,
     CliError,
@@ -37,14 +38,14 @@ from . import (
     cli_user,
     cli_forest,
     cli_storage,
-    cli_storage_template,
+    cli_template,
     cli_container,
     cli_bridge,
     cli_transfer,
 )
 
 from ..log import init_logging
-from ..manifest.manifest import ManifestError, WildlandObjectType
+from ..manifest.manifest import ManifestError
 from ..client import Client
 from .. import __version__ as _version
 
@@ -76,12 +77,21 @@ def main(ctx: click.Context, base_dir, dummy, debug, verbose):
 main.add_command(cli_user.user_)
 main.add_command(cli_forest.forest_)
 main.add_command(cli_storage.storage_)
-main.add_command(cli_storage_template.storage_template)
+main.add_command(cli_template.template)
 main.add_command(cli_container.container_)
 main.add_command(cli_bridge.bridge_)
-main.add_alias(users='user', u='user', storages='storage', s='storage', containers='container',
-               c='container', bridges='bridge', b='bridge')
+main.add_alias(**{'users': 'user',
+                  'u': 'user',
+                  'storages': 'storage',
+                  's': 'storage',
+                  'containers': 'container',
+                  'c': 'container',
+                  'storage-template': 'template',
+                  't': 'template',
+                  'bridges': 'bridge',
+                  'b': 'bridge'})
 
+main.add_command(cli_common.version)
 main.add_command(cli_common.sign)
 main.add_command(cli_common.verify)
 main.add_command(cli_common.edit)
@@ -103,7 +113,9 @@ def _do_mount_containers(obj: ContextObj, to_mount):
     commands = []
     for name in to_mount:
         click.echo(f'Resolving containers: {name}')
-        for container in obj.client.load_containers_from(name):
+        containers = obj.client.load_containers_from(name)
+        reordered, _, _ = obj.client.ensure_mount_reference_container(containers)
+        for container in reordered:
             user_paths = obj.client.get_bridge_paths_for_user(container.owner)
             try:
                 commands.extend(cli_container.prepare_mount(
@@ -111,7 +123,8 @@ def _do_mount_containers(obj: ContextObj, to_mount):
                     remount=False, with_subcontainers=True, subcontainer_of=None, verbose=False,
                     only_subcontainers=False))
             except WildlandError as we:
-                failed.append(f'Container {name} cannot be mounted: {we}')
+                failed.append(
+                    f'Container {container} (expanded from {name}) cannot be mounted: {we}')
                 continue
 
     click.echo(f'Mounting {len(commands)} containers.')
@@ -167,7 +180,7 @@ def start(obj: ContextObj, remount, debug, mount_containers, single_thread,
                        'default user in Wildland config.yaml.')
 
     try:
-        user = obj.client.load_object_from_name(WildlandObjectType.USER, default_user)
+        user = obj.client.load_object_from_name(WildlandObject.Type.USER, default_user)
     except (FileNotFoundError, ManifestError) as e:
         raise CliError(f'User {default_user} not found') from e
 
@@ -205,8 +218,10 @@ def start(obj: ContextObj, remount, debug, mount_containers, single_thread,
 @main.command(short_help='display mounted containers')
 @click.option('--with-subcontainers/--without-subcontainers', '-w/-W', is_flag=True, default=False,
               help='list subcontainers hidden by default')
+@click.option('--with-pseudomanifests/--without-pseudomanifests', '-p/-P', is_flag=True,
+              default=False, help='list containers with pseudomanifests')
 @click.pass_obj
-def status(obj: ContextObj, with_subcontainers):
+def status(obj: ContextObj, with_subcontainers: bool, with_pseudomanifests: bool):
     """
     Display all mounted containers.
     """
@@ -218,6 +233,8 @@ def status(obj: ContextObj, with_subcontainers):
     storages = list(obj.fs_client.get_info().values())
     for storage in storages:
         if storage['subcontainer_of'] and not with_subcontainers:
+            continue
+        if storage['hidden'] and not with_pseudomanifests:
             continue
         main_path = storage['paths'][0]
         click.echo(main_path)

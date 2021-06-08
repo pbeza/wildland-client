@@ -9,7 +9,7 @@
 .. option:: --with-index
 
    Generate index pages. When this option is enabled, Wildland will maintain an
-   `index.html` file with directory listing in every directory. These files
+   `/` (yes, just slash) file with directory listing in every directory. These files
    will be invisible in the mounted filesystem, but they can be used to browse
    the S3 bucket when it's exposed using public HTTP.
 
@@ -20,3 +20,12 @@
 .. option:: --secret-key STRING
 
    S3 secret key (omit for a prompt)
+
+.. option:: --subcontainer-manifest <path_in_storage>
+
+   Absolute path to a subcontainer manifest (can be repeated). Optional.
+
+.. option:: --manifest-pattern <glob>
+
+    Glob pattern to find manifest files in the storage, e.g. `/*.yaml`. Can use {path}`
+    and `*` special characters.

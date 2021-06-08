@@ -247,7 +247,7 @@ Example:
     signature: ...
     ---
     owner: '0x1b567f3ed1404fd81da06e34e4487ff01a1be2d72b07a065e8f6b84008aff6d5'
-    infrastructures:
+    manifests-catalog:
       - file:///path/to/container.yaml
       - object: link
         storage:
@@ -326,15 +326,6 @@ Fields:
 For more information on ``trusted`` field, see See "Unsigned manifests and
 trusted storage" above.
 
-The ``manifest-pattern`` field specifies how to determine manifest paths for
-path traversal. Currently, one type of pattern is supported::
-
-    manifest-pattern:
-      type: glob
-      path: /manifests/{path}/*.yaml
-
-The ``path`` is an absolute path that can contain ``*`` and ``{path}``.
-``{path}`` is expanded to the container path we are looking for.
 
 Bridge manifest
 ---------------
@@ -362,6 +353,6 @@ Fields:
 Links
 -----
 
-In places in which you want to refer to a certain manifest (currently, in user infrastructures and
-bridges), you can also use a 'link' object. A link contains an inline storage manifest (in 'storage'
-field) and an absolute path to the manifest file contained within in the 'file' field.
+In places in which you want to refer to a certain manifest (currently, in user's manifests catalog
+and bridges), you can also use a 'link' object. A link contains an inline storage manifest (in
+'storage' field) and an absolute path to the manifest file contained within in the 'file' field.

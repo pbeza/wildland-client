@@ -23,28 +23,28 @@ from typing import Type
 import functools
 import click
 
+from wildland.wildland_object.wildland_object import WildlandObject
 from .cli_base import aliased_group, ContextObj, CliError
 from ..manifest.template import TemplateManager
-from ..manifest.manifest import WildlandObjectType
 from ..exc import WildlandError
 
 from ..storage_backends.base import StorageBackend
 from ..storage_backends.dispatch import get_storage_backends
 
 
-@aliased_group('storage-template', short_help='storage templates management')
-def storage_template():
+@aliased_group('template', short_help='storage templates management')
+def template():
     """Manage storage templates"""
 
 
-@storage_template.group('create', alias=['c'], short_help='create storage template')
+@template.group('create', alias=['c'], short_help='create storage template')
 def _create():
     """
     Creates storage template based on storage type.
     """
 
 
-@storage_template.group('add', alias=['a'], short_help='append to an existing storage template')
+@template.group('add', alias=['a'], short_help='append to an existing storage template')
 def _append():
     """
     Appends to an existing storage template based on storage type.
@@ -53,14 +53,12 @@ def _append():
 
 def _make_create_command(backend: Type[StorageBackend], create: bool):
     params = [
-        click.Option(['--manifest-pattern'], metavar='GLOB',
-                     help='Set the manifest pattern for storage.'),
         click.Option(['--access'], multiple=True, required=False, metavar='USER',
                      help="Limit access to this storage to the provided users. "
                           "By default the @default owner is used."),
         click.Option(['--watcher-interval'], metavar='SECONDS', required=False,
                      help='Set the storage watcher-interval in seconds.'),
-        click.Option(['--base-url'], metavar='URL', required=False,
+        click.Option(['--public-url'], metavar='URL', required=False,
                      help='Set public base URL.'),
         click.Option(['--read-only'], metavar='BOOL', is_flag=True,
                      help='Mark storage as read-only.'),
@@ -92,24 +90,23 @@ def _do_create(
         backend: Type[StorageBackend],
         create: bool,
         name,
-        manifest_pattern,
         watcher_interval,
-        base_url,
+        public_url,
         read_only,
         access,
         **data):
 
     obj: ContextObj = click.get_current_context().obj
 
-    template_manager = TemplateManager(obj.client.dirs[WildlandObjectType.TEMPLATE])
+    template_manager = TemplateManager(obj.client.dirs[WildlandObject.Type.TEMPLATE])
     tpl_exists = template_manager.get_file_path(name).exists()
 
     if tpl_exists and create:
         raise CliError(f'Template {name} already exists. Choose another name or use '
-                       '[wl storage-template add] command to append to existing template.')
+                       '[wl template add] command to append to existing template.')
 
     if not tpl_exists and not create:
-        raise CliError(f'Template {name} does not exist. Use [wl storage-template create] '
+        raise CliError(f'Template {name} does not exist. Use [wl template create] '
                        'command to create a new template.')
 
     params = backend.cli_create(data)
@@ -119,14 +116,6 @@ def _do_create(
     if watcher_interval:
         params['watcher-interval'] = int(watcher_interval)
 
-    manifest_pattern_dict = None
-    if manifest_pattern:
-        manifest_pattern_dict = {
-            'type': 'glob',
-            'path': manifest_pattern,
-        }
-    params['manifest-pattern'] = manifest_pattern_dict
-
     if access:
         # We only accept '*' if '*' is the only entry, ie there can't be list of users
         # alongside with '*' entry
@@ -135,7 +124,7 @@ def _do_create(
         else:
             try:
                 params['access'] = [
-                    {'user': obj.client.load_object_from_name(WildlandObjectType.USER, user).owner}
+                    {'user': obj.client.load_object_from_name(WildlandObject.Type.USER, user).owner}
                     for user in access
                 ]
             except WildlandError as ex:
@@ -146,8 +135,8 @@ def _do_create(
                                              '{{ local_dir if local_dir is defined else "/" }}' + \
                                              '/{{ uuid }}'
 
-    if base_url:
-        params['base-url'] = base_url.rstrip('/') + \
+    if public_url:
+        params['public-url'] = public_url.rstrip('/') + \
                                 '{{ local_dir if local_dir is defined else "/" }}/{{ uuid }}'
 
     # remove default, non-required values
@@ -163,7 +152,7 @@ def _do_create(
         click.echo(f"Storage template [{name}] created in {path}")
 
 
-@storage_template.command('list', short_help='list storage templates', alias=['ls'])
+@template.command('list', short_help='list storage templates', alias=['ls'])
 @click.option('--show-filenames', '-s', is_flag=True, required=False,
               help='show filenames for storage template sets and template files')
 @click.pass_obj
@@ -172,7 +161,7 @@ def template_list(obj: ContextObj, show_filenames):
     Display known storage templates
     """
 
-    template_manager = TemplateManager(obj.client.dirs[WildlandObjectType.TEMPLATE])
+    template_manager = TemplateManager(obj.client.dirs[WildlandObject.Type.TEMPLATE])
 
     click.echo("Available templates:")
     templates = template_manager.available_templates()
@@ -180,14 +169,14 @@ def template_list(obj: ContextObj, show_filenames):
     if not templates:
         click.echo("    No templates available.")
     else:
-        for template in templates:
+        for tpl in templates:
             if show_filenames:
-                click.echo(f"    {template} [{template_manager.get_file_path(str(template))}]")
+                click.echo(f"    {tpl} [{template_manager.get_file_path(str(tpl))}]")
             else:
-                click.echo(f"    {template}")
+                click.echo(f"    {tpl}")
 
 
-@storage_template.command('remove', short_help='remove storage template', alias=['rm', 'd'])
+@template.command('remove', short_help='remove storage template', alias=['rm', 'd'])
 @click.argument('name', required=True)
 @click.pass_obj
 def template_del(obj: ContextObj, name: str):
@@ -195,7 +184,7 @@ def template_del(obj: ContextObj, name: str):
     Remove a storage template set.
     """
 
-    template_manager = TemplateManager(obj.client.dirs[WildlandObjectType.TEMPLATE])
+    template_manager = TemplateManager(obj.client.dirs[WildlandObject.Type.TEMPLATE])
     try:
         template_manager.remove_storage_template(name)
     except FileNotFoundError as fnf:

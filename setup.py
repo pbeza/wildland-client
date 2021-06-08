@@ -1,8 +1,9 @@
 from setuptools import setup, find_packages
+from wildland import __version__
 
 setup(
     name="wildland-client",
-    version="0.1",
+    version=__version__,
     packages=find_packages(),
     package_data={'wildland': ['schemas/*.json']},
     entry_points={
@@ -14,6 +15,7 @@ setup(
             'dummy = wildland.storage_backends.dummy:DummyStorageBackend',
             'static = wildland.storage_backends.static:StaticStorageBackend',
             'date_proxy = wildland.storage_backends.date_proxy:DateProxyStorageBackend',
+            'encrypted = wildland.storage_backends.encrypted:EncryptedStorageBackend',
             'delegate = wildland.storage_backends.delegate:DelegateProxyStorageBackend',
             'zip_archive = wildland.storage_backends.zip_archive:ZipArchiveStorageBackend',
             ('categorization_proxy = '

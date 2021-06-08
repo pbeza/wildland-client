@@ -38,7 +38,9 @@ import boto3
 import botocore
 import click
 
-from wildland.storage_backends.base import StorageBackend, Attr, StaticSubcontainerStorageMixin
+from wildland.link import Link
+from wildland.storage_backends.base import StorageBackend, Attr
+from wildland.storage_backends.file_subcontainers import FileSubcontainersMixin
 from wildland.storage_backends.buffered import File, FullBufferedFile, PagedFile
 from wildland.storage_backends.cached import CachedStorageMixin
 from wildland.manifest.schema import Schema
@@ -125,7 +127,7 @@ class PagedS3File(PagedFile):
         return response['Body'].read()
 
 
-class S3StorageBackend(StaticSubcontainerStorageMixin, CachedStorageMixin, StorageBackend):
+class S3StorageBackend(FileSubcontainersMixin, CachedStorageMixin, StorageBackend):
     """
     Amazon S3 storage.
     """
@@ -160,18 +162,18 @@ class S3StorageBackend(StaticSubcontainerStorageMixin, CachedStorageMixin, Stora
                 "type": "boolean",
                 "description": "Maintain index.html files with directory listings (default: False)",
             },
-            "subcontainers" : {
-                "type": "array",
-                "items": {
-                    "$ref": "types.json#rel-path",
-                }
+            "manifest-pattern": {
+                "oneOf": [
+                    {"$ref": "/schemas/types.json#pattern-glob"},
+                    {"$ref": "/schemas/types.json#pattern-list"},
+                ]
             }
         }
     })
     TYPE = 's3'
     LOCATION_PARAM = 's3_url'
 
-    INDEX_NAME = 'index.html'
+    INDEX_NAME = '/'
 
     def __init__(self, **kwds):
         super().__init__(**kwds)
@@ -222,7 +224,8 @@ class S3StorageBackend(StaticSubcontainerStorageMixin, CachedStorageMixin, Stora
 
     @classmethod
     def cli_options(cls):
-        return [
+        opts = super(S3StorageBackend, cls).cli_options()
+        opts.extend([
             click.Option(['--endpoint-url'], metavar='URL',
                          help='Override default AWS S3 URL with the given URL.'),
             click.Option(['--s3-url'], metavar='URL', required=True,
@@ -234,11 +237,13 @@ class S3StorageBackend(StaticSubcontainerStorageMixin, CachedStorageMixin, Stora
             click.Option(['--secret-key'], required=True,
                          help='S3 secret key (omit for a prompt)',
                          prompt=True, hide_input=True),
-        ]
+        ])
+        return opts
 
     @classmethod
     def cli_create(cls, data):
-        return {
+        result = super(S3StorageBackend, cls).cli_create(data)
+        result.update({
             's3_url': data['s3_url'],
             'endpoint_url': data['endpoint_url'],
             'credentials': {
@@ -246,7 +251,8 @@ class S3StorageBackend(StaticSubcontainerStorageMixin, CachedStorageMixin, Stora
                 'secret-key': data['secret_key'],
             },
             'with-index': data['with_index'],
-        }
+        })
+        return result
 
     def mount(self):
         """
@@ -256,15 +262,21 @@ class S3StorageBackend(StaticSubcontainerStorageMixin, CachedStorageMixin, Stora
         try:
             if self.sts_client:
                 self.sts_client.get_caller_identity()
+                # do this only once
+                self.sts_client = None
         except botocore.exceptions.ClientError as ex:
             raise WildlandError(f"Could not connect to AWS with Exception: {ex}") from ex
 
-        if self.with_index and not self.read_only:
-            self.refresh()
-            with self.s3_dirs_lock:
-                s3_dirs = list(self.s3_dirs)
-            for path in s3_dirs:
-                self._update_index(path)
+        # TODO
+        # Commenting out as it makes S3 with-index completely unusable
+        # https://gitlab.com/wildland/wildland-client/-/issues/435
+        #
+        # if self.with_index and not self.read_only:
+        #     self.refresh()
+        #     with self.s3_dirs_lock:
+        #         s3_dirs = list(self.s3_dirs)
+        #     for path in s3_dirs:
+        #         self._update_index(path)
 
     def key(self, path: PurePosixPath, is_dir: bool = False) -> str:
         """
@@ -277,11 +289,14 @@ class S3StorageBackend(StaticSubcontainerStorageMixin, CachedStorageMixin, Stora
 
         return str(path.relative_to('/'))
 
-    def url(self, path: PurePosixPath) -> str:
-        """
-        Convert path to relative S3 URL.
-        """
-        return str(self.base_path / path)
+    @staticmethod
+    def _index_entry_href(path: PurePosixPath, is_dir: bool = False) -> str:
+        resolved_path = str(path)
+
+        if is_dir:
+            resolved_path += '/'
+
+        return resolved_path
 
     @staticmethod
     def _stat(obj) -> Attr:
@@ -303,15 +318,24 @@ class S3StorageBackend(StaticSubcontainerStorageMixin, CachedStorageMixin, Stora
                 )
 
             for summary in resp.get('Contents', []):
-
                 full_path = PurePosixPath('/') / summary['Key']
+
                 try:
                     obj_path = full_path.relative_to(self.base_path)
                 except ValueError:
                     continue
 
-                if not (self.with_index and obj_path.name == self.INDEX_NAME):
-                    yield obj_path, self._stat(summary)
+                # We cannot use PosixPath because S3 may return Key with trailing slash which is
+                # the case for empty directories. If we move straight ahead to transforming Key into
+                # PosixPath, we'll loose this trailing slash and we won't be able to differentiate
+                # an empty directory from a file.
+                _, file = os.path.split(summary['Key'])
+                if not file:
+                    # We hit an empty directory
+                    new_s3_dirs.add(obj_path)
+                else:
+                    if not (self.with_index and obj_path.name == self.INDEX_NAME):
+                        yield obj_path, self._stat(summary)
 
                 # Add path to s3_dirs even if we just see index.html.
                 for parent in obj_path.parents:
@@ -326,11 +350,26 @@ class S3StorageBackend(StaticSubcontainerStorageMixin, CachedStorageMixin, Stora
         new_s3_dirs.add(PurePosixPath('.'))
 
         with self.s3_dirs_lock:
-            self.s3_dirs.update(new_s3_dirs)
+            self.s3_dirs = new_s3_dirs
             all_s3_dirs = list(self.s3_dirs)
 
         for dir_path in all_s3_dirs:
             yield dir_path, Attr.dir()
+
+    def get_children(self, query_path: PurePosixPath = PurePosixPath('*')) -> \
+            Iterable[Tuple[PurePosixPath, Link]]:
+
+        for res_path, res_obj in super().get_children(query_path):
+            assert isinstance(res_obj, Link)
+            assert res_obj.storage_driver.storage_backend is self
+            # fast path to get the file, bypassing refreshing getattr cache
+            response = self.client.get_object(
+                Bucket=self.bucket,
+                Key=self.key(res_obj.file_path.relative_to('/'))
+            )
+            res_obj.file_bytes = response['Body'].read()
+            yield res_path, res_obj
+
 
     @staticmethod
     def get_content_type(path: PurePosixPath) -> str:
@@ -497,15 +536,19 @@ class S3StorageBackend(StaticSubcontainerStorageMixin, CachedStorageMixin, Stora
 
         self.client.put_object(
             Bucket=self.bucket,
-            Key=self.key(path / self.INDEX_NAME),
+            Key=self.key(path, is_dir=True),
             Body=BytesIO(data.encode()),
             ContentType='text/html')
 
     def _get_index_entries(self, path):
         # (name, url, is_dir)
-        entries: List[Tuple[str, str, bool]] = []
+        entries: List[Tuple[str, str, Attr]] = []
         if path != PurePosixPath('.'):
-            entries.append(('..', self.url(path.parent), True))
+            entries.append((
+                '..',
+                self._index_entry_href(PurePosixPath('..'), is_dir=True),
+                Attr.dir())
+            )
 
         try:
             names = list(self.readdir(path))
@@ -517,12 +560,13 @@ class S3StorageBackend(StaticSubcontainerStorageMixin, CachedStorageMixin, Stora
                 attr = self.getattr(path / name)
             except IOError:
                 continue
-            entry = (name, self.url(path / name), attr.is_dir())
+            entry = (name, self._index_entry_href(PurePosixPath(name), attr.is_dir()), attr)
             entries.append(entry)
 
         # Sort directories first
         def key(entry):
             name, _url, attr = entry
+
             return (0 if attr.is_dir() else 1), name
 
         entries.sort(key=key)
@@ -549,8 +593,6 @@ class S3StorageBackend(StaticSubcontainerStorageMixin, CachedStorageMixin, Stora
             if attr.is_dir():
                 icon = '&#x1F4C1;'
                 name += '/'
-                if url != '/':
-                    url += '/'
             else:
                 icon = '&#x1F4C4;'
 

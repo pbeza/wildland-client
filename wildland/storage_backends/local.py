@@ -22,25 +22,26 @@ Local storage, similar to :command:`mount --bind`
 """
 
 import errno
+import logging
 import os
+import select
+import threading
 import time
 from pathlib import Path, PurePosixPath
-import logging
-import threading
 from typing import Optional, List, Dict, Tuple
-import select
+import click
 import inotify_simple
 
-import click
-
-from .base import StorageBackend, File, Attr, verify_local_access, StaticSubcontainerStorageMixin
+from .base import StorageBackend, File, Attr, verify_local_access
+from .file_subcontainers import FileSubcontainersMixin
 from ..fs_utils import flags_to_mode
 from ..manifest.schema import Schema
 from .watch import StorageWatcher, FileEvent
 
 __all__ = ['LocalStorageBackend']
 
-logger = logging.getLogger('local-storage')
+logger = logging.getLogger('local')
+
 
 def to_attr(st: os.stat_result) -> Attr:
     """
@@ -113,7 +114,7 @@ class LocalFile(File):
         self.file.flush()
 
 
-class LocalStorageBackend(StaticSubcontainerStorageMixin, StorageBackend):
+class LocalStorageBackend(FileSubcontainersMixin, StorageBackend):
     """Local, file-based storage"""
     SCHEMA = Schema({
         "type": "object",
@@ -123,12 +124,10 @@ class LocalStorageBackend(StaticSubcontainerStorageMixin, StorageBackend):
                 "$ref": "/schemas/types.json#abs-path",
                 "description": "Path in the local filesystem"
             },
-            "subcontainers" : {
-                "type": "array",
-                "items": {
-                    "$ref": "types.json#rel-path",
-                }
-            },
+            "manifest-pattern": {
+                "oneOf": [{
+                    "$ref": "/schemas/types.json#pattern-glob"},
+                    {"$ref": "/schemas/types.json#pattern-list"}], }
         }
     })
     TYPE = 'local'
@@ -141,25 +140,21 @@ class LocalStorageBackend(StaticSubcontainerStorageMixin, StorageBackend):
             location_path = relative_to / location_path
         location_path = location_path.resolve()
         if not location_path.is_dir():
-            logging.warning('LocalStorage root does not exist: %s', location_path)
+            logger.warning('LocalStorage root does not exist: %s', location_path)
         self.root = location_path
 
     @classmethod
     def cli_options(cls):
-        return [
-            click.Option(['--location'], metavar='PATH',
-                         help='path in local filesystem',
-                         required=True),
-            click.Option(['--subcontainer'], metavar='PATH', multiple=True,
-                         help='Relative path to a subcontainer manifest (can be repeated)'),
-        ]
+        opts = super(LocalStorageBackend, cls).cli_options()
+        opts.append(click.Option(['--location'], metavar='PATH', help='path in local filesystem',
+                                  required=True))
+        return opts
 
     @classmethod
     def cli_create(cls, data):
-        return {
-            'location': data['location'],
-            'subcontainers': list(data['subcontainer']),
-        }
+        result = super(LocalStorageBackend, cls).cli_create(data)
+        result['location'] = data['location']
+        return result
 
     def _path(self, path: PurePosixPath) -> Path:
         """Given path inside filesystem, calculate path on disk, relative to

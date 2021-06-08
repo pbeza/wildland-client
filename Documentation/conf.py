@@ -33,8 +33,8 @@ import manhelper
 # -- Project information -----------------------------------------------------
 
 project = 'Wildland'
-copyright = '2021, Invisible Things Lab'
-author = 'Invisible Things Lab'
+copyright = '2021, Golem Foundation'
+author = 'Golem Foundation'
 
 # The short X.Y version
 version = ''
@@ -178,11 +178,12 @@ man_pages = [
     ('manpages/wl', 'wl', 'Wildland command-line interface', [author], 1),
     ('manpages/wl-container', 'wl-container', 'Container management', [author], 1),
     ('manpages/wl-storage', 'wl-storage', 'Storage management', [author], 1),
-    ('manpages/wl-storage-template', 'wl-storage-template', 'Storage template management', [author], 1),
+    ('manpages/wl-template', 'wl-template', 'Storage template management', [author], 1),
     ('manpages/wl-user', 'wl-user', 'Wildland user management', [author], 1),
     ('manpages/wl-forest', 'wl-forest', 'Wildland forest management', [author], 1),
     ('manpages/wl-bridge', 'wl-bridge', 'Bridge manifest management', [author], 1),
 
+    ('manpages/wl-version', 'wl-version', 'Wildland version', [author], 1),
     ('manpages/wl-sign', 'wl-sign', 'Sign manifests', [author], 1),
     ('manpages/wl-verify', 'wl-verify', 'Verify signatures', [author], 1),
     ('manpages/wl-edit', 'wl-edit', 'Edit manifests', [author], 1),

@@ -25,6 +25,9 @@ Storage backends
 .. autoclass:: wildland.storage_backends.delegate.DelegateProxyStorageBackend
    :members:
 
+.. autoclass:: wildland.storage_backends.encrypted.EncryptedStorageBackend
+   :members:
+
 .. autoclass:: wildland.storage_backends.dummy.DummyStorageBackend
    :members:
 
@@ -123,7 +126,7 @@ Mixins
 .. autoclass:: wildland.storage_backends.generated.GeneratedStorageMixin
    :members:
 
-.. autoclass:: wildland.storage_backends.base.StaticSubcontainerStorageMixin
+.. autoclass:: wildland.storage_backends.file_subcontainers.FileSubcontainersMixin
    :members:
 
 
@@ -143,10 +146,16 @@ Data transfer objects
 .. autoclass:: wildland.container.Container
    :members:
 
+.. autoclass:: wildland.container.ContainerStub
+   :members:
+
 .. autoclass:: wildland.storage.Storage
    :members:
 
 .. autoclass:: wildland.bridge.Bridge
+   :members:
+
+.. autoclass:: wildland.link.Link
    :members:
 
 
@@ -175,7 +184,7 @@ Manifests
 .. autoclass:: wildland.manifest.schema.Schema
    :members:
 
-.. autoclass:: wildland.manifest.manifest.WildlandObjectType
+.. autoclass:: wildland.wildland_object.wildland_object.WildlandObject
    :members:
 
 .. autoclass:: wildland.manifest.template.StorageTemplate
