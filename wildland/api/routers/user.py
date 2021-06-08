@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends
 from wildland.api.dependency import ContextObj, get_ctx
-from wildland.manifest.manifest import WildlandObjectType
+from wildland.wildland_object.wildland_object import WildlandObject
 
 router = APIRouter()
 
 
 @router.get("/user/", tags=["user"])
 async def read_users(ctx: ContextObj = Depends(get_ctx)):
-    users = ctx.client.load_all(WildlandObjectType.USER)
+    users = ctx.client.load_all(WildlandObject.Type.USER)
     return users
 
 

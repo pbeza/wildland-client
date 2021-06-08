@@ -42,15 +42,22 @@ async def read_file(
 ):
     bio = io.BytesIO()
     webdav.download(os.path.join("/", path), bio)
-    image = Image.open(bio)
+
     bio.seek(0)
-    bio.truncate()
+    image = Image.open(bio)
     
     try:
-        image.verify()
+        image.verify() # if you need to load the image after using this method, you must reopen the image file.
+        bio.seek(0)
+        image = Image.open(bio)
     except Exception:
         return "No thumbnail available."
+
+    THUMBNAIL_SIZE = (128, 128)
     
-    image.thumbnail((128, 128))
-    image.save(bio)
+    image.thumbnail(THUMBNAIL_SIZE, Image.ANTIALIAS)
+
+    bio.truncate()
+    image.save(bio, "JPEG")
+    bio.seek(0)
     return Response(content=bio.getvalue())

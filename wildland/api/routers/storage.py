@@ -1,16 +1,16 @@
 from fastapi import APIRouter, Depends
 from wildland.api.dependency import ContextObj, get_ctx
-from wildland.manifest.manifest import WildlandObjectType
+from wildland.wildland_object.wildland_object import WildlandObject
 
 router = APIRouter()
 
 
 @router.get("/storage/", tags=["storage"])
 async def read_storages(ctx: ContextObj = Depends(get_ctx)):
-    storages = ctx.client.load_all(WildlandObjectType.STORAGE)
+    storages = ctx.client.load_all(WildlandObject.Type.STORAGE)
 
     backends = []
-    for container in  ctx.client.load_all(WildlandObjectType.CONTAINER):
+    for container in  ctx.client.load_all(WildlandObject.Type.CONTAINER):
         for backend in container.backends:
             if not isinstance(backend, str):
                 backends.append(backend)

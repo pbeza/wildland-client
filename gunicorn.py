@@ -1,5 +1,5 @@
 wsgi_app = "main:app"
-bind = "0.0.0.0:5454"
+bind = "unix:/tmp/gunicorn.sock"
 workers = 4
 worker_class = "uvicorn.workers.UvicornWorker"
 proc_name = "wildlandapi"
@@ -8,5 +8,5 @@ proxy_allow_from = "0.0.0.0"
 accesslog = "/home/user/gunicorn/gunicorn_access.log"
 errorlog = "/home/user/gunicorn/gunicorn_error.log"
 daemon = True
-# keyfile = "/home/user/key.pem"
-# certfile = "/home/user/cert.pem"
+# keyfile = "/home/user/gunicorn/key.pem"
+# certfile = "/home/user/gunicorn/cert.pem"
