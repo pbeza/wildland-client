@@ -55,7 +55,7 @@ def control_command(name):
 
     Example:
 
-        @command('get-manifest')
+        @control_command('get-manifest')
         def control_get_manifest(handler, container_id):
             return [...]
 

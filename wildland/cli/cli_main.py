@@ -252,13 +252,21 @@ def status(obj: ContextObj, with_subcontainers: bool, with_pseudomanifests: bool
         if storage['hidden'] and not with_pseudomanifests:
             continue
         main_path = storage['paths'][0]
-        click.echo(main_path)
+        container_wildland_path = _get_wildland_container_path(obj, str(main_path))
+        click.echo(f"{container_wildland_path}")
         click.echo(f'  storage: {storage["type"]}')
         _print_container_paths(storage, all_paths)
         if storage['subcontainer_of']:
             click.echo(f'  subcontainer-of: {storage["subcontainer_of"]}')
         click.echo()
 
+def _get_wildland_container_path(obj, path: str):
+    results = obj.fs_client.run_control_command('dirinfo', path=path)
+    result = results[0]
+    storage_owner = result['storage']['owner']
+    container_path = result['storage']['container-path']
+    wlpath = f'wildland:{storage_owner}:{container_path}:'
+    return wlpath
 
 def _print_container_paths(storage: Dict, all_paths: bool) -> None:
     if all_paths:

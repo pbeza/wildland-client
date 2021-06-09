@@ -2931,6 +2931,11 @@ def test_container_wrong_signer(cli, base_dir):
 
 def test_status(cli, control_client):
     control_client.expect('status', {})
+    control_client.expect('dirinfo', [{
+        'storage': {
+            'owner': '0xaaa',
+            'container-path': '/.uuid/0xabc'
+        }}])
     control_client.expect('info', {
         '1': {
             'paths': ['/path1', '/path1.1'],
@@ -2946,9 +2951,8 @@ def test_status(cli, control_client):
 
     result = cli('status', capture=True)
     out_lines = result.splitlines()
-    assert '/path1' in out_lines
+    assert 'wildland:0xaaa:/.uuid/0xabc:' in out_lines
     assert '  storage: local' in out_lines
-    assert '/path2' in out_lines
     assert '  storage: s3' in out_lines
 
 
@@ -2973,7 +2977,7 @@ def test_status_all_paths(cli, control_client):
     assert '  storage: local' in out_lines
     assert '    /path1' in out_lines
     assert '    /path1.1' in out_lines
-    assert '/path2' in out_lines
+    assert 'wildland:0xaaa:/.uuid/0xabc:' in out_lines
     assert '  storage: s3' in out_lines
     assert '    /path2' in out_lines
     assert '    /path2.1' in out_lines
