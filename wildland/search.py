@@ -133,7 +133,6 @@ class Search:
         self.fs_client = fs_client
 
         self.local_containers = list(self.client.load_all(WildlandObject.Type.CONTAINER))
-        self.local_users = list(self.client.load_all(WildlandObject.Type.USER))
         self.local_bridges = list(self.client.load_all(WildlandObject.Type.BRIDGE))
 
     def resolve_raw(self) -> Iterable[Step]:
@@ -369,7 +368,7 @@ class Search:
         yield from self._resolve_local(self.wlpath.parts[0], self.initial_owner, None)
 
         # Try user's manifests catalog
-        for user in self.local_users:
+        for user in self.client.users.values():
             if user.owner == self.initial_owner:
                 for step in self._user_step(user, self.initial_owner, self.client, None, None):
                     yield from self._resolve_next(step, 0)
