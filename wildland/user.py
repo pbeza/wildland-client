@@ -70,6 +70,9 @@ class _CatalogCache:
     def __eq__(self, other):
         return self.manifest == other.manifest
 
+    def __hash__(self):
+        return hash(repr(self.manifest))
+
 
 class User(WildlandObject, obj_type=WildlandObject.Type.USER):
     """
@@ -100,12 +103,14 @@ class User(WildlandObject, obj_type=WildlandObject.Type.USER):
         if not isinstance(other, User):
             return NotImplemented
         return (self.owner == other.owner and
-                set(self.pubkeys) == set(other.pubkeys))
+                set(self.pubkeys) == set(other.pubkeys) and
+                set(self._manifests_catalog) == set(self._manifests_catalog))
 
     def __hash__(self):
         return hash((
             self.owner,
-            frozenset(self.pubkeys)
+            frozenset(self.pubkeys),
+            frozenset(self._manifests_catalog),
         ))
 
     def __str__(self):

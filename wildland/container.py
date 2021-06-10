@@ -62,6 +62,9 @@ class _StorageCache:
     def __eq__(self, other):
         return self.storage == other.storage
 
+    def __hash__(self):
+        return hash(repr(self.storage))
+
 
 class Container(WildlandObject, obj_type=WildlandObject.Type.CONTAINER):
     """Wildland container"""
@@ -129,7 +132,8 @@ class Container(WildlandObject, obj_type=WildlandObject.Type.CONTAINER):
         return (self.owner == other.owner and
                 set(self.paths) == set(other.paths) and
                 self.title == other.title and
-                set(self.categories) == set(other.categories))
+                set(self.categories) == set(other.categories) and
+                set(self._storage_cache) == set(other._storage_cache))
 
     def __hash__(self):
         return hash((
@@ -137,6 +141,7 @@ class Container(WildlandObject, obj_type=WildlandObject.Type.CONTAINER):
             frozenset(self.paths),
             self.title,
             frozenset(self.categories),
+            frozenset(self._storage_cache),
         ))
 
     def to_str(self, include_sensitive=False):
