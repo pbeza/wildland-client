@@ -1,14 +1,25 @@
 import io
-import json
 import os
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import Response
 from PIL import Image
 from typing import Optional
-from wildland.api.dependency import ContextObj, get_webdav
+from wildland.api.dependency import get_webdav
 
 
 router = APIRouter()
+SUPPORTED_MIMETYPES = {
+    "application/pdf": "PDF",
+    "image/bmp": "BMP",
+    "image/gif": "GIF",
+    "image/jpeg": "JPEG",
+    "image/vnd.microsoft.icon": "ICO",
+    "image/image/x-icon": "ICO",
+    "image/png": "PNG",
+    "image/svg+xml": "SVG",
+    "image/tiff": "TIFF",
+    "image/webp": "WEBP",
+}
 
 
 @router.get("/file/", tags=["file"])
@@ -45,19 +56,23 @@ async def read_file(
 
     bio.seek(0)
     image = Image.open(bio)
-    
+    mimetype = image.get_format_mimetype()
     try:
-        image.verify() # if you need to load the image after using this method, you must reopen the image file.
+        image.verify()  # if you need to load the image after using this method, you must reopen the image file.
         bio.seek(0)
         image = Image.open(bio)
     except Exception:
         return "No thumbnail available."
 
+    thumb_bytes = io.BytesIO()
     THUMBNAIL_SIZE = (128, 128)
-    
     image.thumbnail(THUMBNAIL_SIZE, Image.ANTIALIAS)
+    thumb_extension = SUPPORTED_MIMETYPES.get(mimetype, None)
+    if not thumb_extension:
+        return Response(
+            content=f"Unsupported mimetype {mimetype}",
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+        )
 
-    bio.truncate()
-    image.save(bio, "JPEG")
-    bio.seek(0)
-    return Response(content=bio.getvalue())
+    image.save(thumb_bytes, thumb_extension)
+    return Response(content=thumb_bytes.getvalue())

@@ -12,7 +12,7 @@ easywebdav
 fastapi
 gunicorn
 httptools
-Pillow
+Pillow # consider using pillow-simd for faster conversion
 uvicorn
 uvloop
 
