@@ -72,7 +72,7 @@ pytest:
   after_script:
     - /home/user/env/bin/python3 -m coverage combine
     - /home/user/env/bin/python3 -m coverage xml -o artifacts/coverage.xml
-    - /home/user/env/bin/python3 -m coverage report --include=plugins/${CI_JOB_NAME%-test}
+    - set -x; pwd; /home/user/env/bin/python3 -m coverage report --include=plugins/${CI_JOB_NAME%-test}/*
   coverage: '/TOTAL.*\s(\d+)%/'
   artifacts:
     reports:
