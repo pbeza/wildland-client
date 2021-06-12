@@ -117,7 +117,6 @@ class WildlandFSClient:
             default_user: specify a different default user
         """
         self.clear_cache()
-
         cmd = [sys.executable, '-m', 'wildland.fs', str(self.mount_dir)]
         options = [
             'socket=' + str(self.socket_path)
