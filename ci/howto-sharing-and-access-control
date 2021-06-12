@@ -260,6 +260,30 @@ pubkeys:
 version: '1'"
 run cat ~/.config/wildland/users/caroline.user.yaml
 
+# remove encrypted link
+EDITOR="python3 -c 'import yaml,sys; m = yaml.safe_load(open(sys.argv[1])); del m[\"manifests-catalog\"][0]; open(sys.argv[1], \"w\").write(yaml.dump(m))'" run wl user edit caroline
+
+expected_pcre="(?s)signature: \|
+  $caroline_userid:.*
+---
+manifests-catalog:
+- file: /.manifests.yaml
+  object: link
+  storage:
+    access:
+    - user: '\*'
+.*
+    read-only: true
+.*
+object: user
+owner: '$caroline_userid'
+paths:
+- /users/caroline
+pubkeys:
+- .*
+version: '1'"
+run cat ~/.config/wildland/users/caroline.user.yaml
+
 
 cp ~/.config/wildland/users/caroline.user.yaml ~/Downloads/
 
@@ -270,7 +294,6 @@ run wl user create daniel
 run wl start
 
 expected="Created: /home/user/.config/wildland/users/caroline.user.yaml
-WARNING:user:User $caroline_userid: cannot load manifests catalog entry: Cannot decrypt manifest: decryption key unavailable
 Created: /home/user/.config/wildland/bridges/caroline.bridge.yaml"
 run wl user import ~/Downloads/caroline.user.yaml \
   --path /f/caroline
