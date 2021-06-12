@@ -284,6 +284,9 @@ pubkeys:
 version: '1'"
 run cat ~/.config/wildland/users/caroline.user.yaml
 
+run wl container mount :/.manifests:
+# Update the user manifest in the catalog
+run cp ~/.config/wildland/users/caroline.user.yaml ~/wildland/.manifests/forest-owner.yaml
 
 cp ~/.config/wildland/users/caroline.user.yaml ~/Downloads/
 
@@ -298,10 +301,8 @@ Created: /home/user/.config/wildland/bridges/caroline.bridge.yaml"
 run wl user import ~/Downloads/caroline.user.yaml \
   --path /f/caroline
 
-
 expected="User $caroline_userid already exists. Forcing user import.
 Created: /home/user/.config/wildland/users/caroline.user.yaml
-WARNING:user:User $caroline_userid: cannot load manifests catalog entry: Cannot decrypt manifest: decryption key unavailable
 Loading containers. Loaded 1...Loading containers. Loaded 2...
 
 Mounting 2 containers"
