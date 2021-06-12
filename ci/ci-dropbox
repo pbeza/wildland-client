@@ -3,11 +3,12 @@
 set -ex
 
 . /home/user/env/bin/activate
-pip install . plugins/dropbox
+. ci/install-inplace dropbox
 
 function cleanup {
     time -p chronic rm -rf "$1"
-    time -p chronic ./wl container unmount dropbox-test-container
+    time -p chronic $WL container unmount dropbox-test-container
+    time -p chronic $WL stop
 }
 
 ROOT="$HOME/wildland"
@@ -18,10 +19,12 @@ MNT_PATH_2="$ROOT/$MNT_DIR_2"
 
 # Wildland
 
-./wl user create dropbox-user
-./wl container create --path "/$MNT_DIR_1" --path "/$MNT_DIR_2" dropbox-test-container
-./wl storage create dropbox --container dropbox-test-container --inline --token "$1"
-./wl start --container dropbox-test-container
+WL='python3 -m coverage run -p ./wl'
+
+$WL user create dropbox-user
+$WL container create --path "/$MNT_DIR_1" --path "/$MNT_DIR_2" dropbox-test-container
+$WL storage create dropbox --container dropbox-test-container --inline --token "$1"
+$WL start --container dropbox-test-container
 
 # Create temporary timestamped test directory
 
