@@ -516,6 +516,25 @@ def test_storage_create(cli, base_dir):
     assert "location: /zip" in data
     assert "backend-id:" in data
 
+def test_storage_create_url(cli, base_dir):
+    _create_user_container_storage(cli)
+
+    with open(base_dir / 'storage/Storage.storage.yaml') as f:
+        data = f.read()
+
+    assert "owner: ''0xaaa''" in data
+    assert "location: /PATH" in data
+    assert "backend-id:" in data
+
+    cli('storage', 'create', 'zip-archive', 'ZipStorage', '--location', '/zip',
+        '--container', 'wildland:0xaaa:/PATH:', '--no-inline')
+    with open(base_dir / 'storage/ZipStorage.storage.yaml') as f:
+        data = f.read()
+
+    assert "owner: ''0xaaa''" in data
+    assert "location: /zip" in data
+    assert "backend-id:" in data
+
 
 def test_storage_create_not_inline(cli, base_dir):
     _create_user_container_storage(cli)
