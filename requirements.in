@@ -13,6 +13,7 @@ fastapi
 gunicorn
 httptools
 Pillow # consider using pillow-simd for faster conversion
+slowapi
 uvicorn
 uvloop
 

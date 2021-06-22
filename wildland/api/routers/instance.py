@@ -17,30 +17,24 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Wildland User Rest API
+Wildland Instance Rest API
 """
 
-from fastapi import APIRouter, Depends
-from wildland.api.dependency import ContextObj, get_ctx
-from wildland.wildland_object.wildland_object import WildlandObject
+import logging
+from fastapi import APIRouter, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 router = APIRouter()
+logger = logging.getLogger("gunicorn.error")
+limiter = Limiter(key_func=get_remote_address)
 
 
-@router.get("/user/", tags=["user"])
-async def read_users(ctx: ContextObj = Depends(get_ctx)):
-    """Returns all wildland users as a list"""
-    users = ctx.client.load_all(WildlandObject.Type.USER)
-    return users
-
-
-@router.get("/user/me", tags=["user"])
-async def read_user_me():
-    """Returns information of default wildland user for current instance"""
-    return {"username": "fakecurrentuser"}
-
-
-@router.get("/user/{username}", tags=["user"])
-async def read_user(username: str):
-    """Returns information of specific wildland user"""
-    return {"username": username}
+@router.get("/instance/", tags=["instance"])
+@limiter.limit("1/minute")
+async def crete_instances(_request: Request):
+    """
+    Creates a new wildland instance for a demo user
+    and returns it's entrypoint for Rest API connection
+    """
+    return "https://localhost:3000"

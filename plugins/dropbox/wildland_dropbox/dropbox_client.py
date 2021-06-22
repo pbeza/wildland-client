@@ -67,6 +67,9 @@ class DropboxClient:
         """
         List content of the given directory.
         """
+        if not self.connection:
+            self.connect()
+            
         assert self.connection
         try:
             path_str = self._convert_to_dropbox_path(path)

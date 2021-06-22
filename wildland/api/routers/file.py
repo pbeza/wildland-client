@@ -1,9 +1,31 @@
+# Wildland Project
+#
+# Copyright (C) 2021 Golem Foundation,
+#                    Muhammed Tanrikulu <muhammed@wildland.io>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+"""
+Wildland File Rest API
+"""
+
 import io
 import os
+from typing import Optional
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import Response
 from PIL import Image
-from typing import Optional
 from wildland.api.dependency import get_webdav
 
 
@@ -24,10 +46,11 @@ SUPPORTED_MIMETYPES = {
 
 @router.get("/file/", tags=["file"])
 async def read_dir(
-    q: Optional[str] = Query(None, title="Path Query"),
+    _q: Optional[str] = Query(None, title="Path Query"),
     path: str = "/",
     webdav=Depends(get_webdav),
 ):
+    """Returns entries of given path"""
     files = webdav.ls(os.path.join("/", path))
     if len(files) > 0:
         del files[0]  # remove current directory
@@ -36,21 +59,23 @@ async def read_dir(
 
 @router.get("/file/read/", tags=["file"])
 async def read_file(
-    q: Optional[str] = Query(None, title="Path Query"),
+    _q: Optional[str] = Query(None, title="Path Query"),
     path: str = "/",
     webdav=Depends(get_webdav),
 ):
+    """Returns file from given path"""
     bio = io.BytesIO()
     webdav.download(os.path.join("/", path), bio)
     return Response(content=bio.getvalue())
 
 
 @router.get("/file/thumbnail/", tags=["file"])
-async def read_file(
-    q: Optional[str] = Query(None, title="Path Query"),
+async def read_thumbnail(
+    _q: Optional[str] = Query(None, title="Path Query"),
     path: str = "/",
     webdav=Depends(get_webdav),
 ):
+    """Generates and returns thumbnails of images from given path"""
     bio = io.BytesIO()
     webdav.download(os.path.join("/", path), bio)
 
@@ -58,7 +83,7 @@ async def read_file(
     image = Image.open(bio)
     mimetype = image.get_format_mimetype()
     try:
-        image.verify()  # if you need to load the image after using this method, you must reopen the image file.
+        image.verify()  # if you need to load the image after using this method, you must reopen the image file. # pylint: disable=line-too-long
         bio.seek(0)
         image = Image.open(bio)
     except Exception:
