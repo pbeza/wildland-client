@@ -4,6 +4,7 @@ import tempfile
 import shutil
 from contextlib import suppress
 from pathlib import Path, PurePosixPath
+from functools import _make_key
 import os
 from typing import List
 from unittest import mock
@@ -116,8 +117,12 @@ class TestControlClient:
         # accumulated arguments of each type of the command call
         self.all_calls = {}
         # expected return value of commands
-        self.results = {}
+        self.results2 = {}
+        # expected return value of commands, when parameters are taken into account
+        self.results3 = {}
+
         self.events = []
+
 
     def connect(self, socket_path):
         pass
@@ -125,13 +130,23 @@ class TestControlClient:
     def disconnect(self):
         pass
 
-    def run_command(self, name, **kwargs):
-        assert name in self.results, f'unexpected command: {name}'
+    def run_command(self, name, *args, **kwargs):
+        params = ()
+        no_args = name in self.results2
+        with_args = name in self.results3
+        assert no_args or with_args, f'unexpected command: {name}'
+        assert no_args != with_args, f'don\'t mix expect(..) and expect3(..)!'
         self.calls[name] = kwargs
-        self.all_calls.setdefault(name, []).append(kwargs)
-        if isinstance(self.results[name], Exception):
-            raise self.results[name]
-        return self.results[name]
+        if no_args:
+            retvalue = self.results2[name]
+        if with_args:
+            key = _make_key(args, kwargs, True)
+            assert key in self.results3[name], f'unexpected command: {name}({args, kwargs})'
+            retvalue = self.results3[name][key]
+        self.all_calls.setdefault(name, []).append((args, kwargs))
+        if isinstance(retvalue, Exception):
+            raise retvalue
+        return retvalue
 
     def iter_events(self):
         while self.events:
@@ -144,7 +159,14 @@ class TestControlClient:
         """
         Add a command to a list of expected commands, with a result to be returned.
         """
-        self.results[name] = result
+        self.results2[name] = result
+
+    def expect3(self, name: str, params=((),{}), results=None):
+        if not name in self.results3:
+            self.results3[name] = {}
+        args, kwargs = params
+        key = _make_key(args, kwargs, True)
+        self.results3[name][key] = results
 
     def add_storage_paths(self, storage_id: int, paths: List[PurePosixPath]) -> None:
         """
@@ -190,7 +212,7 @@ class TestControlClient:
         """
         Check if all expected commands have been executed.
         """
-        unseen = set(self.results) - set(self.calls)
+        unseen = set(self.results2) - set(self.calls)
         assert not unseen, f'some commands have not been called: {unseen}'
 
 
