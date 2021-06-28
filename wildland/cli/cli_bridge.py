@@ -54,7 +54,7 @@ def bridge_():
 @click.option('--owner', 'owner', help='User used to sign the bridge')
 @click.option('--target-user', 'target_user_name', metavar='USER',
               help='User to whom the bridge will point. If provided, will be used to verify the '
-                   'integrity of the --target-user-location. If omitted, --target-user-location'
+                   'integrity of the --target-user-location. If omitted, --target-user-location '
                    'will be used to locate user manifest.')
 @click.option('--target-user-location', metavar='URL',
               help='Path to the user manifest (use file:// for local file). If --target-user is '
