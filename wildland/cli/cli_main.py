@@ -27,7 +27,7 @@ Wildland command-line interface.
 
 import os
 from pathlib import Path, PurePosixPath
-from typing import Dict, Iterable, List, Optional, Sequence, Union
+from typing import Any, Collection, Dict, Iterable, List, Optional, Sequence, Set, Union
 
 import click
 
@@ -246,13 +246,14 @@ def status(obj: ContextObj, with_subcontainers: bool, with_pseudomanifests: bool
     click.echo()
 
     mounted_storages = obj.fs_client.get_info().values()
+    default_user = obj.client.config.get('@default')
     for storage in mounted_storages:
         if storage['subcontainer_of'] and not with_subcontainers:
             continue
         if storage['hidden'] and not with_pseudomanifests:
             continue
         main_path = storage['paths'][0]
-        container_wildland_path = _get_wildland_container_path(obj, str(main_path))
+        container_wildland_path = _get_wildland_container_path(obj, str(main_path), default_user=default_user)
         click.echo(f"{container_wildland_path}")
         click.echo(f'  storage: {storage["type"]}')
         _print_container_paths(storage, all_paths)
@@ -260,13 +261,25 @@ def status(obj: ContextObj, with_subcontainers: bool, with_pseudomanifests: bool
             click.echo(f'  subcontainer-of: {storage["subcontainer_of"]}')
         click.echo()
 
-def _get_wildland_container_path(obj, path: str):
+def _get_wildland_container_path(obj, path: str, default_user):
     results = obj.fs_client.run_control_command('dirinfo', path=path)
     result = results[0]
-    storage_owner = result['storage']['owner']
     container_path = result['storage']['container-path']
-    wlpath = f'wildland:{storage_owner}:{container_path}:'
-    return wlpath
+    storage_owner = result['storage']['owner']
+    if storage_owner == default_user:
+        return f'wildland::{container_path}:'
+    bridge_paths = obj.client.get_bridge_paths_for_user(storage_owner)
+    if len(bridge_paths) == 0:
+        return f'wildland:{storage_owner}:{container_path}:'
+    shortest = _get_shortest_path(bridge_paths)
+    parts = ":".join(str(pure_posix_path) for pure_posix_path in shortest)
+    return f'wildland:{default_user}:{parts}:{container_path}:'
+
+def _get_shortest_path(paths: Set[Collection[Any]]) -> Collection[Any]:
+    decorated = [ (len(path), path) for path in paths ]
+    decorated = sorted(decorated)
+    undecorated = [ path for (_, path) in decorated ]
+    return undecorated[0]
 
 def _print_container_paths(storage: Dict, all_paths: bool) -> None:
     if all_paths:
