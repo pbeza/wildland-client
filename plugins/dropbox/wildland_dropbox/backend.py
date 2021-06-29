@@ -182,6 +182,7 @@ class DropboxStorageBackend(FileSubcontainersMixin, DirectoryCachedStorageMixin,
         self.client.connect()
 
     def unmount(self) -> None:
+        """Unmount"""
         self.client.disconnect()
 
     def info_dir(self, path: PurePosixPath) -> Iterable[Tuple[str, DropboxFileAttr]]:
