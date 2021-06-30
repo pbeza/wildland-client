@@ -2950,10 +2950,15 @@ def test_container_wrong_signer(cli, base_dir):
 
 def test_status(cli, control_client):
     control_client.expect('status', {})
-    control_client.expect('dirinfo', [{
+    control_client.expect3('dirinfo', ((), {'path':'/path1'}), [{
         'storage': {
             'owner': '0xaaa',
             'container-path': '/.uuid/0xabc'
+        }}])
+    control_client.expect3('dirinfo', ((), {'path':'/path2'}), [{
+        'storage': {
+            'owner': '0xbbb',
+            'container-path': '/.uuid/0xabcd'
         }}])
     control_client.expect('info', {
         '1': {
@@ -2972,11 +2977,22 @@ def test_status(cli, control_client):
     out_lines = result.splitlines()
     assert 'wildland:0xaaa:/.uuid/0xabc:' in out_lines
     assert '  storage: local' in out_lines
+    assert 'wildland:0xbbb:/.uuid/0xabcd:' in out_lines
     assert '  storage: s3' in out_lines
 
 
 def test_status_all_paths(cli, control_client):
     control_client.expect('status', {})
+    control_client.expect3('dirinfo', ((), {'path':'/path1'}), [{
+        'storage': {
+            'owner': '0xaaa',
+            'container-path': '/.uuid/0xabc'
+        }}])
+    control_client.expect3('dirinfo', ((), {'path':'/path2'}), [{
+        'storage': {
+            'owner': '0xbbb',
+            'container-path': '/.uuid/0xabcd'
+        }}])
     control_client.expect('info', {
         '1': {
             'paths': ['/path1', '/path1.1'],
@@ -2992,11 +3008,11 @@ def test_status_all_paths(cli, control_client):
 
     result = cli('status', '--all-paths', capture=True)
     out_lines = result.splitlines()
-    assert '/path1' in out_lines
+    assert 'wildland:0xaaa:/.uuid/0xabc:' in out_lines
     assert '  storage: local' in out_lines
     assert '    /path1' in out_lines
     assert '    /path1.1' in out_lines
-    assert 'wildland:0xaaa:/.uuid/0xabc:' in out_lines
+    assert 'wildland:0xbbb:/.uuid/0xabcd:' in out_lines
     assert '  storage: s3' in out_lines
     assert '    /path2' in out_lines
     assert '    /path2.1' in out_lines
@@ -3018,8 +3034,19 @@ def test_status_secondary_storage(cli, control_client):
                 'hidden': is_hidden
             }
         }
+    def expect_dirinfo(path, uuid):
+        control_client.expect3('dirinfo', ((), {'path': path}), [{
+            'storage': {
+                'owner': '0xaaa',
+                'container-path': f'/.uuid/{uuid}'
+            }
+        }])
 
     control_client.expect('status', {})
+    expect_dirinfo('/path1', '0xabc'),
+    expect_dirinfo('/path2', '0xbcd'),
+    expect_dirinfo('/path1-pseudomanifest', '0xcde'),
+    expect_dirinfo('/path2-pseudomanifest', '0xdef')
     control_client.expect('info', {
         '1': _create_params(['/path1', '/path1.1', '/path1.2'], 'local', True, False),
         '2': _create_params(['/path2', '/path2.1'], 'local', False, False),
@@ -3031,7 +3058,7 @@ def test_status_secondary_storage(cli, control_client):
     result = cli('status', capture=True)
     assert result == """Mounted containers:
 
-/path1
+wildland:0xaaa:/.uuid/0xabc:
   storage: local
   paths:
     /path1
@@ -3043,7 +3070,7 @@ def test_status_secondary_storage(cli, control_client):
   title:
     mytitle
 
-/path2
+wildland:0xaaa:/.uuid/0xbcd:
   storage: local
 
 """
@@ -3051,7 +3078,7 @@ def test_status_secondary_storage(cli, control_client):
     result = cli('status', '--with-pseudomanifests', capture=True)
     assert result == """Mounted containers:
 
-/path1
+wildland:0xaaa:/.uuid/0xabc:
   storage: local
   paths:
     /path1
@@ -3063,13 +3090,13 @@ def test_status_secondary_storage(cli, control_client):
   title:
     mytitle
 
-/path2
+wildland:0xaaa:/.uuid/0xbcd:
   storage: local
 
-/path1-pseudomanifest
+wildland:0xaaa:/.uuid/0xcde:
   storage: static
 
-/path2-pseudomanifest
+wildland:0xaaa:/.uuid/0xdef:
   storage: static
 
 """
@@ -3077,27 +3104,27 @@ def test_status_secondary_storage(cli, control_client):
     result = cli('status', '--with-pseudomanifests', '--all-paths', capture=True)
     assert result == """Mounted containers:
 
-/path1
+wildland:0xaaa:/.uuid/0xabc:
   storage: local
   all paths:
     /path1
     /path1.1
     /path1.2
 
-/path2
+wildland:0xaaa:/.uuid/0xbcd:
   storage: local
   all paths:
     /path2
     /path2.1
 
-/path1-pseudomanifest
+wildland:0xaaa:/.uuid/0xcde:
   storage: static
   all paths:
     /path1-pseudomanifest
     /path1.1
     /path1.2
 
-/path2-pseudomanifest
+wildland:0xaaa:/.uuid/0xdef:
   storage: static
   all paths:
     /path2-pseudomanifest
