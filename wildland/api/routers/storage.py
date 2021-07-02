@@ -36,8 +36,10 @@ async def read_storages(ctx: ContextObj = Depends(get_ctx)):
     logger.info(list(storages))
 
     backend_list = []
-    for container in  ctx.client.load_all(WildlandObject.Type.CONTAINER):
-        for backend in container.manifest._fields.get("backends", {}).get("storage", []):
+    for container in ctx.client.load_all(WildlandObject.Type.CONTAINER):
+        for backend in container.manifest._fields.get("backends", {}).get(
+            "storage", []
+        ):
             if not backend:
                 continue
 

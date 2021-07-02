@@ -2,6 +2,7 @@ wsgi_app = "main:app"
 bind = "unix:/tmp/gunicorn.sock"
 workers = 4
 worker_class = "uvicorn.workers.UvicornWorker"
+# worker_class = "wlworker.WLUvicornWorker"
 proc_name = "wildlandapi"
 proxy_protocol = True
 proxy_allow_from = "0.0.0.0"

@@ -21,36 +21,35 @@ Wildland Rest API configuration
 """
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from wildland.api.routers import bridge, container, file, instance, storage, user
+from wildland.api.routers import bridge, container, file, forest, instance, storage, user
 
-app = FastAPI(
+API_VERSION = "0.0.1"
+app = FastAPI(openapi_url=None)  # dependencies=[Depends(get_query_token)]
+api = FastAPI(openapi_url=None)
+api_with_version = FastAPI(
     title="Wildland API",
     description="The Rest API made for Wildland Graphical User Interface",
-    version="0.0.1-alpha.0",
-)  # dependencies=[Depends(get_query_token)]
+    version=f"{API_VERSION}-alpha.0",
+)
 
 origins = ["*"]
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
-app.include_router(bridge.router)
-app.include_router(container.router)
-app.include_router(file.router)
-app.include_router(instance.router)
-app.include_router(storage.router)
-app.include_router(user.router)
+api_with_version.include_router(bridge.router)
+api_with_version.include_router(container.router)
+api_with_version.include_router(file.router)
+api_with_version.include_router(forest.router)
+api_with_version.include_router(instance.router)
+api_with_version.include_router(storage.router)
+api_with_version.include_router(user.router)
 
 
-@app.get("/")
+@api_with_version.get("/")
 async def root():
     """Root api url provides given welcome message, including `docs` information."""
     return {
-        "message": "Welcome to Wildland API! To get more information about endpoints, have a glance over '/docs' path." # pylint: disable=line-too-long
+        "message": f"Welcome to Wildland API! To get more information about endpoints, have a glance over '/api/{API_VERSION}/docs' path." # pylint: disable=line-too-long
     }
+
+api.mount(f"/{API_VERSION}", api_with_version)
+app.mount("/api", api)

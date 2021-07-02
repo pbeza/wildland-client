@@ -24,11 +24,15 @@ mkdir "$MOUNT_DIR"
 sudo chmod 666 /dev/fuse
 
 
-# start apache
 mkdir /home/user/gunicorn
+
+# self signed certificate for local https
+# openssl req -x509 -newkey rsa:4096 -sha256 -nodes -keyout /home/user/gunicorn/key.pem -days 365 -out /home/user/gunicorn/cert.pem -subj '/CN=localhost/O=Wildland/C=PL'
+
 cd /home/user/wildland-client/wildland/api
 gunicorn -c /home/user/wildland-client/gunicorn.py --daemon
 
+# start apache
 sudo /etc/init.d/apache2 start
 
 sudo chown -R user.user ~/.config ~/storage

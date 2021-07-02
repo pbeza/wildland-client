@@ -17,10 +17,10 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Wildland User Rest API
+Wildland Forest Rest API
 """
 
-import logging
+import re
 from wildland.exc import WildlandError
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import Response
@@ -28,12 +28,12 @@ from wildland.api.dependency import ContextObj, get_ctx
 from wildland.wildland_object.wildland_object import WildlandObject
 
 router = APIRouter()
-logger = logging.getLogger("gunicorn.error")
+pattern = '^.*\/forests\/(.*):\/.*$'
 
 
-@router.get("/user/", tags=["user"])
-async def read_users(ctx: ContextObj = Depends(get_ctx)):
-    """Returns all wildland users as a list"""
+@router.get("/forest/", tags=["forest"])
+async def read_forests(ctx: ContextObj = Depends(get_ctx)):
+    """Returns all wildland forests as a list"""
 
     try:
         ctx.fs_client.ensure_mounted()
@@ -44,23 +44,16 @@ async def read_users(ctx: ContextObj = Depends(get_ctx)):
         )
 
     storages = list(ctx.fs_client.get_info().values())
-    users = list(ctx.client.load_all(WildlandObject.Type.USER))
-    for user in users:
-        setattr(user, "mounted", False)
-        for storage in storages:
-            main_path = storage["paths"][0]
-            if user.owner in str(main_path):
-                setattr(user, "mounted", True)
-    return users
+    forest_list = []
+    for storage in storages:
+        for path in storage['paths']:
+            result = re.match(pattern, str(path))
+            if result:
+                forest_list.append(result.group(1))
+    return list(set(forest_list))
 
 
-@router.get("/user/me", tags=["user"])
-async def read_user_me():
-    """Returns information of default wildland user for current instance"""
-    return {"username": "fakecurrentuser"}
-
-
-@router.get("/user/{username}", tags=["user"])
-async def read_user(username: str):
-    """Returns information of specific wildland user"""
-    return {"username": username}
+@router.get("/forest/{name}", tags=["forest"])
+async def read_forest(name: str):
+    """Returns information of specific wildland forest"""
+    return {"name": name}

@@ -21,12 +21,15 @@ Wildland File Rest API
 """
 
 import io
+import logging
 import os
+from pathlib import Path
 from typing import Optional
+from wildland.control_client import ControlClientError
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import Response
 from PIL import Image
-from wildland.api.dependency import get_webdav
+from wildland.api.dependency import ContextObj, get_ctx, get_webdav
 
 
 router = APIRouter()
@@ -42,6 +45,7 @@ SUPPORTED_MIMETYPES = {
     "image/tiff": "TIFF",
     "image/webp": "WEBP",
 }
+logger = logging.getLogger("gunicorn.error")
 
 
 @router.get("/file/", tags=["file"])
@@ -101,3 +105,18 @@ async def read_thumbnail(
 
     image.save(thumb_bytes, thumb_extension)
     return Response(content=thumb_bytes.getvalue())
+
+@router.get("/file/container", tags=["file, container"])
+def find_container_by_path(
+    ctx: ContextObj = Depends(get_ctx),
+    _q: Optional[str] = Query(None, title="Path Query"),
+    path: str = "/",
+):
+    try:
+        relative_path = Path(ctx.mount_dir).joinpath(path.strip("/"))
+        logger.debug("relative_path", relative_path)
+        results = set(ctx.fs_client.pathinfo(relative_path))
+    except ControlClientError:
+        results = []
+
+    return results

@@ -32,9 +32,9 @@ limiter = Limiter(key_func=get_remote_address)
 
 @router.get("/instance/", tags=["instance"])
 @limiter.limit("1/minute")
-async def crete_instances(_request: Request):
+async def create_instances(request: Request): #pylint: disable=unused-argument
     """
     Creates a new wildland instance for a demo user
     and returns it's entrypoint for Rest API connection
     """
-    return "https://localhost:3000"
+    return "https://localhost:4554" # TODO return new instance when implementation done
