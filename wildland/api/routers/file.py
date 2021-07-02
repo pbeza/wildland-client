@@ -25,11 +25,11 @@ import logging
 import os
 from pathlib import Path
 from typing import Optional
-from wildland.control_client import ControlClientError
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import Response
 from PIL import Image
 from wildland.api.dependency import ContextObj, get_ctx, get_webdav
+from wildland.control_client import ControlClientError
 
 
 router = APIRouter()
@@ -112,9 +112,9 @@ def find_container_by_path(
     _q: Optional[str] = Query(None, title="Path Query"),
     path: str = "/",
 ):
+    """Finds container information for given file path and returns"""
     try:
         relative_path = Path(ctx.mount_dir).joinpath(path.strip("/"))
-        logger.debug("relative_path", relative_path)
         results = set(ctx.fs_client.pathinfo(relative_path))
     except ControlClientError:
         results = []

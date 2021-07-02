@@ -21,14 +21,13 @@ Wildland Forest Rest API
 """
 
 import re
-from wildland.exc import WildlandError
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import Response
 from wildland.api.dependency import ContextObj, get_ctx
-from wildland.wildland_object.wildland_object import WildlandObject
+from wildland.exc import WildlandError
 
 router = APIRouter()
-pattern = '^.*\/forests\/(.*):\/.*$'
+pattern = '^.*\\/forests\\/(.*):\\/.*$'
 
 
 @router.get("/forest/", tags=["forest"])

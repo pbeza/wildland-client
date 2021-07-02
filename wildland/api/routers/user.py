@@ -21,10 +21,10 @@ Wildland User Rest API
 """
 
 import logging
-from wildland.exc import WildlandError
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import Response
 from wildland.api.dependency import ContextObj, get_ctx
+from wildland.exc import WildlandError
 from wildland.wildland_object.wildland_object import WildlandObject
 
 router = APIRouter()
