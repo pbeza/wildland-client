@@ -3132,6 +3132,34 @@ wildland:0xaaa:/.uuid/0xdef:
 
 """
 
+def test_status_with_bridges(cli, control_client):
+    control_client.expect('status', {})
+    cli('user', 'create', 'Alice', '--key', '0xaaa')
+    cli('user', 'create', 'Bob', '--key', '0xbbb')
+
+    cli('bridge', 'create', 'Bridge',
+        '--target-user', 'Bob',
+        '--path', '/users/bob')
+
+    cli('container', 'create', '--owner', 'Bob', '--access', 'Alice', '--path', '/diary')
+
+    control_client.expect3('dirinfo', ((), {'path':'/diary'}), [{
+        'storage': {
+            'owner': '0xbbb',
+            'container-path': '/.uuid/0xabc'
+        }}])
+    control_client.expect('info', {
+        '1': {
+            'paths': ['/diary'],
+            'type': 'local',
+            'extra': {},
+        },
+    })
+
+    result = cli('status', capture=True)
+    out_lines = result.splitlines()
+    assert 'wildland:0xaaa:/users/bob:/.uuid/0xabc:' in out_lines
+
 
 ## Bridge
 
