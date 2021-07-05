@@ -516,6 +516,25 @@ def test_storage_create(cli, base_dir):
     assert "location: /zip" in data
     assert "backend-id:" in data
 
+def test_storage_create_url(cli, base_dir):
+    _create_user_container_storage(cli)
+
+    with open(base_dir / 'storage/Storage.storage.yaml') as f:
+        data = f.read()
+
+    assert "owner: ''0xaaa''" in data
+    assert "location: /PATH" in data
+    assert "backend-id:" in data
+
+    cli('storage', 'create', 'zip-archive', 'ZipStorage', '--location', '/zip',
+        '--container', 'wildland:0xaaa:/PATH:', '--no-inline')
+    with open(base_dir / 'storage/ZipStorage.storage.yaml') as f:
+        data = f.read()
+
+    assert "owner: ''0xaaa''" in data
+    assert "location: /zip" in data
+    assert "backend-id:" in data
+
 
 def test_storage_create_not_inline(cli, base_dir):
     _create_user_container_storage(cli)
@@ -2955,6 +2974,16 @@ def test_container_wrong_signer(cli, base_dir):
 
 def test_status(cli, control_client):
     control_client.expect('status', {})
+    control_client.expect3('dirinfo', ((), {'path':'/path1'}), [{
+        'storage': {
+            'owner': '0xaaa',
+            'container-path': '/.uuid/0xabc'
+        }}])
+    control_client.expect3('dirinfo', ((), {'path':'/path2'}), [{
+        'storage': {
+            'owner': '0xbbb',
+            'container-path': '/.uuid/0xabcd'
+        }}])
     control_client.expect('info', {
         '1': {
             'paths': ['/path1', '/path1.1'],
@@ -2970,14 +2999,24 @@ def test_status(cli, control_client):
 
     result = cli('status', capture=True)
     out_lines = result.splitlines()
-    assert '/path1' in out_lines
+    assert 'wildland:0xaaa:/.uuid/0xabc:' in out_lines
     assert '  storage: local' in out_lines
-    assert '/path2' in out_lines
+    assert 'wildland:0xbbb:/.uuid/0xabcd:' in out_lines
     assert '  storage: s3' in out_lines
 
 
 def test_status_all_paths(cli, control_client):
     control_client.expect('status', {})
+    control_client.expect3('dirinfo', ((), {'path':'/path1'}), [{
+        'storage': {
+            'owner': '0xaaa',
+            'container-path': '/.uuid/0xabc'
+        }}])
+    control_client.expect3('dirinfo', ((), {'path':'/path2'}), [{
+        'storage': {
+            'owner': '0xbbb',
+            'container-path': '/.uuid/0xabcd'
+        }}])
     control_client.expect('info', {
         '1': {
             'paths': ['/path1', '/path1.1'],
@@ -2993,11 +3032,11 @@ def test_status_all_paths(cli, control_client):
 
     result = cli('status', '--all-paths', capture=True)
     out_lines = result.splitlines()
-    assert '/path1' in out_lines
+    assert 'wildland:0xaaa:/.uuid/0xabc:' in out_lines
     assert '  storage: local' in out_lines
     assert '    /path1' in out_lines
     assert '    /path1.1' in out_lines
-    assert '/path2' in out_lines
+    assert 'wildland:0xbbb:/.uuid/0xabcd:' in out_lines
     assert '  storage: s3' in out_lines
     assert '    /path2' in out_lines
     assert '    /path2.1' in out_lines
@@ -3019,8 +3058,19 @@ def test_status_secondary_storage(cli, control_client):
                 'hidden': is_hidden
             }
         }
+    def expect_dirinfo(path, uuid):
+        control_client.expect3('dirinfo', ((), {'path': path}), [{
+            'storage': {
+                'owner': '0xaaa',
+                'container-path': f'/.uuid/{uuid}'
+            }
+        }])
 
     control_client.expect('status', {})
+    expect_dirinfo('/path1', '0xabc'),
+    expect_dirinfo('/path2', '0xbcd'),
+    expect_dirinfo('/path1-pseudomanifest', '0xcde'),
+    expect_dirinfo('/path2-pseudomanifest', '0xdef')
     control_client.expect('info', {
         '1': _create_params(['/path1', '/path1.1', '/path1.2'], 'local', True, False),
         '2': _create_params(['/path2', '/path2.1'], 'local', False, False),
@@ -3032,7 +3082,7 @@ def test_status_secondary_storage(cli, control_client):
     result = cli('status', capture=True)
     assert result == """Mounted containers:
 
-/path1
+wildland:0xaaa:/.uuid/0xabc:
   storage: local
   paths:
     /path1
@@ -3044,7 +3094,7 @@ def test_status_secondary_storage(cli, control_client):
   title:
     mytitle
 
-/path2
+wildland:0xaaa:/.uuid/0xbcd:
   storage: local
 
 """
@@ -3052,7 +3102,7 @@ def test_status_secondary_storage(cli, control_client):
     result = cli('status', '--with-pseudomanifests', capture=True)
     assert result == """Mounted containers:
 
-/path1
+wildland:0xaaa:/.uuid/0xabc:
   storage: local
   paths:
     /path1
@@ -3064,13 +3114,13 @@ def test_status_secondary_storage(cli, control_client):
   title:
     mytitle
 
-/path2
+wildland:0xaaa:/.uuid/0xbcd:
   storage: local
 
-/path1-pseudomanifest
+wildland:0xaaa:/.uuid/0xcde:
   storage: static
 
-/path2-pseudomanifest
+wildland:0xaaa:/.uuid/0xdef:
   storage: static
 
 """
@@ -3078,33 +3128,61 @@ def test_status_secondary_storage(cli, control_client):
     result = cli('status', '--with-pseudomanifests', '--all-paths', capture=True)
     assert result == """Mounted containers:
 
-/path1
+wildland:0xaaa:/.uuid/0xabc:
   storage: local
   all paths:
     /path1
     /path1.1
     /path1.2
 
-/path2
+wildland:0xaaa:/.uuid/0xbcd:
   storage: local
   all paths:
     /path2
     /path2.1
 
-/path1-pseudomanifest
+wildland:0xaaa:/.uuid/0xcde:
   storage: static
   all paths:
     /path1-pseudomanifest
     /path1.1
     /path1.2
 
-/path2-pseudomanifest
+wildland:0xaaa:/.uuid/0xdef:
   storage: static
   all paths:
     /path2-pseudomanifest
     /path2.1
 
 """
+
+def test_status_with_bridges(cli, control_client):
+    control_client.expect('status', {})
+    cli('user', 'create', 'Alice', '--key', '0xaaa')
+    cli('user', 'create', 'Bob', '--key', '0xbbb')
+
+    cli('bridge', 'create', 'Bridge',
+        '--target-user', 'Bob',
+        '--path', '/users/bob')
+
+    cli('container', 'create', '--owner', 'Bob', '--access', 'Alice', '--path', '/diary')
+
+    control_client.expect3('dirinfo', ((), {'path':'/diary'}), [{
+        'storage': {
+            'owner': '0xbbb',
+            'container-path': '/.uuid/0xabc'
+        }}])
+    control_client.expect('info', {
+        '1': {
+            'paths': ['/diary'],
+            'type': 'local',
+            'extra': {},
+        },
+    })
+
+    result = cli('status', capture=True)
+    out_lines = result.splitlines()
+    assert 'wildland:0xaaa:/users/bob:/.uuid/0xabc:' in out_lines
 
 
 ## Bridge
