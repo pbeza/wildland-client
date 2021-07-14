@@ -2,9 +2,9 @@
 # in Dockerfile. Install all customizations here.
 
 FROM wildland-client-ci
-
+ARG EXPERIMENTAL_API
+ENV EXPERIMENTAL_API=$EXPERIMENTAL_API
 USER root
-
 # Run update && install as one command:
 # https://docs.docker.com/develop/develop-images/dockerfile_best-practices/#apt-get
 RUN apt-get -qy update && apt-get install -y \
@@ -26,9 +26,14 @@ RUN sed -i 's/ ALL/ NOPASSWD:ALL/' /etc/sudoers
 
 RUN sed -i 's/www-data/user/' /etc/apache2/envvars
 COPY ./docker/apache2-wl.conf /etc/apache2/sites-available/wl.conf
+COPY ./docker/apache2-wl-rest.conf /etc/apache2/sites-available/wl-rest.conf
 RUN a2enmod dav dav_fs rewrite proxy proxy_http headers
 RUN a2dissite 000-default
-RUN a2ensite wl
+RUN if [ "$EXPERIMENTAL_API" = true ]; then \
+      a2ensite wl wl-rest; \
+    else \
+      a2ensite wl; \
+    fi
 RUN mkdir -p /var/lock/apache2
 RUN chown -R user /var/lock/apache2
 

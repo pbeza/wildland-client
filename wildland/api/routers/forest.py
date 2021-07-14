@@ -20,14 +20,13 @@
 Wildland Forest Rest API
 """
 
-import re
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import Response
 from wildland.api.dependency import ContextObj, get_ctx
 from wildland.exc import WildlandError
+from wildland.wildland_object.wildland_object import WildlandObject
 
 router = APIRouter()
-pattern = '^.*\\/forests\\/(.*):\\/.*$'
 
 
 @router.get("/forest/", tags=["forest"])
@@ -43,14 +42,15 @@ async def read_forests(ctx: ContextObj = Depends(get_ctx)):
         )
 
     storages = list(ctx.fs_client.get_info().values())
+    bridges = ctx.client.load_all(WildlandObject.Type.BRIDGE)
     forest_list = []
     for storage in storages:
         for path in storage['paths']:
-            result = re.match(pattern, str(path))
-            if result:
-                forest_list.append(result.group(1))
+            for bridge in bridges:
+                if path == bridge.local_path:
+                    forest_list.append(bridge.local_path)
+            
     return list(set(forest_list))
-
 
 @router.get("/forest/{name}", tags=["forest"])
 async def read_forest(name: str):
