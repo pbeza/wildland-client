@@ -21,28 +21,17 @@ Wildland Container Rest API
 """
 
 import logging
-from fastapi import APIRouter, Depends, status
-from fastapi.responses import Response
-from wildland.api.dependency import ContextObj, get_ctx
-from wildland.exc import WildlandError
+from fastapi import APIRouter, Depends
+from wildland.api.dependency import ContextObj, get_ctx, ensure_wl_mount
 from wildland.wildland_object.wildland_object import WildlandObject
 
 router = APIRouter()
 logger = logging.getLogger("gunicorn.error")
 
 
-@router.get("/container/", tags=["container"])
+@router.get("/container/", tags=["container"], dependencies=[Depends(ensure_wl_mount)])
 async def read_containers(ctx: ContextObj = Depends(get_ctx)):
     """Returns all wildland containers as a list"""
-
-    try:
-        ctx.fs_client.ensure_mounted()
-    except WildlandError:
-        return Response(
-            content="Wildland is not mounted",
-            status_code=status.HTTP_428_PRECONDITION_REQUIRED,
-        )
-
     storages = list(ctx.fs_client.get_info().values())
     containers = ctx.client.load_all(WildlandObject.Type.CONTAINER)
     container_list = []

@@ -22,7 +22,9 @@ Wildland Rest API Dependency module
 
 from pathlib import Path
 import easywebdav
+from fastapi import Depends, status, HTTPException
 from wildland.client import Client
+from wildland.exc import WildlandError
 
 class ContextObj:
     """Helper object for keeping state in :attr:`click.Context.obj`"""
@@ -45,3 +47,13 @@ def get_webdav():
     easywebdav.client.basestring = (str, bytes)
     webdav = easywebdav.connect('localhost', port="8080")
     return webdav
+
+def ensure_wl_mount(ctx: ContextObj = Depends(get_ctx)):
+    """Some endpoints requires Wildland to be mounted, this dependency ensuring it"""
+    try:
+        ctx.fs_client.ensure_mounted()
+    except WildlandError as wildland_error:
+        raise HTTPException(
+            detail="Wildland is not mounted",
+            status_code=status.HTTP_428_PRECONDITION_REQUIRED,
+        ) from wildland_error

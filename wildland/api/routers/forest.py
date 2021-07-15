@@ -20,27 +20,16 @@
 Wildland Forest Rest API
 """
 
-from fastapi import APIRouter, Depends, status
-from fastapi.responses import Response
-from wildland.api.dependency import ContextObj, get_ctx
-from wildland.exc import WildlandError
+from fastapi import APIRouter, Depends
+from wildland.api.dependency import ContextObj, get_ctx, ensure_wl_mount
 from wildland.wildland_object.wildland_object import WildlandObject
 
 router = APIRouter()
 
 
-@router.get("/forest/", tags=["forest"])
+@router.get("/forest/", tags=["forest"], dependencies=[Depends(ensure_wl_mount)])
 async def read_forests(ctx: ContextObj = Depends(get_ctx)):
     """Returns all wildland forests as a list"""
-
-    try:
-        ctx.fs_client.ensure_mounted()
-    except WildlandError:
-        return Response(
-            content="Wildland is not mounted",
-            status_code=status.HTTP_428_PRECONDITION_REQUIRED,
-        )
-
     storages = list(ctx.fs_client.get_info().values())
     bridges = ctx.client.load_all(WildlandObject.Type.BRIDGE)
     forest_list = []
@@ -49,7 +38,7 @@ async def read_forests(ctx: ContextObj = Depends(get_ctx)):
             for bridge in bridges:
                 if path == bridge.local_path:
                     forest_list.append(bridge.local_path)
-            
+
     return list(set(forest_list))
 
 @router.get("/forest/{name}", tags=["forest"])

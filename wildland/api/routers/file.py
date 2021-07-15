@@ -28,7 +28,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import Response
 from PIL import Image
-from wildland.api.dependency import ContextObj, get_ctx, get_webdav
+from wildland.api.dependency import ContextObj, get_ctx, get_webdav, ensure_wl_mount
 from wildland.control_client import ControlClientError
 
 
@@ -106,7 +106,10 @@ async def read_thumbnail(
     image.save(thumb_bytes, thumb_extension)
     return Response(content=thumb_bytes.getvalue())
 
-@router.get("/file/container", tags=["file, container"])
+
+@router.get(
+    "/file/container", tags=["file, container"], dependencies=[Depends(ensure_wl_mount)]
+)
 def find_container_by_path(
     ctx: ContextObj = Depends(get_ctx),
     _q: Optional[str] = Query(None, title="Path Query"),
@@ -117,6 +120,6 @@ def find_container_by_path(
         relative_path = Path(ctx.mount_dir).joinpath(path.strip("/"))
         results = set(ctx.fs_client.pathinfo(relative_path))
     except ControlClientError:
-        results = []
+        results = set()
 
     return results
