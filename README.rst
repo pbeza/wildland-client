@@ -23,6 +23,24 @@ Alternatively, run directly:
 
    ./wildland-docker.sh
 
+To run with experimantal Rest API, call `wildland-client-experimental-rest` instead of `wildland-client`:
+
+.. code-block:: sh
+
+   docker-compose run --service-ports wildland-client-experimental-rest
+
+Alternatively, run directly:
+
+.. code-block:: sh
+
+   ./wildland-docker.sh -e
+
+or
+
+.. code-block:: sh
+
+   ./wildland-docker.sh --experimental-api
+
 This container serves FUSE content as WebDAV too.
 
 See `Setup <https://wildland.gitlab.io/wildland-client/setup.html>`_ for more.

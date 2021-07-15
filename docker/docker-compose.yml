@@ -8,7 +8,7 @@ services:
     image: wildland-client-ci
     container_name: wildland-client-ci
 
-  wildland-client:
+  wildland-client: &wl
     build:
       context: ..
       dockerfile: ./docker/Dockerfile
@@ -24,13 +24,24 @@ services:
       - /dev/fuse
     ports:
       - "8080:8080"
-      - "4554:4554"
     volumes:
       - ..:/home/user/wildland-client:ro
       - ~/.config/wildland:/home/user/.config/wildland:rw
       - ./storage:/home/user/storage:rw
 
-  wildland-forest:
+  wildland-client-experimental-rest:
+    <<: *wl
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile
+      args:
+        EXPERIMENTAL_API: "true"
+    image: wildland-client
+    ports:
+      - "8080:8080"
+      - "4554:4554"
+
+  wildland-forest: &wlforest
     build:
       context: ..
       dockerfile: ./docker/Dockerfile.forest
@@ -45,13 +56,26 @@ services:
       - /dev/fuse
     ports:
       - "8080:8080"
-      - "4554:4554"
       - "445:445"
       - "139:139"
     volumes:
       - ..:/home/user/wildland-client:ro
       - usercfg:/home/user/.config:rw
       - ./storage:/home/user/storage:rw
+
+  wildland-forest-experimental-rest:
+    <<: *wlforest
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile.forest
+      args:
+        EXPERIMENTAL_API: "true"
+    image: wildland-forest
+    ports:
+      - "8080:8080"
+      - "4554:4554"
+      - "445:445"
+      - "139:139"
 
 volumes:
   usercfg:
