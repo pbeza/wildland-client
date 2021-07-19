@@ -1,6 +1,9 @@
 Setup and tests
 ===============
 
+Note that these steps are meant to be used for development. For user guide see
+https://docs.wildland.io/user-guide/quick-start.html
+
 System requirements
 -------------------
 
@@ -77,7 +80,7 @@ Usage:
 
     cd docker
     docker-compose build
-    docker-compose run wildland-client
+    docker-compose run --service-ports wildland-client
 
 To create and mount the example containers, run ``wl-example``. wildland-client
 is mounted in ``/home/user/wildland`` and the log is in ``/tmp/wlfuse.log``.
@@ -86,7 +89,7 @@ Running tests:
 
 .. code-block:: sh
 
-    cd ci
+    cd docker
     docker-compose build
     docker-compose run wildland-client-ci ./ci/ci-pytest
 

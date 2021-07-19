@@ -1,0 +1,11 @@
+-r requirements.base.in
+
+# Development / testing
+pip-tools
+pytest==6.2.2
+pytest-cov==2.12.1
+pylint==2.7.2
+mypy==0.910
+python-lorem
+yq
+psutil

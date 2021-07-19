@@ -6,10 +6,10 @@ set -ex
 pip install . plugins/ipfs/
 
 # IPFS
-
 ipfs init
-ipfs daemon &
+ipfs config Addresses.Gateway "/ip4/127.0.0.1/tcp/8888" # 8080 is already taken
 echo "Starting IPFS daemon: ipfs."
+ipfs daemon &
 
 echo "IPFS is running at /ip4/127.0.0.1/tcp/8888"
 echo
@@ -30,7 +30,7 @@ HASH=$(ipfs add -r ~/tmp/ipfs-data/ | grep -E 'Qm.{44} ipfs-data$' -o | head -c 
 
 ./wl user create ipfs-user
 ./wl container create ipfs-con --path /ipfs
-./wl storage create ipfs --container ipfs-con --ipfs-hash /ipfs/$HASH ipfs-storage
+./wl storage create ipfs --container ipfs-con --ipfs-hash /ipfs/$HASH --endpoint-addr /ip4/127.0.0.1/tcp/8888
 ./wl start --container ipfs-con
 
 # Testing
