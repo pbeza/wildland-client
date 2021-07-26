@@ -39,7 +39,7 @@ from ..client import Client
 from ..cli.cli_base import ContextObj
 from ..cli.cli_main import _do_mount_containers
 
-# pylint: disable=consider-using-with
+# pylint: disable=bad-option-value,consider-using-with
 @pytest.mark.parametrize('engine', ['gocryptfs', 'encfs'])
 def test_encrypted_with_url(cli, base_dir, engine):
     local_dir = base_dir / 'local'
