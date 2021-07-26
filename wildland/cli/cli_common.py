@@ -25,6 +25,7 @@
 Common commands (sign, edit, ...) for multiple object types
 """
 import copy
+import math
 import re
 import subprocess
 import sys
@@ -229,7 +230,8 @@ def dump(ctx: click.Context, input_file, decrypt, **_callback_kwargs):
 
     if decrypt:
         manifest = Manifest.from_file(path, obj.client.session.sig)
-        print(yaml.dump(manifest.fields, encoding='utf-8', sort_keys=False).decode())
+        print(
+            yaml.dump(manifest.fields, encoding='utf-8', sort_keys=False, width=math.inf).decode())
 
     else:
         data = path.read_bytes()
@@ -269,7 +271,7 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
     try:
         manifest = Manifest.from_file(path, obj.client.session.sig)
         manifest_type = manifest.fields['object']
-        data = yaml.dump(manifest.fields, encoding='utf-8', sort_keys=False)
+        data = yaml.dump(manifest.fields, encoding='utf-8', sort_keys=False, width=math.inf)
     except ManifestError:
         data = path.read_bytes()
         manifest_type = provided_manifest_type
@@ -375,9 +377,9 @@ def modify_manifest(pass_ctx: click.Context, input_file: str, edit_func: Callabl
     modified_manifest = Manifest.from_fields(fields)
 
     orig_manifest_data = yaml.safe_dump(
-        orig_manifest.fields, encoding='utf-8', sort_keys=False)
+        orig_manifest.fields, encoding='utf-8', sort_keys=False, width=math.inf)
     modified_manifest_data = yaml.safe_dump(
-        modified_manifest.fields, encoding='utf-8', sort_keys=False)
+        modified_manifest.fields, encoding='utf-8', sort_keys=False, width=math.inf)
 
     if orig_manifest_data == modified_manifest_data:
         click.echo('Manifest has not changed.')

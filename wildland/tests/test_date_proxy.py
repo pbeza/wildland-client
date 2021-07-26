@@ -23,6 +23,7 @@
 
 # pylint: disable=missing-docstring,redefined-outer-name
 from pathlib import Path, PurePosixPath
+import math
 import os
 from datetime import datetime
 import uuid
@@ -169,7 +170,7 @@ def container(cli, base_dir, data_dir):
                     }
                 }]
             }
-        }))
+        }, width=math.inf))
     cli('container', 'sign', '-i', 'macro')
 
     yield 'macro'

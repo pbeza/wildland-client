@@ -24,6 +24,7 @@ Templates for manifests.
 """
 
 import logging
+import math
 import re
 import uuid
 from typing import List, Optional, Union
@@ -83,7 +84,7 @@ class StorageTemplate:
 
     def __init__(self, source_data: Union[str, dict]):
         if isinstance(source_data, dict):
-            source_data = yaml.dump(source_data)
+            source_data = yaml.dump(source_data, width=math.inf)
 
         assert isinstance(source_data, str)  # satisfy mypy
         self.template = Template(source=source_data, undefined=StrictUndefined)
@@ -261,7 +262,7 @@ class TemplateManager:
         yaml_contents.append(params)
 
         with open(target_path, 'w') as f:
-            yaml.dump(yaml_contents, f)
+            yaml.dump(yaml_contents, f, width=math.inf)
 
         return target_path
 

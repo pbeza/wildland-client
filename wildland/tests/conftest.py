@@ -1,6 +1,7 @@
 # pylint: disable=missing-docstring,redefined-outer-name
 import signal
 
+import math
 import os
 import shutil
 import tempfile
@@ -34,7 +35,7 @@ def base_dir():
             yaml.dump({
                 'mount-dir': str(base_dir / 'wildland'),
                 'dummy': True,
-            }, f)
+            }, f, width=math.inf)
         yield base_dir
     finally:
         shutil.rmtree(base_dir)

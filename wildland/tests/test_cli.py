@@ -26,6 +26,7 @@
 from copy import deepcopy
 from pathlib import Path
 import itertools
+import math
 import os
 import re
 import shutil
@@ -638,7 +639,7 @@ def test_storage_delete_inline_multiple_containers(cli, base_dir):
         documents[1]['backends']['storage'][0]['backend-id'] = backend_id
         f.seek(0)
         f.write('signature: |\n  dummy.0xaaa\n---\n')
-        f.write(yaml.safe_dump(documents[1]))
+        f.write(yaml.safe_dump(documents[1], width=math.inf))
 
     with pytest.raises(CliError, match='(...)(please specify container name with --container)'):
         cli('storage', 'delete', str(backend_id))
@@ -665,7 +666,7 @@ def test_storage_delete_inline_many_in_one(monkeypatch, cli, base_dir):
         documents[1]['backends']['storage'][1]['backend-id'] = backend_id
         f.seek(0)
         f.write('signature: |\n  dummy.0xaaa\n---\n')
-        f.write(yaml.safe_dump(documents[1]))
+        f.write(yaml.safe_dump(documents[1], width=math.inf))
 
     monkeypatch.setattr('sys.stdin.readline', lambda: "n")
     cli('storage', 'delete', str(backend_id), '--container', 'Container')
@@ -1866,7 +1867,7 @@ def test_container_mount_with_bridges(cli, base_dir, control_client):
         })
         f.seek(0)
         f.write('signature: |\n  dummy.0xbbb\n---\n')
-        f.write(yaml.safe_dump(documents[1]))
+        f.write(yaml.safe_dump(documents[1], width=math.inf))
 
     control_client.expect('paths', {})
     control_client.expect('mount')
@@ -2006,7 +2007,7 @@ def test_container_mount_with_alt_bridge_separator(cli, base_dir, control_client
         })
         f.seek(0)
         f.write('signature: |\n  dummy.0xbbb\n---\n')
-        f.write(yaml.safe_dump(documents[1]))
+        f.write(yaml.safe_dump(documents[1], width=math.inf))
 
     control_client.expect('paths', {})
     control_client.expect('mount')
@@ -2108,7 +2109,7 @@ def test_container_mount_with_import(cli, base_dir, control_client):
         })
         f.seek(0)
         f.write('signature: |\n  dummy.0xbbb\n---\n')
-        f.write(yaml.safe_dump(documents[1]))
+        f.write(yaml.safe_dump(documents[1], width=math.inf))
     cli('container', 'create', 'Container', '--owner', 'Other', '--path', '/PATH', '--no-publish')
     cli('storage', 'create', 'local', 'Storage', '--location', '/PATH',
         '--container', 'Container')
@@ -2186,7 +2187,7 @@ def test_container_mount_with_import_delegate(cli, base_dir, control_client):
         })
         f.seek(0)
         f.write('signature: |\n  dummy.0xbbb\n---\n')
-        f.write(yaml.safe_dump(documents[1]))
+        f.write(yaml.safe_dump(documents[1], width=math.inf))
     cli('container', 'create', 'Container', '--owner', 'Other', '--path', '/PATH', '--no-publish')
     cli('storage', 'create', 'local', 'Storage', '--location', '/PATH',
         '--container', 'Container')
@@ -2254,7 +2255,7 @@ def test_container_mount_bridge_placeholder(cli, base_dir, control_client):
         })
         f.seek(0)
         f.write('signature: |\n  dummy.0xaaa\n---\n')
-        f.write(yaml.safe_dump(documents[1]))
+        f.write(yaml.safe_dump(documents[1], width=math.inf))
 
     # move user manifest out of the default path, so the bridge would be the only way to access it
     os.rename(base_dir / 'users/Other.user.yaml', base_dir / 'user-Other.user.yaml')

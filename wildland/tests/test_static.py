@@ -63,7 +63,7 @@ def test_cli(base_dir, cli):
         '--container', 'Container', '--no-inline', '--no-encrypt-manifest')
     with open(base_dir / 'storage/Storage.storage.yaml') as f:
         data = f.read()
-    manifest = yaml.load(data.split('---')[1])
+    manifest = yaml.safe_load(data.split('---')[1])
 
     assert 'content' in manifest
     assert manifest['content'] == {

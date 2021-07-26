@@ -31,6 +31,7 @@ import collections.abc
 import functools
 import glob
 import logging
+import math
 import os
 import sys
 import time
@@ -907,7 +908,7 @@ class Client:
 
         # use custom caching that dumps *container_url_or_dict* to yaml,
         # because dict is not hashable (and there is no frozendict in python)
-        cache_key = yaml.dump(container_url_or_dict), owner, trusted
+        cache_key = yaml.dump(container_url_or_dict, width=math.inf), owner, trusted
         if cache_key in self._select_reference_storage_cache:
             return self._select_reference_storage_cache[cache_key]
 

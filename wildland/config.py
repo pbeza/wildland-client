@@ -25,6 +25,7 @@
 Configuration file handling.
 """
 import logging
+import math
 from pathlib import Path
 from typing import Dict, Any
 import os
@@ -112,7 +113,7 @@ class Config:
         Save fields from current ctx to the yaml file.
         """
         with open(self.path, 'w') as f:
-            yaml.dump(self.file_fields, f, sort_keys=False)
+            yaml.dump(self.file_fields, f, sort_keys=False, width=math.inf)
 
     @classmethod
     def update_obsolete(cls, file_fields):
