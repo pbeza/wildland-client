@@ -126,7 +126,7 @@ class ZipArchiveStorageBackend(CachedStorageMixin, StorageBackend):
     def mount(self) -> None:
         verify_local_access(self.zip_path, self.params['owner'],
                             self.params.get('is-local-owner', False))
-        # pylint: disable=consider-using-with
+        # pylint: disable=bad-option-value,consider-using-with
         self.zip_file = zipfile.ZipFile(self.zip_path)
 
     def unmount(self) -> None:
@@ -139,7 +139,7 @@ class ZipArchiveStorageBackend(CachedStorageMixin, StorageBackend):
         if self.zip_file is None:
             raise StorageError("Storage is unmounted.")
         self.zip_file.close()
-        # pylint: disable=consider-using-with
+        # pylint: disable=bad-option-value,consider-using-with
         self.zip_file = zipfile.ZipFile(self.zip_path)
 
     def _update(self):
