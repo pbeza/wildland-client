@@ -1,6 +1,8 @@
 # Wildland Project
 #
-# Copyright (C) 2020 Golem Foundation,
+# Copyright (C) 2020 Golem Foundation
+#
+# Authors:
 #                    Paweł Marczewski <pawel@invisiblethingslab.com>,
 #                    Wojtek Porczyk <woju@invisiblethingslab.com>
 #
@@ -16,6 +18,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 """
 A cached version of local storage.
@@ -314,11 +318,12 @@ class LocalDirectoryCachedStorageBackend(DirectoryCachedStorageMixin, BaseCached
         """
         Load information about a single directory.
         """
-        for name in os.listdir(self._local(path)):
-            file_path = self._local(path) / name
-            if not is_symlink_pointing_outside_container(self.root, file_path):
-                attr = self._stat(os.stat(file_path))
-                yield name, attr
+        with os.scandir(self._local(path)) as iterator:
+            for dir_entry in iterator:
+                file_path = self._local(path) / dir_entry.name
+                if not is_symlink_pointing_outside_container(self.root, file_path):
+                    attr = self._stat(dir_entry.stat())
+                    yield dir_entry.name, attr
 
 
 def is_symlink_pointing_outside_container(root: Path, path: Path) -> bool:

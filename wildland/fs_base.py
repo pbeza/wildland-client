@@ -1,6 +1,8 @@
 # Wildland Project
 #
-# Copyright (C) 2020 Golem Foundation,
+# Copyright (C) 2020 Golem Foundation
+#
+# Authors:
 #                    Paweł Marczewski <pawel@invisiblethingslab.com>,
 #                    Wojtek Porczyk <woju@invisiblethingslab.com>
 #
@@ -16,6 +18,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 """
 Wildland Filesystem
@@ -25,6 +29,7 @@ import errno
 import logging
 import os
 import stat
+
 import threading
 from dataclasses import dataclass
 from pathlib import PurePosixPath
@@ -67,7 +72,9 @@ class Timespec:
 
 
 class WildlandFSBase:
-    """A base class for implementations of Wildland"""
+    """
+    A base class for Wildland implementations.
+    """
     # pylint: disable=no-self-use,too-many-public-methods,unused-argument
 
     def __init__(self, *args, **kwds):
@@ -94,13 +101,13 @@ class WildlandFSBase:
         self.control_server.register_commands(self)
         self.default_user = None
 
-        command_schemas = Schema.load_dict('commands.json', 'args')
+        command_schemas = Schema.load_dict('fs-commands.json', 'args')
         self.control_server.register_validators({
             cmd: schema.validate for cmd, schema in command_schemas.items()
         })
 
     def _mount_storage(self, paths: List[PurePosixPath], storage: StorageBackend,
-                       extra: Optional[Dict] = None, remount: bool = False):
+                       extra: Optional[Dict] = None, remount: bool = False) -> None:
         """
         Mount a storage under a set of paths.
         """
@@ -123,9 +130,6 @@ class WildlandFSBase:
         ident = self.storage_counter
         self.storage_counter += 1
 
-        # moved to control_mount()
-        # storage.request_mount()
-
         self.storages[ident] = storage
         self.storage_extra[ident] = extra or {}
         self.storage_paths[ident] = paths
@@ -133,7 +137,7 @@ class WildlandFSBase:
         for path in paths:
             self.resolver.mount(path, ident)
 
-    def _unmount_storage(self, storage_id: int):
+    def _unmount_storage(self, storage_id: int) -> None:
         """Unmount a storage"""
 
         assert self.mount_lock.locked()
@@ -216,7 +220,7 @@ class WildlandFSBase:
         return result
 
     @control_command('info')
-    def control_info(self, _handler):
+    def control_info(self, _handler) -> Dict[str, Dict]:
         """
         Storage info by main path, for example::
 
@@ -244,7 +248,7 @@ class WildlandFSBase:
     def control_status(self, _handler):
         """
         Status of the control client, returns a dict with parameters; currently only
-        supports default (default_user)
+        supports default (default_user).
         """
         result = dict()
         if self.default_user:
@@ -304,7 +308,8 @@ class WildlandFSBase:
         }
 
     @control_command('add-watch')
-    def control_add_watch(self, handler: ControlHandler, storage_id, pattern, ignore_own=False):
+    def control_add_watch(self, handler: ControlHandler, storage_id: int, pattern: str,
+                          ignore_own: bool = False):
         if pattern.startswith('/'):
             raise WildlandError('Pattern should not start with /')
         if storage_id not in self.storages:

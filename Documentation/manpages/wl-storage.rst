@@ -214,6 +214,15 @@ This is a HTTP storage that relies on directory listings. Currently used for buc
 .. include:: include/wl-storage-create.rsti
 .. include:: include/storages/s3.rsti
 
+.. program:: wl-storage-create-sshfs
+.. _wl-storage-create-sshfs:
+
+:command:`wl storage create sshfs --container <container> [--sshfs-command <cmd>] --host <host> [--path <path>] [--ssh-user <user>] [--ssh-identity <path>|--pwprompt] [-mount-options <OPT1>[,OPT2,OPT3,...]]`
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+.. include:: include/wl-storage-create.rsti
+.. include:: include/storages/sshfs.rsti
+
 .. program:: wl-storage-create-ipfs
 .. _wl-storage-create-ipfs:
 
@@ -252,6 +261,15 @@ Create encrypted storage for a given container. Please read details below to und
 
 .. include:: include/wl-storage-create.rsti
 .. include:: include/storages/bear.rsti
+
+.. program:: wl-storage-create-gitlab
+.. _wl-storage-create-gitlab:
+
+:command:`wl storage create gitlab --container <container> [-u] [--user <user>] [--server-url <url>] --personal-token <personal-token> --projectid <id> [--no-publish] <storage>`
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+.. include:: include/wl-storage-create.rsti
+.. include:: include/storages/gitlab.rsti
 
 .. _wl-storage-sign:
 .. _wl-storage-verify:

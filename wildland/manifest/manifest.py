@@ -1,6 +1,8 @@
 # Wildland Project
 #
-# Copyright (C) 2020 Golem Foundation,
+# Copyright (C) 2020 Golem Foundation
+#
+# Authors:
 #                    Paweł Marczewski <pawel@invisiblethingslab.com>,
 #                    Wojtek Porczyk <woju@invisiblethingslab.com>
 #
@@ -16,6 +18,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 """
 Classes for handling signed Wildland manifests
@@ -67,7 +71,7 @@ class Manifest:
         # Accessible as 'fields' only if there is a header.
         self._fields = fields
 
-        self.owner = fields.get('owner', None)
+        self.owner = fields.get('owner')
 
         # Original data that has been signed.
         self._original_data = original_data
@@ -109,14 +113,14 @@ class Manifest:
         Returns encrypted dict.
         """
         if not owner:
-            owner = fields.get('owner', None)
+            owner = fields.get('owner')
             if not owner:
                 raise ManifestError('Owner not found')
 
         for key, value in fields.items():
             fields[key] = cls._encrypt_submanifests(value, sig, owner)
 
-        if fields.get('object', None) in ['user', 'bridge']:
+        if fields.get('object') in ['user', 'bridge']:
             return fields
 
         return cls._encrypt_dict(fields, sig, owner)
@@ -245,10 +249,13 @@ class Manifest:
         """
         Update fields obsolete in V1.
         """
-        if fields.get('type', None) == 'http-index':
+        if 'type' in fields and 'object' not in fields:
+            fields['object'] = 'storage'
+
+        if fields.get('type') == 'http-index':
             fields['type'] = 'http'
 
-        if fields.get('subcontainers', None):
+        if fields.get('subcontainers'):
             if 'manifest-pattern' in fields:
                 raise ManifestError('Obsolete subcontainers field cannot be '
                                     'merged into an existing manifest-patter.')
@@ -270,6 +277,13 @@ class Manifest:
             for container in fields['manifests-catalog']:
                 if isinstance(container, dict):
                     cls.update_obsolete(container)
+        if fields.get('object') == 'link':
+            storage = fields.get('storage')
+            if isinstance(storage, dict):
+                cls.update_obsolete(storage)
+        for value in fields.values():
+            if isinstance(value, dict) and value.get('object') == 'link':
+                cls.update_obsolete(value)
 
         return fields
 
@@ -310,12 +324,12 @@ class Manifest:
                     cls.update_to_version_1(storage, add_version=False)
         if 'infrastructures' in fields:
             for container in fields['infrastructures']:
-                if isinstance(container, dict) and container.get('object', None) == 'container':
-                    if container.get('version', None):
+                if isinstance(container, dict) and container.get('object') == 'container':
+                    if container.get('version'):
                         raise ManifestError('Manifest version mismatch: expected no manifest'
                                             'version in infrastructure container.')
                     cls.update_to_version_1(container, add_version=True)
-        if fields.get('type', None) in ['local', 'local-cached', 'local-dir-cached'] and \
+        if fields.get('type') in ['local', 'local-cached', 'local-dir-cached'] and \
                 'path' in fields:
             fields['location'] = fields['path']
             del fields['path']

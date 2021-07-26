@@ -1,6 +1,8 @@
 # Wildland Project
 #
-# Copyright (C) 2020 Golem Foundation,
+# Copyright (C) 2020 Golem Foundation
+#
+# Authors:
 #                    Patryk Bęza <patryk@wildland.io>,
 #
 # This program is free software: you can redistribute it and/or modify
@@ -15,6 +17,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 # pylint: disable=missing-docstring
 
@@ -44,7 +48,7 @@ def test_pseudomanifest(cli, base_dir):
     assert storage.storage_type == 'static'
 
     user = client.users['0xaaa']
-    client.fs_client.mount(single_thread=False, default_user=user)
+    client.fs_client.start(single_thread=False, default_user=user)
 
     user_paths = obj.client.get_bridge_paths_for_user(container.owner)
     commands = list(prepare_mount(obj, container, str(container.local_path), user_paths,

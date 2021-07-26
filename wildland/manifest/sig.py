@@ -1,6 +1,8 @@
 # Wildland Project
 #
-# Copyright (C) 2020 Golem Foundation,
+# Copyright (C) 2020 Golem Foundation
+#
+# Authors:
 #                    Paweł Marczewski <pawel@invisiblethingslab.com>,
 #                    Wojtek Porczyk <woju@invisiblethingslab.com>
 #
@@ -16,6 +18,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 """
 Module for handling signatures. Provides two backends: libsodium/pynacl (SodiumSigContext), and a
@@ -417,9 +421,9 @@ class SodiumSigContext(SigContext):
         returns public or private signing or encrypting key
         """
         if public:
-            key = self.keys.get(key_id, None)
+            key = self.keys.get(key_id)
         else:
-            key = self.private_keys.get(key_id, None)
+            key = self.private_keys.get(key_id)
 
         if not key and self.use_local_keys:
             file = self.key_dir / f'{key_id}.pub' if public else self.key_dir / f'{key_id}.sec'

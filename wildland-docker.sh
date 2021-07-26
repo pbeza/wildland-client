@@ -17,7 +17,7 @@ docker-compose build
 
 if [ "$p_out" ]; then
     # run wildland-client service
-    docker-compose run --service-ports wildland-client-experimantal-rest
+    docker-compose run --service-ports wildland-client-experimantal-rest "$@"
 else
-    docker-compose run --service-ports wildland-client
+    docker-compose run --service-ports wildland-client "$@"
 fi

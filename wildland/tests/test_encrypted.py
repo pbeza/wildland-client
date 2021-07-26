@@ -1,6 +1,8 @@
 # Wildland Project
 #
-# Copyright (C) 2020 Golem Foundation,
+# Copyright (C) 2020 Golem Foundation
+#
+# Authors:
 #                    Pawel Peregud <pepesza@wildland.io>
 #
 # This program is free software: you can redistribute it and/or modify
@@ -15,6 +17,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 # pylint: disable=missing-docstring,redefined-outer-name
 from pathlib import Path
@@ -73,7 +77,7 @@ def test_encrypted_with_url(cli, base_dir, engine):
 
     # start and check if engine is running
     user = client.users['0xaaa']
-    client.fs_client.mount(single_thread=False, default_user=user)
+    client.fs_client.start(single_thread=False, default_user=user)
     to_mount = ['Container']
     _do_mount_containers(obj, to_mount)
     subprocess.run(['pidof', engine], check=True)

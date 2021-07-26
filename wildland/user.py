@@ -1,6 +1,8 @@
 # Wildland Project
 #
-# Copyright (C) 2020 Golem Foundation,
+# Copyright (C) 2020 Golem Foundation
+#
+# Authors:
 #                    Paweł Marczewski <pawel@invisiblethingslab.com>,
 #                    Wojtek Porczyk <woju@invisiblethingslab.com>
 #
@@ -16,6 +18,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 """
 User manifest and user management
@@ -123,7 +127,7 @@ class User(WildlandObject, obj_type=WildlandObject.Type.USER):
 
     @classmethod
     def parse_fields(cls, fields: dict, client, manifest: Optional[Manifest] = None, **kwargs):
-        pubkey = kwargs.get('pubkey', None)
+        pubkey = kwargs.get('pubkey')
         if pubkey and pubkey not in fields['pubkeys']:
             fields['pubkeys'].insert(0, pubkey)
 

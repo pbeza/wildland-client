@@ -1,6 +1,8 @@
 # Wildland Project
 #
-# Copyright (C) 2020 Golem Foundation,
+# Copyright (C) 2020 Golem Foundation
+#
+# Authors:
 #                    Paweł Marczewski <pawel@invisiblethingslab.com>,
 #                    Wojtek Porczyk <woju@invisiblethingslab.com>
 #
@@ -16,6 +18,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 """
 Wildland command-line interface - base module.
@@ -30,7 +34,6 @@ from typing import List, Tuple, Callable
 import click
 
 from ..exc import WildlandError
-from ..client import Client
 
 
 class CliError(WildlandError, click.ClickException):
@@ -44,7 +47,7 @@ class CliError(WildlandError, click.ClickException):
 class ContextObj:
     """Helper object for keeping state in :attr:`click.Context.obj`"""
 
-    def __init__(self, client: Client):
+    def __init__(self, client):
         self.fs_client = client.fs_client
         self.mount_dir: Path = client.fs_client.mount_dir
         self.client = client
@@ -74,11 +77,13 @@ class AliasedGroup(click.Group):
                 sys.exit(1)
 
     def command(self, *args, **kwargs):
+        show_default_settings = {'show_default': True}
+
         if 'alias' not in kwargs:
-            return super().command(*args, **kwargs)
+            return super().command(*args, context_settings=show_default_settings, **kwargs)
 
         aliases = kwargs.pop('alias')
-        super_decorator = super().command(*args, **kwargs)
+        super_decorator = super().command(*args, context_settings=show_default_settings, **kwargs)
 
         def decorator(f):
             cmd = super_decorator(f)

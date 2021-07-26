@@ -180,6 +180,15 @@ Delete a storage template from local filesystem.
 .. include:: include/wl-template-create.rsti
 .. include:: include/storages/imap.rsti
 
+.. program:: wl-template-create-gitlab
+.. _wl-template-create-gitlab:
+
+:command:`wl template create gitlab --personal-token <personal-token> NAME`
+---------------------------------------------------------------------------
+
+.. include:: include/wl-template-create.rsti
+.. include:: include/storages/gitlab.rsti
+
 .. program:: wl-template-create-ipfs
 .. _wl-template-create-ipfs:
 
@@ -224,6 +233,17 @@ Delete a storage template from local filesystem.
 
 .. include:: include/wl-template-create.rsti
 .. include:: include/storages/s3.rsti
+
+
+.. program:: wl-template-create-sshfs
+.. _wl-template-create-sshfs:
+
+:command:`wl template create sshfs  [--sshfs-command <cmd>] --host <host> [--path <path>] [--ssh-user <user>] [--ssh-identity <path>|--pwprompt] [-mount-options <OPT1>[,OPT2,OPT3,...]] NAME`
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+.. include:: include/wl-template-create.rsti
+.. include:: include/storages/sshfs.rsti
+
 
 .. program:: wl-template-create-static
 .. _wl-template-create-static:
@@ -386,6 +406,15 @@ Delete a storage template from local filesystem.
 .. include:: include/wl-template-create.rsti
 .. include:: include/storages/s3.rsti
 
+.. program:: wl-template-add-sshfs
+.. _wl-template-add-sshfs:
+
+:command:`wl template add sshfs  [--sshfs-command <cmd>] --host <host> [--path <path>] [--ssh-user <user>] [--ssh-identity <path>|--pwprompt] [-mount-options <OPT1>[,OPT2,OPT3,...]] NAME`
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+.. include:: include/wl-template-create.rsti
+.. include:: include/storages/sshfs.rsti
+
 .. program:: wl-template-add-static
 .. _wl-template-add-static:
 
@@ -412,3 +441,12 @@ Delete a storage template from local filesystem.
 
 .. include:: include/wl-template-create.rsti
 .. include:: include/storages/zip-archive.rsti
+
+.. program:: wl-template-add-gitlab
+.. _wl-template-add-gitlab:
+
+:command:`wl template create gitlab --personal-token <personal-token> NAME`
+---------------------------------------------------------------------------
+
+.. include:: include/wl-template-create.rsti
+.. include:: include/storages/gitlab.rsti

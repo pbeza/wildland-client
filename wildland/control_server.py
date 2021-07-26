@@ -1,6 +1,8 @@
 # Wildland Project
 #
-# Copyright (C) 2020 Golem Foundation,
+# Copyright (C) 2020 Golem Foundation
+#
+# Authors:
 #                    Paweł Marczewski <pawel@invisiblethingslab.com>,
 #                    Wojtek Porczyk <woju@invisiblethingslab.com>
 #
@@ -16,6 +18,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 """
 Socket server for controlling Wildland FS.
@@ -91,8 +95,8 @@ class ControlRequest:
             assert 'cmd' in request, 'expecting "cmd" key'
 
             return ControlRequest(
-                cmd=request["cmd"],
-                request_id=request.get('id', None),
+                cmd=request['cmd'],
+                request_id=request.get('id'),
                 args=request.get('args', {})
             )
         except AssertionError as e:

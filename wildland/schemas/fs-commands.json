@@ -1,5 +1,5 @@
 {
-    "description": "Argument schemas for control commands",
+    "description": "Argument schemas for fs control commands",
     "args": {
         "mount": {
             "type": "object",
@@ -106,11 +106,28 @@
             }
         },
 
-        "paths": { "type": "object", "additionalProperties": false },
-        "info": { "type": "object", "additionalProperties": false },
-        "status": { "type": "object", "additionalProperties": false },
-        "breakpoint": { "type": "object", "additionalProperties": false },
-        "test": { "type": "object" }
+        "paths": {
+            "type": "object",
+            "additionalProperties": false
+        },
 
+        "info": {
+            "type": "object",
+            "additionalProperties": false
+        },
+
+        "status": {
+            "type": "object",
+            "additionalProperties": false
+        },
+
+        "breakpoint": {
+            "type": "object",
+            "additionalProperties": false
+        },
+
+        "test": {
+            "type": "object"
+        }
     }
 }

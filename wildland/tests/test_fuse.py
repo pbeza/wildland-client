@@ -1,6 +1,8 @@
 # Wildland Project
 #
-# Copyright (C) 2020 Golem Foundation,
+# Copyright (C) 2020 Golem Foundation
+#
+# Authors:
 #                    Paweł Marczewski <pawel@invisiblethingslab.com>,
 #                    Wojtek Porczyk <woju@invisiblethingslab.com>
 #
@@ -16,6 +18,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 # pylint: disable=missing-docstring,redefined-outer-name,unused-argument,too-many-lines
 
@@ -83,7 +87,7 @@ def test_find_container_by_file(env):
     # Storage 1 claims:
     # /.uuid/storage-1-uuid                       -- obvious
     # /storage_1_dir                              -- directory that is used only by storage-1
-    # /regular_shared-dir                         -- a directory that is also going to be claimed by
+    # /regular_shared_dir                         -- a directory that is also going to be claimed by
     #                                                storage-2
     # /shared_dir                                 -- an intermediate, synthetic directory
     # /shared_dir/nested_shared_dir               -- directory that is going to be intermediate
@@ -91,7 +95,7 @@ def test_find_container_by_file(env):
     #
     # Storage 2 claims:
     # /.uuid/storage-2-uuid                       -- obvious
-    # /regular_shared-dir                         -- a directory that is also claimed by storage-1
+    # /regular_shared_dir                         -- a directory that is also claimed by storage-1
     # /dir_that_exists_in_other_storage           -- a synthetic directory which exists in storage-1
     #                                                root, thus it will be a mix of container
     #                                                claimed directory and physical storage dir.

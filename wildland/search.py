@@ -1,6 +1,8 @@
 # Wildland Project
 #
-# Copyright (C) 2020 Golem Foundation,
+# Copyright (C) 2020 Golem Foundation
+#
+# Authors:
 #                    Paweł Marczewski <pawel@invisiblethingslab.com>,
 #                    Wojtek Porczyk <woju@invisiblethingslab.com>
 #
@@ -16,6 +18,8 @@
 #
 # You should have received a copy of the GNU General Public LicenUnkse
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 """
 Utilities for URL resolving and traversing the path
@@ -379,7 +383,8 @@ class Search:
         """
 
         for container in self.local_containers:
-            if (container.owner == owner and
+            if container.owner == owner and (
+                    str(part) == '*' or
                     part in container.expanded_paths):
 
                 logger.debug('%s: local container: %s', part,
@@ -394,7 +399,7 @@ class Search:
                 )
 
         for bridge in self.local_bridges:
-            if bridge.owner == owner and part in bridge.paths:
+            if bridge.owner == owner and (str(part) == '*' or part in bridge.paths):
                 logger.debug('%s: local bridge manifest: %s', part,
                             bridge.local_path)
                 yield from self._bridge_step(
@@ -421,35 +426,36 @@ class Search:
         except NotImplementedError:
             logger.warning('Storage %s does not support watching', storage.params["type"])
 
-        try:
-            children_iter = storage_backend.get_children(part)
-        except NotImplementedError:
-            logger.warning('Storage %s does not subcontainers - cannot look for %s inside',
-                           storage.params["type"], part)
-            return
-
-        for manifest_path, subcontainer_data in children_iter:
+        with storage_backend:
             try:
-                container_or_bridge = step.client.load_subcontainer_object(
-                    step.container, storage, subcontainer_data)
-            except ManifestError as me:
-                logger.warning('%s: cannot load subcontainer %s: %s', part, manifest_path, me)
-                continue
+                children_iter = storage_backend.get_children(part)
+            except NotImplementedError:
+                logger.warning('Storage %s does not subcontainers - cannot look for %s inside',
+                            storage.params["type"], part)
+                return
 
-            if isinstance(container_or_bridge, Container):
-                if container_or_bridge == step.container:
-                    # manifests catalog published into itself
-                    container_or_bridge.is_manifests_catalog = True
-                logger.info('%s: container manifest: %s', part, subcontainer_data)
-                yield from self._container_step(
-                    step, part, container_or_bridge)
-            elif isinstance(container_or_bridge, Bridge):
-                logger.info('%s: bridge manifest: %s', part, subcontainer_data)
-                yield from self._bridge_step(
-                    step.client, step.owner,
-                    part, manifest_path, storage_backend,
-                    container_or_bridge,
-                    step)
+            for manifest_path, subcontainer_data in children_iter:
+                try:
+                    container_or_bridge = step.client.load_subcontainer_object(
+                        step.container, storage, subcontainer_data)
+                except ManifestError as me:
+                    logger.warning('%s: cannot load subcontainer %s: %s', part, manifest_path, me)
+                    continue
+
+                if isinstance(container_or_bridge, Container):
+                    if container_or_bridge == step.container:
+                        # manifests catalog published into itself
+                        container_or_bridge.is_manifests_catalog = True
+                    logger.info('%s: container manifest: %s', part, subcontainer_data)
+                    yield from self._container_step(
+                        step, part, container_or_bridge)
+                elif isinstance(container_or_bridge, Bridge):
+                    logger.info('%s: bridge manifest: %s', part, subcontainer_data)
+                    yield from self._bridge_step(
+                        step.client, step.owner,
+                        part, manifest_path, storage_backend,
+                        container_or_bridge,
+                        step)
 
     # pylint: disable=no-self-use
 
@@ -536,7 +542,8 @@ class Search:
                 user = next_client.load_object_from_dict(WildlandObject.Type.USER, location,
                                                          expected_owner=next_owner)
             except (WildlandError, FileNotFoundError) as ex:
-                logger.warning('cannot load linked user manifest: %s. Exception: %s',
+                logger.warning('cannot load bridge to [%s]', bridge.paths[0])
+                logger.debug('cannot load linked user manifest: %s. Exception: %s',
                                location, str(ex))
                 return
         assert isinstance(user, User)

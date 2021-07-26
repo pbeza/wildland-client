@@ -1,6 +1,8 @@
 # Wildland Project
 #
-# Copyright (C) 2020 Golem Foundation,
+# Copyright (C) 2020 Golem Foundation
+#
+# Authors:
 #                    Paweł Marczewski <pawel@invisiblethingslab.com>,
 #                    Wojtek Porczyk <woju@invisiblethingslab.com>
 #
@@ -16,6 +18,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 """
 Wildland path class
@@ -49,7 +53,7 @@ class WildlandPath:
     - owner (optional): owner determining the first container's namespace, if omitted @default
       will be used
     - hint (optional, requires owner): hint to the location of first container's namespace;
-      takes the form of protocol[address], for example https{demo.wildland.io/demo.user.yaml}
+      takes the form of protocol{address}, for example https{demo.wildland.io/demo.user.yaml}
     - parts: intermediate parts, identifying bridges or containers on the path
     - file_path (optional): path to file in the last container
     """

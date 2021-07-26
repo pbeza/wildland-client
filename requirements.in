@@ -2,10 +2,11 @@
 fuse-python>=1.0.0
 jsonschema
 pyyaml
-click
+click>=8.0  # smarter `show_default`: https://github.com/pallets/click/issues/1538
 entrypoints
 pynacl
 graphlib-backport; python_version < '3.9'
+progress
 
 #API
 easywebdav
@@ -14,10 +15,11 @@ gunicorn
 httptools
 Pillow # consider using pillow-simd for faster conversion
 slowapi
-uvicorn
+uvicorn>=0.14
 uvloop
 
 # Storage
+python-gitlab
 ipfshttpclient
 protobuf
 boto3
@@ -39,6 +41,7 @@ treelib
 
 # Development / testing
 pip-tools
+psutil
 pytest
 pytest-cov
 pylint

@@ -1,6 +1,8 @@
 # Wildland Project
 #
-# Copyright (C) 2021 Golem Foundation,
+# Copyright (C) 2021 Golem Foundation
+#
+# Authors:
 #                    Muhammed Tanrikulu <muhammed@wildland.io>
 #
 # This program is free software: you can redistribute it and/or modify
@@ -15,6 +17,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 """
 Google Drive client wrapping and exposing Google Drive API calls
@@ -22,7 +26,7 @@ that are relevant for the Google Drive plugin
 """
 import errno
 from io import BytesIO
-from pathlib import PurePosixPath
+from pathlib import PosixPath, PurePosixPath
 from typing import Union
 
 import httplib2shim
@@ -61,7 +65,7 @@ class DriveClient:
             scopes=credentials["scopes"],
         )
 
-    def connect(self) -> Resource:
+    def connect(self, root: PosixPath) -> Resource:
         """
         Creates Drive API instance, reads root folder metadata of connected Drive Storage
         """
@@ -71,7 +75,37 @@ class DriveClient:
         drive = build("drive", "v3", credentials=self.credentials)
         # pylint: disable=maybe-no-member
         self.drive_api = drive.files()
-        root_folder = self.drive_api.get(fileId="root", fields="*").execute()
+
+        root_id = "root"
+        if not root == "/":
+            for part in root.parts:
+                if part == "/":
+                    continue
+
+                new_root = self._retrieve_entries(
+                    "'{}' in parents and name = '{}'".format(root_id, part)
+                )
+                if not new_root:
+                    file_metadata = {
+                        "name": part,
+                        "mimeType": "application/vnd.google-apps.folder",
+                        "parents": [root_id],
+                    }
+
+                    try:
+                        folder_metadata = self.drive_api.create(
+                            body=file_metadata, fields="id"
+                        ).execute()
+                        root_id = folder_metadata["id"]
+                    except PermissionError as e:
+                        raise PermissionError(
+                            errno.EACCES,
+                            f"No permissions to create directories [{root}]",
+                        ) from e
+                else:  # google drive may have multiple folder with same name
+                    root_id = new_root[0]["id"]
+
+        root_folder = self.drive_api.get(fileId=root_id, fields="*").execute()
         return root_folder
 
     def disconnect(self) -> None:
@@ -164,7 +198,7 @@ class DriveClient:
                 entry_id = node_item.identifier
 
             if not entry_id:
-                raise Exception("Source path is not exist: {}".format(move_from))
+                raise EntryNotFoundError("Source path is not exist: {}".format(move_from))
             src_cursor_id = entry_id
 
         # if paths are the same just update the name
@@ -194,7 +228,7 @@ class DriveClient:
                 entry_id = node_item.identifier
 
             if not entry_id and item != move_to.name:
-                raise Exception("Destination path is not exist: {}".format(move_to))
+                raise EntryNotFoundError("Destination path is not exist: {}".format(move_to))
             if entry_id:
                 dst_cursor_id = entry_id
 
@@ -282,7 +316,7 @@ class DriveClient:
             listing = self.drive_api.list(
                 q=query, pageSize=200, fields=fields, pageToken=next_token
             ).execute()
-            next_token = listing.get("nextPageToken", None)
+            next_token = listing.get("nextPageToken")
             next_entries = listing.get("files", [])
             entries.extend(next_entries)
         return entries
@@ -301,7 +335,7 @@ class DriveClient:
                 continue
 
             if not parent_id:
-                raise Exception("Parent ID not found")
+                raise InvalidIdentifierError("Parent ID is not found in cache tree")
 
             node_item = self._retrieve_from_cache_tree(path_item, parent_id)
 
@@ -313,9 +347,9 @@ class DriveClient:
             entries = self._retrieve_entries(query)
 
             if not entries:
-                raise Exception("Invalid path")
+                raise EntryNotFoundError(f"Entries not found for given path: {path}")
 
-            parent_id = entries[0].get("id", None)
+            parent_id = entries[0].get("id")
 
         return parent_id
 
@@ -328,13 +362,13 @@ class DriveClient:
             entries = self._retrieve_entries(query)
             if not entries:
                 return False
-            return entries[0].get("id", None)
+            return entries[0].get("id")
         except Exception:
             return False
 
     def _retrieve_from_cache_tree(self, item, parent_id) -> Node:
         """
-        Checks if cache three has given item under the given parent_id
+        Checks if cache tree has given item under the given parent_id
         """
         node_item = None
         try:
@@ -404,7 +438,7 @@ class DriveClient:
                 folder_id = node_item.identifier
 
             if not folder_id:
-                raise Exception("Given path not exist: {}".format(path))
+                raise EntryNotFoundError("Given path not exist: {}".format(path))
 
             parent_id = folder_id
 
@@ -415,3 +449,11 @@ class DriveClient:
             raise PermissionError(
                 errno.EACCES, f"No permissions to remove entry [{path}]"
             ) from e
+
+
+class EntryNotFoundError(FileNotFoundError):
+    """Exception raised if given path does not return any entry from Google Drive"""
+
+
+class InvalidIdentifierError(ValueError):
+    """Exception raised if Parent node identifier is invalid or undefined."""

@@ -1,8 +1,8 @@
 .. program:: wl-status
 .. _wl-status:
 
-:command:`wl status` --- Display all mounted containers
-=======================================================
+:command:`wl status` --- Display all mounted containers and sync jobs
+=====================================================================
 
 Synopsis
 --------
@@ -27,5 +27,10 @@ Options
 .. option:: -P, --without-pseudomanifests
 
     Do not list containers with pseudo-manifests. This is the default.
+
+.. option:: -a, --all-paths
+
+    Print all mountpoint paths, including synthetic ones.
+
 
 :command:`wl status`

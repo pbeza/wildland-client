@@ -1,6 +1,8 @@
 # Wildland Project
 #
-# Copyright (C) 2020 Golem Foundation,
+# Copyright (C) 2020 Golem Foundation
+#
+# Authors:
 #                    Paweł Marczewski <pawel@invisiblethingslab.com>,
 #                    Wojtek Porczyk <woju@invisiblethingslab.com>
 #
@@ -16,13 +18,16 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 """
 Wildland command-line interface.
 """
 
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from typing import Dict, Iterable, List, Optional, Sequence, Union
 
 import click
 
@@ -141,20 +146,21 @@ def _do_mount_containers(obj: ContextObj, to_mount):
 @main.command(short_help='mount Wildland filesystem')
 @click.option('--remount', '-r', is_flag=True,
     help='if mounted already, remount')
-@click.option('--debug', '-d', count=True,
-    help='debug mode: run in foreground (repeat for more verbosity)')
+@click.option('--debug', '-d', is_flag=True,
+    help='debug mode: run in foreground')
+@click.option('--container', '-c', 'mount_containers', metavar='CONTAINER', multiple=True,
+    help='container to mount (can be repeated)')
 @click.option('--single-thread', '-S', is_flag=True,
     help='run single-threaded')
-@click.option('--container', '-c', 'mount_containers', metavar='CONTAINER', multiple=True,
-    help='Container to mount (can be repeated)')
 @click.option('--skip-default-containers', '-s', is_flag=True,
     help='skip mounting default-containers from config')
 @click.option('--skip-forest-mount', is_flag=True,
     help='skip mounting forest of default user')
-@click.option('--default-user', help="specify a default user to be used")
+@click.option('--default-user', help='specify a default user to be used')
 @click.pass_obj
-def start(obj: ContextObj, remount, debug, mount_containers, single_thread,
-          skip_default_containers, skip_forest_mount, default_user):
+def start(obj: ContextObj, remount: bool, debug: bool, mount_containers: Sequence[str],
+          single_thread: bool, skip_default_containers: bool, skip_forest_mount: bool,
+          default_user: Optional[str]):
     """
     Mount the Wildland filesystem. The default path is ``~/wildland/``, but
     it can be customized in the configuration file
@@ -165,9 +171,11 @@ def start(obj: ContextObj, remount, debug, mount_containers, single_thread,
         print(f'Creating: {obj.mount_dir}')
         os.makedirs(obj.mount_dir)
 
-    if obj.fs_client.is_mounted():
+    click.echo(f'Starting Wildland at: {obj.mount_dir}')
+
+    if obj.fs_client.is_running():
         if remount:
-            obj.fs_client.unmount()
+            obj.fs_client.stop()
         else:
             raise CliError('Already mounted')
 
@@ -184,7 +192,7 @@ def start(obj: ContextObj, remount, debug, mount_containers, single_thread,
     except (FileNotFoundError, ManifestError) as e:
         raise CliError(f'User {default_user} not found') from e
 
-    to_mount = []
+    to_mount: List[str] = []
     if mount_containers:
         to_mount += mount_containers
 
@@ -196,84 +204,140 @@ def start(obj: ContextObj, remount, debug, mount_containers, single_thread,
         to_mount += forest_containers
 
     if not debug:
-        obj.fs_client.mount(single_thread=single_thread, default_user=user)
+        obj.fs_client.start(single_thread=single_thread, default_user=user)
         _do_mount_containers(obj, to_mount)
         return
 
     print(f'Mounting in foreground: {obj.mount_dir}')
     print('Press Ctrl-C to unmount')
 
-    p = obj.fs_client.mount(foreground=True, debug=(debug > 1), single_thread=single_thread)
+    p = obj.fs_client.start(foreground=True, debug=debug, single_thread=single_thread)
     _do_mount_containers(obj, to_mount)
     try:
         p.wait()
     except KeyboardInterrupt:
-        obj.fs_client.unmount()
+        obj.fs_client.stop()
         p.wait()
 
     if p.returncode != 0:
         raise CliError('FUSE driver exited with failure')
 
 
-@main.command(short_help='display mounted containers')
+@main.command(short_help='display mounted containers and sync jobs')
 @click.option('--with-subcontainers/--without-subcontainers', '-w/-W', is_flag=True, default=False,
               help='list subcontainers hidden by default')
 @click.option('--with-pseudomanifests/--without-pseudomanifests', '-p/-P', is_flag=True,
               default=False, help='list containers with pseudomanifests')
+@click.option('--all-paths', '-a', is_flag=True, default=False,
+              help='print all mountpoint paths, including synthetic ones')
 @click.pass_obj
-def status(obj: ContextObj, with_subcontainers: bool, with_pseudomanifests: bool):
+def status(obj: ContextObj, with_subcontainers: bool, with_pseudomanifests: bool, all_paths: bool):
     """
-    Display all mounted containers.
+    Display all mounted containers and sync jobs.
     """
-    obj.fs_client.ensure_mounted()
-
-    click.echo('Mounted containers:')
-    click.echo()
-
-    storages = list(obj.fs_client.get_info().values())
-    for storage in storages:
-        if storage['subcontainer_of'] and not with_subcontainers:
-            continue
-        if storage['hidden'] and not with_pseudomanifests:
-            continue
-        main_path = storage['paths'][0]
-        click.echo(main_path)
-        click.echo(f'  storage: {storage["type"]}')
-        click.echo('  paths:')
-        for path in storage['paths']:
-            click.echo(f'    {path}')
-        if storage['subcontainer_of']:
-            click.echo(f'  subcontainer-of: {storage["subcontainer_of"]}')
+    if not obj.fs_client.is_running():
+        click.echo('Wildland is not mounted, use `wl start` to mount it.')
+    else:
+        click.echo('Mounted containers:')
         click.echo()
 
-@main.command(short_help='renamed to "start"')
-def mount():
-    """
-    Renamed to "start" command.
-    """
-    raise CliError('The "wl mount" command has been renamed to "wl start"')
+        mounted_storages = obj.fs_client.get_info().values()
+        for storage in mounted_storages:
+            if storage['subcontainer_of'] and not with_subcontainers:
+                continue
+            if storage['hidden'] and not with_pseudomanifests:
+                continue
+            main_path = storage['paths'][0]
+            click.echo(main_path)
+            click.echo(f'  storage: {storage["type"]}')
+            _print_container_paths(storage, all_paths)
+            if storage['subcontainer_of']:
+                click.echo(f'  subcontainer-of: {storage["subcontainer_of"]}')
+
+    click.echo()
+    result = obj.client.run_sync_command('status')
+    if len(result) == 0:
+        click.echo('No sync jobs running')
+    else:
+        click.echo('Sync jobs:')
+        for s in result:
+            click.echo(s)
 
 
-@main.command(short_help='unmount Wildland filesystem', alias=['umount', 'unmount'])
+def _print_container_paths(storage: Dict, all_paths: bool) -> None:
+    if all_paths:
+        _print_container_all_paths(storage['paths'])
+    elif storage['primary'] and storage['type'] != 'static':
+        _print_container_shortened_paths(storage['paths'], storage['categories'])
+        _print_container_categories(storage['categories'])
+        _print_container_title(storage['title'])
+
+
+def _echo_indented_status_info(info: str, indent_size: int=0) -> None:
+    click.echo(' ' * indent_size + info)
+
+
+def _print_container_all_paths(paths: List[PurePosixPath]) -> None:
+    _echo_indented_status_info('all paths:', 2)
+
+    for path in paths:
+        _echo_indented_status_info(str(path), 4)
+
+
+def _print_container_shortened_paths(paths: List[PurePosixPath], categories: List[PurePosixPath]) \
+        -> None:
+    """
+    Prints mount paths with ``/.users/``, ``/.backends/``, ``/.uuid`` and ``/{category}`` paths
+    filtered out (where ``{category}`` is any category from ``categories`` list given as a param).
+    """
+    def _any_in_path(path_str: str, iterable: Iterable[Union[PurePosixPath, str]]):
+        return any(path_str.startswith(str(p)) or ':' + str(p) in path_str for p in iterable)
+
+    def _is_relevant_path(path: PurePosixPath):
+        path_str = str(path)
+        prefixes = ('/.users/', '/.backends/', '/.uuid/')
+        return not _any_in_path(path_str, prefixes) and \
+               not _any_in_path(path_str, categories)
+
+    relevant_paths = list(filter(_is_relevant_path, paths))
+    if relevant_paths:
+        _echo_indented_status_info('paths:', 2)
+        for path in relevant_paths:
+            _echo_indented_status_info(str(path), 4)
+
+
+def _print_container_categories(categories: List[PurePosixPath]) -> None:
+    if categories:
+        _echo_indented_status_info('categories:', 2)
+        for category in categories:
+            _echo_indented_status_info(str(category), 4)
+
+
+def _print_container_title(title: Optional[str]) -> None:
+    if title:
+        _echo_indented_status_info('title:', 2)
+        _echo_indented_status_info(title, 4)
+
+
+@main.command(short_help='unmount Wildland filesystem')
 @click.pass_obj
-def stop(obj: ContextObj):
+def stop(obj: ContextObj) -> None:
     """
     Unmount the Wildland filesystem.
     """
 
-    click.echo(f'Unmounting: {obj.mount_dir}')
+    click.echo(f'Stoping Wildland at: {obj.mount_dir}')
     try:
-        obj.fs_client.unmount()
+        obj.fs_client.stop()
     except WildlandError as ex:
         raise CliError(str(ex)) from ex
 
 
 @main.command(short_help='watch for changes')
 @click.option('--with-initial', is_flag=True, help='include initial files')
-@click.argument('patterns', metavar='PATH',
-                nargs=-1, required=True)
+@click.argument('patterns', metavar='PATH', nargs=-1, required=True)
 @click.pass_obj
-def watch(obj: ContextObj, patterns, with_initial):
+def watch(obj: ContextObj, patterns, with_initial) -> None:
     """
     Watch for changes in inside mounted Wildland filesystem.
     """

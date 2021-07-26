@@ -1,6 +1,8 @@
 # Wildland Project
 #
-# Copyright (C) 2020 Golem Foundation,
+# Copyright (C) 2020 Golem Foundation
+#
+# Authors:
 #                    Paweł Marczewski <pawel@invisiblethingslab.com>,
 #                    Wojtek Porczyk <woju@invisiblethingslab.com>
 #
@@ -16,6 +18,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 """
 Stuff related to publishing and unpublishing containers.
@@ -241,7 +245,7 @@ class _StoragePublisher:
         self.container_uuid_path = publisher.container_uuid_path
 
         # TODO this requires a more subtle manifest-pattern rewrite including more types
-        # of writeable and publisheable-to storages
+        # of writeable and publishable-to storages
         self.catalog_storage = catalog_storage
         assert self.catalog_storage.params['manifest-pattern']['type'] == 'glob'
         self.pattern = self.catalog_storage.params['manifest-pattern']['path']
@@ -304,7 +308,7 @@ class _StoragePublisher:
 
         with StorageDriver.from_storage(self.catalog_storage) as driver:
             # replace old relative URLs with new, better URLs
-            for backend in self.container.load_backends(include_inline=False):
+            for backend in self.container.load_storages(include_inline=False):
                 relpath = self._get_relpath_for_storage_manifest(backend.backend_id)
                 assert relpath not in storage_relpaths
                 storage_relpaths[relpath] = backend
@@ -386,6 +390,9 @@ class _PublisherCache:
         Cache path.
         """
         to_add = self.client.dirs[WildlandObject.Type.CONTAINER] / path
+        if not to_add.exists():
+            # we tried to add a file that's not actually in the containers/ dir
+            return
         if self._is_invalid(ignore=to_add):
             self._update()
         cache = self._load()
@@ -397,6 +404,9 @@ class _PublisherCache:
         Remove path from cache.
         """
         to_remove = self.client.dirs[WildlandObject.Type.CONTAINER] / path
+        if not to_remove.exists():
+            # we tried to remove a file that's not actually in the containers/ dir
+            return
         if self._is_invalid(ignore=to_remove):
             self._update()
         cache = self._load()
@@ -418,7 +428,7 @@ class _PublisherCache:
             return True
 
         manifests = list(self.file.parent.glob('*.yaml'))
-        if ignore:
+        if ignore and ignore in manifests:
             manifests.remove(ignore)
         if not manifests:
             return False
@@ -431,7 +441,10 @@ class _PublisherCache:
 
         cache = set()
         for path, uuid, owner in containers:
-            if uuid and not _InfraChecker.is_published(self.client, owner, uuid):
+            user = self.client.load_object_from_name(WildlandObject.Type.USER, owner)
+            # ensure that a user has a catalog that we can actually publish containers to it
+            if uuid and user.has_catalog and \
+                    not _InfraChecker.is_published(self.client, owner, uuid):
                 cache.add(str(path))
 
         self._save(cache)

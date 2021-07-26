@@ -1,6 +1,8 @@
 # Wildland Project
 #
-# Copyright (C) 2020 Golem Foundation,
+# Copyright (C) 2020 Golem Foundation
+#
+# Authors:
 #                    Paweł Marczewski <pawel@invisiblethingslab.com>,
 #                    Wojtek Porczyk <woju@invisiblethingslab.com>
 #
@@ -16,6 +18,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 """
 S3 storage backend
@@ -196,14 +200,14 @@ class S3StorageBackend(FileSubcontainersMixin, CachedStorageMixin, StorageBacken
         # object to each of your threads."
         self.client = session.client(
             service_name='s3',
-            endpoint_url=self.params.get('endpoint_url', None),
+            endpoint_url=self.params.get('endpoint_url'),
         )
 
         # Security token services client allows to verify credentials before
         # executing any S3 operation on the bucket
         #
         # This service is AWS specific.
-        if self.params.get('endpoint_url', None):
+        if self.params.get('endpoint_url'):
             self.sts_client = None
         else:
             self.sts_client = session.client(service_name='sts')

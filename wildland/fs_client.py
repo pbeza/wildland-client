@@ -1,6 +1,8 @@
 # Wildland Project
 #
-# Copyright (C) 2020 Golem Foundation,
+# Copyright (C) 2020 Golem Foundation
+#
+# Authors:
 #                    Paweł Marczewski <pawel@invisiblethingslab.com>,
 #                    Wojtek Porczyk <woju@invisiblethingslab.com>
 #
@@ -16,6 +18,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 """
 Wildland FS client
@@ -33,6 +37,7 @@ import dataclasses
 import glob
 import re
 
+from .cli.cli_base import CliError
 from .container import Container
 from .storage import Storage
 from .exc import WildlandError
@@ -74,26 +79,27 @@ class WildlandFSClient:
     A class to communicate with Wildland filesystem over the .control API.
     """
 
-    def __init__(self, mount_dir: Path, socket_path: Path):
+    def __init__(self, mount_dir: Path, socket_path: Path, bridge_separator: str = ':'):
         self.mount_dir = mount_dir
         self.socket_path = socket_path
+        self.bridge_separator = bridge_separator
 
         self.path_cache: Optional[Dict[PurePosixPath, List[int]]] = None
         self.path_tree: Optional[PathTree] = None
         self.info_cache: Optional[Dict[int, Dict]] = None
 
-    def clear_cache(self):
+    def clear_cache(self) -> None:
         """
-        Clear cached information after changing mount state of the system.
+        Clear cached information after changing state of the system.
         """
         self.path_cache = None
         self.path_tree = None
         self.info_cache = None
 
-    def mount(self, foreground=False, debug=False, single_thread=False,
+    def start(self, foreground=False, debug=False, single_thread=False,
               default_user=None) -> subprocess.Popen:
         """
-        Mount the Wildland filesystem and wait until it is mounted.
+        Start Wildland and wait until the FUSE daemon is started.
 
         Returns the called process (running in case of foreground=True).
 
@@ -128,7 +134,7 @@ class WildlandFSClient:
         if options:
             cmd += ['-o', ','.join(options)]
 
-        logger.info('running mount command: %s', cmd)
+        logger.info('running start command: %s', cmd)
 
         # Start a new session in order to not propagate SIGINT.
         # pylint: disable=consider-using-with
@@ -143,23 +149,23 @@ class WildlandFSClient:
                 raise WildlandFSError(f'Command failed: {cmd}')
             return proc
         except Exception:
-            self.unmount()
+            self.stop()
             raise
 
-    def unmount(self):
+    def stop(self) -> None:
         """
-        Unmount the Wildland filesystem.
+        Stop Wildland.
         """
         self.clear_cache()
         cmd = ['umount', str(self.mount_dir)]
         try:
             subprocess.run(cmd, check=True)
         except subprocess.CalledProcessError as e:
-            raise WildlandFSError(f'Failed to unmount: {e}') from e
+            raise WildlandFSError(f'Failed to stop: {e}') from e
 
-    def is_mounted(self) -> bool:
+    def is_running(self) -> bool:
         """
-        Check if Wildland is currently mounted.
+        Check if Wildland is currently running.
         """
 
         client = ControlClient()
@@ -184,27 +190,27 @@ class WildlandFSClient:
         finally:
             client.disconnect()
 
-    def ensure_mounted(self):
+    def ensure_mounted(self) -> None:
         """
-        Check that Wildland is mounted, and raise an exception otherwise.
+        Check that Wildland is started, and raise an exception otherwise.
         """
 
-        if not self.is_mounted():
+        if not self.is_running():
             raise WildlandFSError(
-                f'Wildland not mounted at {self.mount_dir}')
+                f'Wildland daemon not started at {self.mount_dir}. Use wl start.')
 
-    def wait_for_mount(self, timeout=2):
+    def wait_for_mount(self, timeout=2) -> None:
         """
-        Wait until Wildland is mounted.
+        Wait until Wildland is started.
         """
 
         delay = 0.1
         n_tries = int(timeout / delay)
         for _ in range(n_tries):
-            if self.is_mounted():
+            if self.is_running():
                 return
             time.sleep(delay)
-        raise WildlandFSError('Timed out waiting for Wildland to mount')
+        raise WildlandFSError('Timed out waiting for Wildland to start')
 
     def mount_container(self,
                         container: Container,
@@ -307,6 +313,7 @@ class WildlandFSClient:
             'primary': storage.is_primary,  # determines how many mountpoints are generated
             'backend-id': storage.backend_id,
             'owner': storage.owner,
+            'container-path': str(container.paths[0]),
             'version': Manifest.CURRENT_VERSION,
         }
         return Storage(storage.owner, StaticStorageBackend.TYPE, container.uuid_path,
@@ -409,7 +416,8 @@ class WildlandFSClient:
         # first (main) path
         return matching_main_paths and all_paths[0][1:] == all_paths[1][1:], storage_id
 
-    def get_orphaned_container_storage_paths(self, container: Container, storages_to_mount):
+    def get_orphaned_container_storage_paths(self, container: Container, storages_to_mount) \
+            -> List[PurePosixPath]:
         """
         Returns list of mounted paths that are mounted but do not exist in the given container.
         This situation may happen when you want to remount a container that has some storages
@@ -424,13 +432,13 @@ class WildlandFSClient:
 
         return list(set(filtered_mounted_paths) - set(valid_paths))
 
-    def get_container_from_storage_id(self, storage_id: int):
+    def get_container_from_storage_id(self, storage_id: int) -> Container:
         """
-        Reconstruct a *Container* object from paths.
+        Reconstruct a :class:`Container` object from paths.
 
-        This extracts basic metadata from list of paths (uuid, owner etc) and build a Container
-        object that mimic the original one. Some fields cannot be extracted this way
-        (like list of backends) so they will be skipped.
+        This extracts basic metadata from list of paths (uuid, owner etc.) and builds a
+        :class:`Container` object that mimics the original one. Some fields cannot be extracted this
+        way (like list of backends) so they will be skipped.
 
         :param storage_id: storage id
         :return:
@@ -449,7 +457,7 @@ class WildlandFSClient:
             except ValueError:
                 continue
         if owner is None:
-            raise ValueError('cannot determine owner')
+            raise ValueError('cannot determine owner of the container')
         return Container(
             owner=owner,
             paths=container_paths,
@@ -457,8 +465,8 @@ class WildlandFSClient:
             client=None
         )
 
-    def find_all_subcontainers_storage_ids(self, container: Container,
-                                           recursive: bool = True) -> Iterable[int]:
+    def find_all_subcontainers_storage_ids(self, container: Container, recursive: bool = True) \
+            -> Iterable[int]:
         """
         Find storage ID for a given mount path.
         """
@@ -496,15 +504,19 @@ class WildlandFSClient:
 
     def pathinfo(self, local_path: Path) -> Iterable[FileInfo]:
         """
-        Give a path to a mounted file, return diag information about the
-        file such as file's unique hash and storage that is exposing this
-        file.
+        Given an absolute path to a mounted file, return diagnostic information about the file such
+        as file's unique hash and storage that is exposing this file.
         """
+        assert local_path.is_absolute()
+
+        if not local_path.exists():
+            raise CliError(f'[{local_path}] does not exist')
+
         try:
             relpath = local_path.resolve().relative_to(self.mount_dir)
-        except ValueError:
-            logger.warning('Given path [%s] is not relative to mountpoint', local_path)
-            return
+        except ValueError as e:
+            raise CliError(f'Given path [{local_path}] is not a subpath of the mountpoint '
+                f'[{self.mount_dir}]') from e
 
         if local_path.is_dir():
             results = self.run_control_command('dirinfo', path=('/' + str(relpath)))
@@ -531,7 +543,7 @@ class WildlandFSClient:
         conservatively check if all of them would give the same answer.
         """
 
-        if not self.is_mounted():
+        if not self.is_running():
             return None
 
         local_path = local_path.resolve()
@@ -596,10 +608,10 @@ class WildlandFSClient:
 
     def get_info(self) -> Dict[int, Dict]:
         """
-        Read storage info served by FUSE driver.
+        Read storage info served by the FUSE driver.
         """
 
-        if self.info_cache is not None:
+        if self.info_cache:
             return self.info_cache
 
         data = self.run_control_command('info')
@@ -607,17 +619,19 @@ class WildlandFSClient:
             int(ident_str): {
                 'paths': [PurePosixPath(p) for p in storage['paths']],
                 'type': storage['type'],
-                'tag': storage['extra'].get('tag', None),
-                'trusted_owner': storage['extra'].get('trusted_owner', None),
-                'subcontainer_of': storage['extra'].get('subcontainer_of', None),
+                'tag': storage['extra'].get('tag'),
+                'trusted_owner': storage['extra'].get('trusted_owner'),
+                'subcontainer_of': storage['extra'].get('subcontainer_of'),
                 'hidden': storage['extra'].get('hidden', False),
-            }
-            for ident_str, storage in data.items()
+                'title': storage['extra'].get('title'),
+                'categories': [PurePosixPath(c) for c in storage['extra'].get('categories', [])],
+                'primary': storage['extra'].get('primary')
+            } for ident_str, storage in data.items()
         }
         return self.info_cache
 
-    def get_unique_storage_paths(self, container: Optional[Container] = None
-            ) -> Iterable[PurePosixPath]:
+    def get_unique_storage_paths(self, container: Optional[Container] = None) \
+            -> Iterable[PurePosixPath]:
         """
         Return list of unique mount paths, i.e.:
 
@@ -635,10 +649,11 @@ class WildlandFSClient:
         paths = self.get_paths()
 
         if container:
-            pattern = fr'^/.users/{container.owner}:' \
+            pattern = fr'^/.users/{container.owner}{self.bridge_separator}' \
                       fr'/.backends/{container.uuid}/[0-9a-z-]+$'
         else:
-            pattern = r'^/.users/[0-9a-z-]+:/.backends/[0-9a-z-]+/[0-9a-z-]+$'
+            pattern = fr'^/.users/[0-9a-z-]+{self.bridge_separator}' \
+                      r'/.backends/[0-9a-z-]+/[0-9a-z-]+$'
 
         path_regex = re.compile(pattern)
 
@@ -723,8 +738,7 @@ class WildlandFSClient:
             'remount': remount,
         }
 
-    @staticmethod
-    def join_bridge_paths_for_mount(bridges: Iterable[PurePosixPath], path: PurePosixPath)\
+    def join_bridge_paths_for_mount(self, bridges: Iterable[PurePosixPath], path: PurePosixPath)\
             -> PurePosixPath:
         """
         Construct a full mount paths given bridge paths and a container path. This function joins
@@ -737,15 +751,14 @@ class WildlandFSClient:
         """
 
         return PurePosixPath(
-            ':'.join(
-                str(p).replace(':', '_')
+            self.bridge_separator.join(
+                str(p).replace(self.bridge_separator, '_')
                 for p in itertools.chain(bridges, [path])
             )
         )
 
     def get_storage_mount_paths(self, container: Container, storage: Storage,
-                                user_paths: Iterable[Iterable[PurePosixPath]])\
-            -> List[PurePosixPath]:
+            user_paths: Iterable[Iterable[PurePosixPath]]) -> List[PurePosixPath]:
         """
         Return all mount paths (incl. synthetic ones) for the given storage.
 
@@ -810,7 +823,7 @@ class WildlandFSClient:
         """
         Prepend an absolute path with owner namespace.
         """
-        return self.get_user_path(owner + ":") / path.relative_to('/')
+        return self.get_user_path(owner + self.bridge_separator) / path.relative_to('/')
 
     def watch(self, patterns: Iterable[str], with_initial=False) \
             -> Iterator[List[WatchEvent]]:

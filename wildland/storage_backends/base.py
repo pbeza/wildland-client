@@ -1,6 +1,8 @@
 # Wildland Project
 #
-# Copyright (C) 2020 Golem Foundation,
+# Copyright (C) 2020 Golem Foundation
+#
+# Authors:
 #                    Paweł Marczewski <pawel@invisiblethingslab.com>,
 #                    Wojtek Porczyk <woju@invisiblethingslab.com>
 #
@@ -16,6 +18,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 """
 Abstract classes for storage
@@ -257,6 +261,15 @@ class StorageBackend(metaclass=abc.ABCMeta):
             ]
         str_repr = f"{self.TYPE!r}(" + ", ".join(array_repr) + ")"
         return str_repr
+
+    @property
+    def location(self):
+        """
+        Returns location of the storage backend or `None` if it is not defined.
+        """
+        if self.LOCATION_PARAM is None:
+            return None
+        return self.params.get(self.LOCATION_PARAM)
 
     @classmethod
     def cli_options(cls) -> List[click.Option]:

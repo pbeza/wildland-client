@@ -9,6 +9,7 @@ before_script:
 variables:
   CONTAINER_TEST_IMAGE: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG
   CONTAINER_TEST_IMAGE_IMAP: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG-imap
+  CONTAINER_TEST_IMAGE_HOWTO: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG-howto
   CONTAINER_RELEASE_IMAGE: $CI_REGISTRY_IMAGE:latest
 
 build:
@@ -21,9 +22,11 @@ build:
     - docker-compose build
     - docker tag wildland-client-ci $CONTAINER_TEST_IMAGE
     - docker tag wildland-client-ci-imap $CONTAINER_TEST_IMAGE_IMAP
+    - docker tag wildland-client-ci-howto $CONTAINER_TEST_IMAGE_HOWTO
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
     - docker push $CONTAINER_TEST_IMAGE
     - docker push $CONTAINER_TEST_IMAGE_IMAP
+    - docker push $CONTAINER_TEST_IMAGE_HOWTO
 
 lint:
   stage: test
@@ -53,6 +56,7 @@ pytest:
   stage: test
   image: $CONTAINER_TEST_IMAGE
   script:
+    - export PYTEST_ADDOPTS="--color=yes"
     - ./ci/ci-pytest
   artifacts:
     paths:
@@ -67,6 +71,12 @@ bear-test:
   image: $CONTAINER_TEST_IMAGE
   script:
     - ./ci/ci-bear-test
+    
+gitlab-test:
+  stage: test
+  image: $CONTAINER_TEST_IMAGE
+  script:
+    - ./ci/ci-gitlab-test
 
 imap-test:
   stage: test
@@ -104,6 +114,36 @@ googledrive-test:
   image: $CONTAINER_TEST_IMAGE
   script:
     - ./ci/ci-googledrive "$GOOGLEDRIVE_TEST_ACCESS_TOKEN"
+
+howto-quick-start-test:
+  stage: test
+  image: $CONTAINER_TEST_IMAGE_HOWTO
+  script:
+    - ./ci/howto-quick-start
+
+howto-sharing-test:
+  stage: test
+  image: $CONTAINER_TEST_IMAGE_HOWTO
+  script:
+    - ./ci/howto-sharing-and-access-control
+
+howto-forest-creation-test:
+  stage: test
+  image: $CONTAINER_TEST_IMAGE_HOWTO
+  script:
+    - ./ci/howto-forest-creation
+
+howto-group-users-test:
+  stage: test
+  image: $CONTAINER_TEST_IMAGE_HOWTO
+  script:
+    - ./ci/howto-group-users
+
+howto-encryption-backend-test:
+  stage: test
+  image: $CONTAINER_TEST_IMAGE_HOWTO
+  script:
+    - ./ci/howto-encryption-backend
 
 smoke-test:
   stage: test

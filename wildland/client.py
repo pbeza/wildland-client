@@ -1,6 +1,8 @@
 # Wildland Project
 #
-# Copyright (C) 2020 Golem Foundation,
+# Copyright (C) 2020 Golem Foundation
+#
+# Authors:
 #                    Paweł Marczewski <pawel@invisiblethingslab.com>,
 #                    Wojtek Porczyk <woju@invisiblethingslab.com>
 #
@@ -16,6 +18,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 # pylint: disable=too-many-lines
 
@@ -28,9 +32,12 @@ import functools
 import glob
 import logging
 import os
+import sys
+import time
 from graphlib import TopologicalSorter
 from pathlib import Path, PurePosixPath
-from typing import Dict, Iterable, Iterator, List, Optional, Set, Tuple, Union
+from subprocess import Popen
+from typing import Dict, Iterable, Iterator, List, Optional, Set, Tuple, Union, Any
 from urllib.parse import urlparse, quote
 
 import yaml
@@ -38,6 +45,7 @@ import requests
 
 from wildland.bridge import Bridge
 from wildland.wildland_object.wildland_object import WildlandObject
+from .control_client import ControlClient
 from .user import User
 from .container import Container, ContainerStub
 from .link import Link
@@ -98,12 +106,18 @@ class Client:
             d.mkdir(exist_ok=True, parents=True)
 
         mount_dir = Path(self.config.get('mount-dir'))
-        socket_path = Path(self.config.get('socket-path'))
-        self.fs_client = WildlandFSClient(mount_dir, socket_path)
+        bridge_separator = '\uFF1A' if self.config.get('alt-bridge-separator') else ':'
+        fs_socket_path = Path(self.config.get('fs-socket-path'))
+        self.fs_client = WildlandFSClient(mount_dir, fs_socket_path,
+                                          bridge_separator=bridge_separator)
+
+        # we only connect to sync daemon if needed
+        self._sync_client: Optional[ControlClient] = None
+        self.base_dir = base_dir
 
         try:
             fuse_status = self.fs_client.run_control_command('status')
-            default_user = fuse_status.get('default-user', None)
+            default_user = fuse_status.get('default-user')
             if default_user:
                 self.config.override(override_fields={'@default': default_user})
         except (ConnectionRefusedError, FileNotFoundError):
@@ -129,6 +143,43 @@ class Client:
 
         if load:
             self.recognize_users_and_bridges()
+
+    def connect_sync_daemon(self):
+        """
+        Connect to the sync daemon. Starts the daemon if not running.
+        """
+        delay = 0.1
+        daemon_started = False
+        sync_socket_path = Path(self.config.get('sync-socket-path'))
+        self._sync_client = ControlClient()
+        for _ in range(20):
+            try:
+                self._sync_client.connect(sync_socket_path)
+                return
+            except (ConnectionRefusedError, FileNotFoundError):
+                if not daemon_started:
+                    self.start_sync_daemon()
+                    daemon_started = True
+            time.sleep(delay)
+        raise WildlandError('Timed out waiting for sync daemon')
+
+    def start_sync_daemon(self):
+        """
+        Start the sync daemon.
+        """
+        cmd = [sys.executable, '-m', 'wildland.storage_sync.daemon']
+        if self.base_dir:
+            cmd.extend(['--base-dir', str(self.base_dir)])
+        Popen(cmd)
+
+    def run_sync_command(self, name, **kwargs) -> Any:
+        """
+        Run sync command (through the sync daemon).
+        """
+        if not self._sync_client:
+            self.connect_sync_daemon()
+        assert self._sync_client is not None
+        return self._sync_client.run_command(name, **kwargs)
 
     def sub_client_with_key(self, pubkey: str) -> Tuple['Client', str]:
         """
@@ -170,7 +221,7 @@ class Client:
                     fuse_status = self.fs_client.run_control_command('status')
                 except (ConnectionRefusedError, FileNotFoundError):
                     fuse_status = {}
-                name = fuse_status.get('default-user', None)
+                name = fuse_status.get('default-user')
                 if not name:
                     name = self.config.get('@default')
                 if not name:
@@ -282,7 +333,7 @@ class Client:
         """
         if 'encrypted' in dictionary.keys():
             raise WildlandError('Cannot decrypt manifest: decryption key unavailable')
-        if dictionary.get('object', None) == 'link':
+        if dictionary.get('object') == 'link':
             link = self.load_link_object(dictionary, expected_owner)
             obj = self.load_object_from_bytes(object_type, link.get_target_file())
             if expected_owner and obj.owner != expected_owner:
@@ -384,7 +435,6 @@ class Client:
         :param container_path: if loading a STORAGE object of dict type, this container path
         will be filled in if the dict does not contain it already.
         """
-
         if isinstance(obj, str):
             return self.load_object_from_url(object_type, obj, owner, expected_owner)
 
@@ -568,6 +618,24 @@ class Client:
                 else:
                     yield obj_
 
+    def load_users_with_bridge_paths(self, only_default_user: bool = False) -> \
+            Iterable[Tuple[User, Optional[List[PurePosixPath]]]]:
+        """
+        Helper method to return users with paths from bridges leading to those users.
+        """
+        bridge_paths: Dict[str, List[PurePosixPath]] = {}
+        default_user = self.config.get('@default')
+
+        for bridge in self.load_all(WildlandObject.Type.BRIDGE):
+            if only_default_user and bridge.owner != default_user:
+                continue
+            if bridge.user_id not in bridge_paths:
+                bridge_paths[bridge.user_id] = []
+            bridge_paths[bridge.user_id].extend(bridge.paths)
+
+        for user in self.load_all(WildlandObject.Type.USER):
+            yield user, bridge_paths.get(user.owner)
+
     def _generate_bridge_paths_recursive(self, path_prefix: List[PurePosixPath],
                                          last_user: str,
                                          target_user: str,
@@ -601,10 +669,10 @@ class Client:
                     )
 
     def ensure_mount_reference_container(self, containers) -> Tuple[List[Container], str, bool]:
-        '''
+        """
         Ensure that for any storage with MOUNT_REFERENCE_CONTAINER corresponding
         reference_container appears in sequence before the referencer.
-        '''
+        """
 
         dependency_graph: Dict[Container, Set[Container]] = dict()
         exc_msg = ""
@@ -774,19 +842,18 @@ class Client:
             i += 1
 
     @staticmethod
-    def all_storages(container: Container, *,
-                     predicate=None) -> Iterator[Storage]:
+    def all_storages(container: Container, *, predicate=None) -> Iterator[Storage]:
         """
         Return (and load on returning) all storages for a given container.
 
         In case of proxy storage, this will also load an reference storage and
         inline the manifest.
         """
-        for storage in container.load_backends():
+        for storage in container.load_storages():
             if not StorageBackend.is_type_supported(storage.storage_type):
                 logging.warning('Unsupported storage manifest: (type %s)', storage.storage_type)
                 continue
-            if predicate is not None and not predicate(storage):
+            if predicate and not predicate(storage):
                 continue
             yield storage
 
@@ -798,8 +865,7 @@ class Client:
         inline the manifest.
         """
         try:
-            return next(
-                self.all_storages(container, predicate=predicate))
+            return next(self.all_storages(container, predicate=predicate))
         except StopIteration as ex:
             raise ManifestError('no supported storage manifest') from ex
 
@@ -807,7 +873,7 @@ class Client:
         """
         Return valid, mountable storages for the given container
         """
-        storages = list(self.all_storages(container, predicate=None))
+        storages = list(self.all_storages(container))
 
         if not storages:
             raise WildlandError('No valid storages found')
@@ -833,11 +899,11 @@ class Client:
             container_url_or_dict: Union[str, Dict],
             owner: str,
             trusted: bool) -> Optional[Tuple[PurePosixPath, Dict]]:
-        '''
-        Select an "reference" storage and default container path based on URL
+        """
+        Select a "reference" storage and default container path based on URL
         or dictionary. This resolves a container specification and then selects
         storage for the container.
-        '''
+        """
 
         # use custom caching that dumps *container_url_or_dict* to yaml,
         # because dict is not hashable (and there is no frozendict in python)
@@ -969,7 +1035,11 @@ class Client:
 
         if WildlandPath.match(url):
             search = self._wl_url_to_search(url, use_aliases=use_aliases)
-            return search.read_file()
+            try:
+                file_bytes = search.read_file()
+            except FileNotFoundError as e:
+                raise WildlandError(f'File [{url}] does not exist') from e
+            return file_bytes
 
         if url.startswith('file:'):
             local_path = self.parse_file_url(url, owner or self.config.get('@default'))

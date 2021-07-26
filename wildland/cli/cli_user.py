@@ -1,6 +1,8 @@
 # Wildland Project
 #
-# Copyright (C) 2020 Golem Foundation,
+# Copyright (C) 2020 Golem Foundation
+#
+# Authors:
 #                    Paweł Marczewski <pawel@invisiblethingslab.com>,
 #                    Wojtek Porczyk <woju@invisiblethingslab.com>
 #
@@ -16,6 +18,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 """
 Manage users
@@ -142,7 +146,7 @@ def list_(obj: ContextObj):
     default_owner = obj.client.config.get('@default-owner')
     default_override = (default_user != obj.client.config.get('@default', use_override=False))
 
-    for user in obj.client.load_all(WildlandObject.Type.USER):
+    for user, bridge_paths in obj.client.load_users_with_bridge_paths(only_default_user=True):
         path_string = str(user.local_path)
         if user.owner == default_user:
             path_string += ' (@default)'
@@ -157,8 +161,13 @@ def list_(obj: ContextObj):
         else:
             click.echo('  only public key available')
 
+        if not bridge_paths:
+            click.echo('   no bridges to user available')
+        else:
+            for bridge_path in bridge_paths:
+                click.echo(f'   bridge path: {bridge_path}')
         for user_path in user.paths:
-            click.echo(f'   path: {user_path}')
+            click.echo(f'   user path: {user_path}')
         for user_container in user.get_catalog_descriptions():
             click.echo(f'   container: {user_container}')
         click.echo()
@@ -266,7 +275,7 @@ def _do_import_manifest(obj, path_or_dict, manifest_owner: Optional[str] = None,
 
     # TODO: Accepting paths (string) should be deprecated and force using link objects
     if isinstance(path_or_dict, dict):
-        if path_or_dict.get('object', None) != WildlandObject.Type.LINK.value:
+        if path_or_dict.get('object') != WildlandObject.Type.LINK.value:
             raise CliError(f'Dictionary object must be of type {WildlandObject.Type.LINK.value}')
 
         if not manifest_owner:
@@ -284,14 +293,16 @@ def _do_import_manifest(obj, path_or_dict, manifest_owner: Optional[str] = None,
             file_data = Path(path).read_bytes()
             file_name = Path(path).stem
             file_url = obj.client.local_url(Path(path).absolute())
-        else:
+        elif obj.client.is_url(path):
             try:
                 file_data = obj.client.read_from_url(path, use_aliases=True)
             except FileNotFoundError as fnf:
-                raise CliError('File was not found') from fnf
+                raise CliError(f'File {path} not found') from fnf
 
             file_name = _remove_suffix(path.split('/')[-1], '.yaml')
             file_url = path
+        else:
+            raise CliError(f'File {path} not found')
 
     # load user pubkeys
     Manifest.verify_and_load_pubkeys(file_data, obj.session.sig)
@@ -306,6 +317,7 @@ def _do_import_manifest(obj, path_or_dict, manifest_owner: Optional[str] = None,
     file_name = _remove_suffix(file_name, '.' + import_type.value)
 
     # do not import existing users, unless forced
+    user_exists = False
     if import_type == WildlandObject.Type.USER:
         imported_user = WildlandObject.from_manifest(manifest, obj.client, WildlandObject.Type.USER,
                                                      pubkey=manifest.fields['pubkeys'][0])
@@ -316,17 +328,23 @@ def _do_import_manifest(obj, path_or_dict, manifest_owner: Optional[str] = None,
                     return None, None
 
                 click.echo(f'User {user.owner} already exists. Forcing user import.')
+                user_exists = True
                 file_name = Path(user.local_path).name.rsplit('.', 2)[0]
+                break
 
     # copying the user manifest
     destination = obj.client.new_path(import_type, file_name, skip_numeric_suffix=force)
     destination.write_bytes(file_data)
-    click.echo(f'Created: {str(destination)}')
+    if user_exists:
+        msg = f'Updated: {str(destination)}'
+    else:
+        msg = f'Created: {str(destination)}'
+    click.echo(msg)
 
     return destination, file_url
 
 
-def _find_user_manifest_within_catalog(obj, user: User) -> \
+def find_user_manifest_within_catalog(obj, user: User) -> \
         Optional[Tuple[Storage, PurePosixPath]]:
     """
     Mounts containers of the given user's manifests-catalog and attempts to find that user's
@@ -334,6 +352,7 @@ def _find_user_manifest_within_catalog(obj, user: User) -> \
     The user manifest file is expected to be named 'forest-owner.yaml' and be placed in the root
     directory of a storage.
 
+    :param obj: ContextObj
     :param user: User
     :return tuple of Storage where the user manifest was found and PurePosixPath path pointing
     at that manifest in the storage
@@ -354,7 +373,7 @@ def _find_user_manifest_within_catalog(obj, user: User) -> \
 
                     return storage_candidate, file_candidate
 
-                except WildlandError as ex:
+                except (FileNotFoundError, WildlandError) as ex:
                     logger.debug('Could not read user manifest. Exception: %s', ex)
 
     return None
@@ -395,7 +414,7 @@ def _do_process_imported_manifest(
     if manifest.fields['object'] == 'user':
         user = WildlandObject.from_manifest(manifest, obj.client, WildlandObject.Type.USER,
                                             pubkey=manifest.fields['pubkeys'][0])
-        result = _find_user_manifest_within_catalog(obj, user)
+        result = find_user_manifest_within_catalog(obj, user)
 
         user_location: Union[str, dict] = user_manifest_location
 

@@ -1,3 +1,25 @@
+# Wildland Project
+#
+# Copyright (C) 2020 Golem Foundation
+#
+# Authors:
+#                    Marta Marczykowska-Górecka <marmarta@invisiblethingslab.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """
 StorageBackend mixin providing support for file-based subcontainers (both via glob patterns
 and a file list.
@@ -51,15 +73,15 @@ class FileSubcontainersMixin(StorageBackend):
     @classmethod
     def cli_create(cls, data: Dict[str, Any]) -> Dict[str, Any]:
         result = super(FileSubcontainersMixin, cls).cli_create(data)
-        if data.get('subcontainer_manifest', None):
-            if data.get('manifest_pattern', None):
+        if data.get('subcontainer_manifest'):
+            if data.get('manifest_pattern'):
                 raise WildlandError('--subcontainer-manifest and --manifest-pattern '
                                     'are mutually exclusive.')
             result['manifest-pattern'] = {
                     'type': 'list',
                     'paths': list(data['subcontainer_manifest'])
                 }
-        elif data.get('manifest_pattern', None):
+        elif data.get('manifest_pattern'):
             result['manifest-pattern'] = {
                     'type': 'glob',
                     'path': data['manifest_pattern']
@@ -70,7 +92,6 @@ class FileSubcontainersMixin(StorageBackend):
             Iterable[Tuple[PurePosixPath, Link]]:
         """
         List all subcontainers provided by this storage.
-
         """
         manifest_pattern = self.params.get('manifest-pattern', self.DEFAULT_MANIFEST_PATTERN)
 
