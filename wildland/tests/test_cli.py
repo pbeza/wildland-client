@@ -1183,6 +1183,20 @@ def test_container_edit(cli, base_dir):
     assert "/PATH" in data
 
 
+def test_container_edit_long_line(cli, base_dir):
+    cli('user', 'create', 'User', '--key', '0xaaa')
+    cli('container', 'create', 'Container', '--path', '/PATH')
+
+    manifest = base_dir / 'containers/Container.container.yaml'
+
+    long_path = 'Very ' * 100 + 'Long Path'
+    editor = rf"sed -i 's,PATH,{long_path},g'"
+    cli('container', 'edit', 'Container', '--editor', editor)
+    with open(manifest) as f:
+        data = f.read()
+    assert '/' + long_path in data
+
+
 def test_container_edit_encryption(cli, base_dir):
     cli('user', 'create', 'User', '--key', '0xaaa')
     cli('container', 'create', '--path', '/PATH', 'Container')
