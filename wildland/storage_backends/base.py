@@ -29,6 +29,7 @@ import abc
 import hashlib
 import itertools
 import logging
+import math
 import os
 import pathlib
 import posixpath
@@ -309,7 +310,7 @@ class StorageBackend(metaclass=abc.ABCMeta):
 
         hasher = hashlib.md5()
         params_for_hash = dict((k, v) for (k, v) in params.items() if k != 'storage')
-        hasher.update(yaml.dump(params_for_hash, sort_keys=True).encode('utf-8'))
+        hasher.update(yaml.dump(params_for_hash, sort_keys=True, width=math.inf).encode('utf-8'))
 
         return str(UUID(hasher.hexdigest()))
 

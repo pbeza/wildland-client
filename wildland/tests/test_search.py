@@ -24,6 +24,7 @@
 # pylint: disable=missing-docstring,redefined-outer-name,too-many-lines
 
 from pathlib import PurePosixPath
+import math
 import os
 import re
 import uuid
@@ -336,7 +337,7 @@ def test_read_file_traverse_user_inline_container(cli, base_dir, client):
 
     # Save the new container to storage, sign
     with open(user_path, 'w') as f:
-        yaml.dump(user_dict, f)
+        yaml.dump(user_dict, f, width=math.inf)
     cli('user', 'sign', '-i', user_path)
 
     # Create bridge manifest

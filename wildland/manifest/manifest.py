@@ -26,6 +26,7 @@ Classes for handling signed Wildland manifests
 """
 
 from typing import Tuple, Optional, Dict
+import math
 import re
 import logging
 from pathlib import Path
@@ -82,7 +83,8 @@ class Manifest:
         Return manifest's bytes data.
         """
         if not self._original_data:
-            self._original_data = yaml.dump(self._fields, encoding='utf-8', sort_keys=False)
+            self._original_data = yaml.dump(
+                self._fields, encoding='utf-8', sort_keys=False, width=math.inf)
         return self._original_data
 
     def copy_to_unsigned(self) -> 'Manifest':
@@ -91,7 +93,7 @@ class Manifest:
         and similar potentially destructive changes.
         """
         manifest = self.__class__.from_unsigned_bytes(
-            yaml.dump(self._fields, encoding='utf-8', sort_keys=False))
+            yaml.dump(self._fields, encoding='utf-8', sort_keys=False, width=math.inf))
         return manifest
 
     @property
@@ -141,7 +143,7 @@ class Manifest:
                 keys_to_encrypt.extend(pubkeys)
 
         keys_to_encrypt = set(keys_to_encrypt)
-        data_to_encrypt = yaml.dump(fields, sort_keys=False).encode()
+        data_to_encrypt = yaml.dump(fields, sort_keys=False, width=math.inf).encode()
         try:
             encrypted_data, encrypted_keys = sig.encrypt(data_to_encrypt, keys_to_encrypt)
         except SigError as se:
@@ -392,7 +394,7 @@ class Manifest:
 
         if encrypt:
             fields = Manifest.encrypt(fields, sig_context)
-            data = yaml.dump(fields, encoding='utf-8', sort_keys=False)
+            data = yaml.dump(fields, encoding='utf-8', sort_keys=False, width=math.inf)
 
         owner = self._fields['owner']
         signature = sig_context.sign(owner, data,
