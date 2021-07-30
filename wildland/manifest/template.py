@@ -239,6 +239,9 @@ class TemplateManager:
                 except TemplateError:
                     logger.warning('failed to load template file %s', file)
                     continue
+
+        templates.sort(key=str)
+
         return templates
 
     def get_template_file_by_name(self, template_name: str) -> TemplateFile:
