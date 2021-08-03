@@ -33,6 +33,7 @@ from typing import List, Tuple, Callable
 
 import click
 
+from wildland.ipc import EventIPC
 from ..exc import WildlandError
 
 
@@ -47,11 +48,13 @@ class CliError(WildlandError, click.ClickException):
 class ContextObj:
     """Helper object for keeping state in :attr:`click.Context.obj`"""
 
-    def __init__(self, client):
+    def __init__(self, client, ipc: bool = False):
         self.fs_client = client.fs_client
         self.mount_dir: Path = client.fs_client.mount_dir
         self.client = client
         self.session = client.session
+        if ipc:
+            self.ipc = EventIPC()
 
 
 class AliasedGroup(click.Group):

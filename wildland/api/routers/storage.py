@@ -21,7 +21,7 @@ Wildland Storage Rest API
 """
 
 import logging
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from wildland.api.dependency import ContextObj, get_ctx
 from wildland.wildland_object.wildland_object import WildlandObject
 
@@ -52,4 +52,4 @@ async def read_storages(ctx: ContextObj = Depends(get_ctx)):
 @router.get("/storage/{name}", tags=["storage"])
 async def read_storage(name: str):
     """Returns information of specific wildland storage"""
-    return {"name": name}
+    raise HTTPException(status_code=404, detail="Not Implemented")

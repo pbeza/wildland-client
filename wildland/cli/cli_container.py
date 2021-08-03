@@ -732,7 +732,7 @@ def mount(obj: ContextObj, container_names: Tuple[str], remount: bool, save: boo
     """
     _mount(obj, container_names, remount, save, import_users,
            with_subcontainers, only_subcontainers, list_all, manifests_catalog)
-
+    obj.ipc.emit(topic="MOUNT", label="CONTAINER")
 
 def _mount(obj: ContextObj, container_names: Sequence[str],
            remount: bool = True, save: bool = True, import_users: bool = True,
@@ -820,6 +820,7 @@ def unmount(obj: ContextObj, path: str, with_subcontainers: bool, container_name
     identify the container by one of its path (using ``--path``).
     """
     _unmount(obj, container_names=container_names, path=path, with_subcontainers=with_subcontainers)
+    obj.ipc.emit(topic="UNMOUNT", label="CONTAINER")
 
 
 def _unmount(obj: ContextObj, container_names: Sequence[str], path: str,

@@ -9,14 +9,15 @@ graphlib-backport; python_version < '3.9'
 progress
 
 #API
+asyncio
 easywebdav
 fastapi
 gunicorn
 httptools
 Pillow # consider using pillow-simd for faster conversion
-slowapi
 uvicorn>=0.14
 uvloop
+wsproto
 
 # Storage
 python-gitlab

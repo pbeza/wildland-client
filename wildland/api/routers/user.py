@@ -21,7 +21,7 @@ Wildland User Rest API
 """
 
 import logging
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from wildland.api.dependency import ContextObj, get_ctx, ensure_wl_mount
 from wildland.wildland_object.wildland_object import WildlandObject
 
@@ -46,10 +46,10 @@ async def read_users(ctx: ContextObj = Depends(get_ctx)):
 @router.get("/user/me", tags=["user"])
 async def read_user_me():
     """Returns information of default wildland user for current instance"""
-    return {"username": "fakecurrentuser"}
+    raise HTTPException(status_code=404, detail="Not Implemented")
 
 
 @router.get("/user/{username}", tags=["user"])
 async def read_user(username: str):
     """Returns information of specific wildland user"""
-    return {"username": username}
+    raise HTTPException(status_code=404, detail="Not Implemented")

@@ -1,8 +1,6 @@
 #!/bin/bash -e
 
-sudo chown -R user:user /dev/null
 . /home/user/env/bin/activate
-
 
 # --no-deps is provided in order to run service in offline mode.
 # 'install_requires' such as 'pybear @ git+https://github.com/golemfoundation/pybear#egg=0.0.20200914'

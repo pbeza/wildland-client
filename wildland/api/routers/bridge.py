@@ -21,7 +21,7 @@ Wildland Bridge Rest API
 """
 
 import logging
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from wildland.api.dependency import ContextObj, get_ctx
 from wildland.wildland_object.wildland_object import WildlandObject
 
@@ -46,4 +46,4 @@ async def read_bridges(ctx: ContextObj = Depends(get_ctx)):
 @router.get("/bridge/{name}", tags=["bridge"])
 async def read_bridge(name: str):
     """Returns information of specific wildland bridge"""
-    return {"name": name}
+    raise HTTPException(status_code=404, detail="Not Implemented")

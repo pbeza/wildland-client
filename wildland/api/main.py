@@ -21,7 +21,9 @@ Wildland Rest API configuration
 """
 
 from fastapi import FastAPI
-from wildland.api.routers import bridge, container, file, forest, instance, storage, user
+from starlette.requests import Request
+from wildland.api.routers import bridge, container, event, file, forest, storage, user
+
 
 API_VERSION = "0.0.1"
 app = FastAPI(openapi_url=None)  # dependencies=[Depends(get_query_token)]
@@ -37,19 +39,22 @@ origins = ["*"]
 
 api_with_version.include_router(bridge.router)
 api_with_version.include_router(container.router)
+api_with_version.include_router(event.router)
 api_with_version.include_router(file.router)
 api_with_version.include_router(forest.router)
-api_with_version.include_router(instance.router)
 api_with_version.include_router(storage.router)
 api_with_version.include_router(user.router)
 
 
 @api_with_version.get("/")
-async def root():
+async def root(request: Request):
     """Root api url provides given welcome message, including `docs` information."""
     return {
-        "message": f"Welcome to Wildland API! To get more information about endpoints, have a glance over '/api/{API_VERSION}/docs' path." # pylint: disable=line-too-long
+        "message": f"Welcome to Wildland API! \
+To get more information about endpoints, have a glance over \
+'{request.scope.get('root_path')}/docs' path."
     }
+
 
 api.mount(f"/{API_VERSION}", api_with_version)
 app.mount("/api", api)

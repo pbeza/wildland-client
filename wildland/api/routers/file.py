@@ -29,9 +29,10 @@ from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import Response
 from PIL import Image
 from wildland.api.dependency import ContextObj, get_ctx, get_webdav, ensure_wl_mount
+from wildland.api.utils import ProcessExecManager
 from wildland.control_client import ControlClientError
 
-
+exec_manager = ProcessExecManager()
 router = APIRouter()
 SUPPORTED_MIMETYPES = {
     "application/pdf": "PDF",
@@ -73,38 +74,60 @@ async def read_file(
     return Response(content=bio.getvalue())
 
 
+def generate_thumbnail(webdav, path):
+    """Generates and returns thumbnails of images from given path"""
+    bio = io.BytesIO()
+
+    try:
+        webdav.download(os.path.join("/", path), bio)
+    except Exception as exp:
+        raise ConnectionError("Failed to download.") from exp
+
+    bio.seek(0)
+    image = Image.open(bio)
+    mimetype = image.get_format_mimetype()
+
+    try:
+        image.verify()  # if you need to load the image after using this method, you must reopen the image file. # pylint: disable=line-too-long
+        bio.seek(0)
+        image.close()
+        image = Image.open(bio)
+    except Exception as exp:
+        raise FileNotFoundError("No thumbnail available.") from exp
+
+    thumb_bytes = io.BytesIO()
+    THUMBNAIL_SIZE = (96, 96)
+    image.thumbnail(THUMBNAIL_SIZE, Image.BICUBIC)
+    thumb_extension = SUPPORTED_MIMETYPES.get(mimetype, None)
+    if not thumb_extension:
+        raise FileNotFoundError(f"Unsupported mimetype {mimetype}")
+
+    image.save(thumb_bytes, thumb_extension)
+    image.close()
+    return thumb_bytes
+
+
 @router.get("/file/thumbnail/", tags=["file"])
 async def read_thumbnail(
     _q: Optional[str] = Query(None, title="Path Query"),
     path: str = "/",
     webdav=Depends(get_webdav),
 ):
-    """Generates and returns thumbnails of images from given path"""
-    bio = io.BytesIO()
-    webdav.download(os.path.join("/", path), bio)
-
-    bio.seek(0)
-    image = Image.open(bio)
-    mimetype = image.get_format_mimetype()
+    """Endpoint for generating image thumbnails"""
     try:
-        image.verify()  # if you need to load the image after using this method, you must reopen the image file. # pylint: disable=line-too-long
-        bio.seek(0)
-        image = Image.open(bio)
-    except Exception:
-        return "No thumbnail available."
-
-    thumb_bytes = io.BytesIO()
-    THUMBNAIL_SIZE = (128, 128)
-    image.thumbnail(THUMBNAIL_SIZE, Image.ANTIALIAS)
-    thumb_extension = SUPPORTED_MIMETYPES.get(mimetype, None)
-    if not thumb_extension:
-        return Response(
-            content=f"Unsupported mimetype {mimetype}",
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+        executor = exec_manager.get_executor()
+        thumb_bytes = await ProcessExecManager.run_in_process(
+            executor, generate_thumbnail, webdav, path
         )
-
-    image.save(thumb_bytes, thumb_extension)
-    return Response(content=thumb_bytes.getvalue())
+        return Response(content=thumb_bytes.getvalue())
+    except FileNotFoundError as error:
+        return Response(
+            content=error, status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
+        )
+    except ConnectionError as error:
+        return Response(
+            content=error, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 
 @router.get(
@@ -123,3 +146,15 @@ def find_container_by_path(
         results = set()
 
     return results
+
+
+@router.on_event("startup")
+async def startup_event():
+    """Create ProcessPoolExecutor"""
+    exec_manager.create_executor()
+
+
+@router.on_event("shutdown")
+async def on_shutdown():
+    """Shutdown ProcessPoolExecutor"""
+    exec_manager.shutdown()

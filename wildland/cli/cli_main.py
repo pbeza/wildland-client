@@ -74,7 +74,7 @@ def main(ctx: click.Context, base_dir, dummy, debug, verbose):
     # pylint: disable=missing-docstring, unused-argument
 
     client = Client(dummy=dummy, base_dir=base_dir)
-    ctx.obj = ContextObj(client)
+    ctx.obj = ContextObj(client, ipc=True)
     if verbose > 0:
         init_logging(level='DEBUG' if verbose > 1 else 'INFO')
 
@@ -206,6 +206,7 @@ def start(obj: ContextObj, remount: bool, debug: bool, mount_containers: Sequenc
     if not debug:
         obj.fs_client.start(single_thread=single_thread, default_user=user)
         _do_mount_containers(obj, to_mount)
+        obj.ipc.emit(topic="MOUNT", label="WILDLAND")
         return
 
     print(f'Mounting in foreground: {obj.mount_dir}')
@@ -221,6 +222,8 @@ def start(obj: ContextObj, remount: bool, debug: bool, mount_containers: Sequenc
 
     if p.returncode != 0:
         raise CliError('FUSE driver exited with failure')
+
+    obj.ipc.emit(topic="MOUNT", label="WILDLAND")
 
 
 @main.command(short_help='display mounted containers and sync jobs')
@@ -329,6 +332,7 @@ def stop(obj: ContextObj) -> None:
     click.echo(f'Stoping Wildland at: {obj.mount_dir}')
     try:
         obj.fs_client.stop()
+        obj.ipc.emit(topic="UNMOUNT", label="WILDLAND")
     except WildlandError as ex:
         raise CliError(str(ex)) from ex
 
