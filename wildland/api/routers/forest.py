@@ -22,7 +22,7 @@ Wildland Forest Rest API
 
 from fastapi import APIRouter, Depends, HTTPException
 from wildland.api.dependency import ContextObj, get_ctx, ensure_wl_mount
-from wildland.wildland_object.wildland_object import WildlandObject
+
 
 router = APIRouter()
 
@@ -31,6 +31,7 @@ router = APIRouter()
 async def read_forests(ctx: ContextObj = Depends(get_ctx)):
     """Returns all wildland forests as a list"""
     raise HTTPException(status_code=404, detail="Not Implemented")
+
 
 @router.get("/forest/{name}", tags=["forest"])
 async def read_forest(name: str):

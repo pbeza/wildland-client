@@ -21,7 +21,7 @@ Wildland Rest API Dependency module
 """
 
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import easywebdav
 from fastapi import Depends, status, HTTPException
 from wildland.client import Client
@@ -39,8 +39,8 @@ class ContextObj:
 # Dependency
 def get_ctx():
     """Each api method can reach Wildland Client context through this dependency"""
-    base_dir = os.environ.get('WL_BASE_DIR') # needs better way
-    client = Client(dummy=False, base_dir=base_dir)
+    base_dir = os.environ.get('WL_BASE_DIR', None) # needs better way
+    client = Client(dummy=False, base_dir=PurePosixPath(base_dir))
     ctx = ContextObj(client)
     return ctx
 

@@ -18,19 +18,18 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-# pylint: disable=missing-docstring,redefined-outer-name,too-many-lines
+# pylint: disable=missing-docstring,redefined-builtin, not-context-manager
 
-import os
 import threading
 import time
-from wildland.ipc import EventIPC, IPC_NAME
 
+import pytest
 from fastapi.testclient import TestClient
 from requests.exceptions import ConnectionError
 
-import pytest
-
 from wildland.api.main import api_with_version
+from wildland.ipc import EventIPC
+
 
 api_client = TestClient(api_with_version)
 
@@ -135,7 +134,6 @@ def test_event_ws():
     with api_client.websocket_connect("/stream") as websocket:
         wl_in_thread.start()
         data = websocket.receive_json()
-        wl_in_thread.stop()
         assert data == {"topic": "EMIT", "label": "WL_TEST"}
 
 
@@ -223,12 +221,6 @@ def test_specific_container():
     assert response.json() == MESSAGE_NOT_IMPLEMENTED
 
 
-def test_specific_container():
-    response = api_client.get("/container/wl")
-    assert response.status_code == 404
-    assert response.json() == MESSAGE_NOT_IMPLEMENTED
-
-
 def test_forest_list(cli):
     time.sleep(2)
     cli("user", "create", "Duchess", "--key", "0xbbb")
@@ -241,12 +233,6 @@ def test_forest_list(cli):
 
 def test_specific_forest():
     response = api_client.get("/forest/wl")
-    assert response.status_code == 404
-    assert response.json() == MESSAGE_NOT_IMPLEMENTED
-
-
-def test_specific_storage():
-    response = api_client.get("/storage/wl")
     assert response.status_code == 404
     assert response.json() == MESSAGE_NOT_IMPLEMENTED
 

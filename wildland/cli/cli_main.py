@@ -74,7 +74,8 @@ def main(ctx: click.Context, base_dir, dummy, debug, verbose):
     # pylint: disable=missing-docstring, unused-argument
     os.environ['WL_BASE_DIR'] = base_dir # needs better way
     client = Client(dummy=dummy, base_dir=base_dir)
-    ctx.obj = ContextObj(client, ipc=os.environ.get('EXPERIMENTAL_API', False))
+    is_ipc_enabled = os.environ.get('EXPERIMENTAL_API', False)
+    ctx.obj = ContextObj(client, ipc=bool(is_ipc_enabled))
     if verbose > 0:
         init_logging(level='DEBUG' if verbose > 1 else 'INFO')
 
