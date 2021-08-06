@@ -27,6 +27,7 @@ from fastapi import Depends, status, HTTPException
 from wildland.client import Client
 from wildland.exc import WildlandError
 
+
 class ContextObj:
     """Helper object for keeping state in :attr:`click.Context.obj`"""
 
@@ -36,19 +37,23 @@ class ContextObj:
         self.client = client
         self.session = client.session
 
+
 # Dependency
 def get_ctx():
     """Each api method can reach Wildland Client context through this dependency"""
-    base_dir = os.environ.get('WL_BASE_DIR', None) # needs better way
-    client = Client(dummy=False, base_dir=PurePosixPath(base_dir))
+    wl_base_dir = os.environ.get("WL_BASE_DIR")  # needs better way
+    base_dir = PurePosixPath(wl_base_dir) if wl_base_dir else None
+    client = Client(dummy=False, base_dir=base_dir)
     ctx = ContextObj(client)
     return ctx
+
 
 def get_webdav():
     """Each api method can reach Webdav Client through this dependency"""
     easywebdav.client.basestring = (str, bytes)
-    webdav = easywebdav.connect('localhost', port="8080")
+    webdav = easywebdav.connect("localhost", port="8080")
     return webdav
+
 
 def ensure_wl_mount(ctx: ContextObj = Depends(get_ctx)):
     """Some endpoints requires Wildland to be mounted, this dependency ensuring it"""
