@@ -30,16 +30,7 @@ router = APIRouter()
 @router.get("/forest/", tags=["forest"], dependencies=[Depends(ensure_wl_mount)])
 async def read_forests(ctx: ContextObj = Depends(get_ctx)):
     """Returns all wildland forests as a list"""
-    storages = list(ctx.fs_client.get_info().values())
-    bridges = ctx.client.load_all(WildlandObject.Type.BRIDGE)
-    forest_list = []
-    for storage in storages:
-        for path in storage['paths']:
-            for bridge in bridges:
-                if path == bridge.local_path:
-                    forest_list.append(bridge.local_path)
-
-    return list(set(forest_list))
+    raise HTTPException(status_code=404, detail="Not Implemented")
 
 @router.get("/forest/{name}", tags=["forest"])
 async def read_forest(name: str):

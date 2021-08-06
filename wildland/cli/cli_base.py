@@ -53,8 +53,7 @@ class ContextObj:
         self.mount_dir: Path = client.fs_client.mount_dir
         self.client = client
         self.session = client.session
-        if ipc:
-            self.ipc = EventIPC()
+        self.ipc = EventIPC(is_enabled=ipc)
 
 
 class AliasedGroup(click.Group):

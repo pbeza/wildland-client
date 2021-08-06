@@ -45,6 +45,7 @@ pip-tools
 psutil
 pytest
 pytest-cov
+pytest-timeout
 pylint
 mypy
 python-lorem

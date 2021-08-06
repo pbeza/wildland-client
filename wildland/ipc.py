@@ -26,9 +26,14 @@ import struct
 
 IPC_NAME = PurePosixPath("/tmp/event_ipc")
 
+
 class EventIPC:
     """Creates Unidirectional IPC for Event-Data Streaming"""
-    def __init__(self):
+
+    def __init__(self, is_enabled):
+        self.is_enabled = is_enabled
+        if not is_enabled:
+            return
         try:
             os.mkfifo(IPC_NAME)
         except FileExistsError:
@@ -37,6 +42,8 @@ class EventIPC:
 
     def emit(self, topic, label):
         """Emits given topic and label as bytes"""
+        if not self.is_enabled:
+            return
         data = json.dumps(dict(topic=topic, label=label))
         content = f"{data}".encode("utf8")
         msg = EventIPC.create_msg(content)
