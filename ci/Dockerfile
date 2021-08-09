@@ -56,7 +56,6 @@ RUN ARCH=$(arch) && CHECKSUM="" \
 RUN useradd --shell /bin/bash --create-home user
 RUN echo user_allow_other >> /etc/fuse.conf
 
-
 RUN mkdir /home/user/wildland-client
 
 USER user

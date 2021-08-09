@@ -29,7 +29,7 @@ from wildland.exc import WildlandError
 
 
 class ContextObj:
-    """Helper object for keeping state in :attr:`click.Context.obj`"""
+    """Helper object for keeping state"""
 
     def __init__(self, client: Client):
         self.fs_client = client.fs_client

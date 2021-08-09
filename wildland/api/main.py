@@ -26,7 +26,7 @@ from wildland.api.routers import bridge, container, event, file, forest, storage
 
 
 API_VERSION = "0.0.1"
-app = FastAPI(openapi_url=None)  # dependencies=[Depends(get_query_token)]
+app = FastAPI(openapi_url=None)
 api = FastAPI(openapi_url=None)
 api_with_version = FastAPI(
     title="Wildland API",

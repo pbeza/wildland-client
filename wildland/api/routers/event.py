@@ -45,7 +45,6 @@ except FileExistsError:
     pass
 # Pipe in non-blocking mode for reading
 fifo = os.open(IPC_NAME, os.O_RDONLY | os.O_NONBLOCK)
-os.set_blocking(fifo, False)
 
 
 def get_message(ipc: int) -> str:

@@ -31,6 +31,9 @@ from wildland.api.main import api_with_version
 from wildland.ipc import EventIPC
 
 
+MESSAGE_NOT_MOUNTED = {"detail": "Wildland is not mounted"}
+MESSAGE_NOT_IMPLEMENTED = {"detail": "Not Implemented"}
+
 api_client = TestClient(api_with_version)
 
 
@@ -42,10 +45,6 @@ def test_root():
 To get more information about endpoints, have a glance over \
 '{api_with_version.root_path}/docs' path."
     }
-
-
-MESSAGE_NOT_MOUNTED = {"detail": "Wildland is not mounted"}
-MESSAGE_NOT_IMPLEMENTED = {"detail": "Not Implemented"}
 
 
 def test_bridge_no_wl():
