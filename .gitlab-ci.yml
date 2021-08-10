@@ -38,9 +38,9 @@ gcp:
     - cd docker
     - docker-compose build wildland-client-base
     - docker-compose build wildland-client-gcp
-    - docker tag wildland-client-gcp:latest eu.gcr.io/our-philosophy-316914/wildland-client-gcp:latest
+    - docker tag wildland-client-gcp:latest eu.gcr.io/single-bindery-317213/wildland-client-gcp:latest
     - echo $GCP_DOCKER_REPO_JSON | base64 -d | docker login -u _json_key --password-stdin https://eu.gcr.io
-    - docker push eu.gcr.io/our-philosophy-316914/wildland-client-gcp:latest
+    - docker push eu.gcr.io/single-bindery-317213/wildland-client-gcp:latest
 
 lint:
   stage: test
