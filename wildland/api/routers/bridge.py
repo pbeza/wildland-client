@@ -45,5 +45,5 @@ async def read_bridges(ctx: ContextObj = Depends(get_ctx)):
 
 @router.get("/bridge/{name}", tags=["bridge"])
 async def read_bridge(name: str):
-    """Returns information of specific wildland bridge"""
+    """Returns information on specific wildland bridge"""
     raise HTTPException(status_code=404, detail="Not Implemented")
