@@ -7,17 +7,17 @@ entrypoints
 pynacl
 graphlib-backport; python_version < '3.9'
 progress
+jinja2
 
-#API
-asyncio
+# API
 easywebdav
 fastapi
 gunicorn
 httptools
 Pillow # consider using pillow-simd for faster conversion
+slowapi
 uvicorn>=0.14
 uvloop
-wsproto
 
 # Storage
 python-gitlab
@@ -27,7 +27,7 @@ boto3
 requests
 python-dateutil
 lxml
-# imapclient version is for compatibility with python 3.9, pr: https://github.com/mjs/imapclient/pull/424
+#imapclient version is for compatibility with python 3.9, pr: https://github.com/mjs/imapclient/pull/424
 imapclient @ https://github.com/mjs/imapclient/archive/55f182f.zip
 inotify_simple
 python-daemon
@@ -39,18 +39,3 @@ google-auth-httplib2
 google-auth-oauthlib
 httplib2shim
 treelib
-
-# Development / testing
-pip-tools
-psutil
-pytest
-pytest-cov
-pytest-timeout
-pylint
-mypy
-python-lorem
-yq
-
-# Documentation
-sphinx
-sphinx-autodoc-typehints
