@@ -50,6 +50,9 @@ def get_ctx():
 
 def get_webdav():
     """Each api method can reach Webdav Client through this dependency"""
+
+    # monkey patch to easywebdav, due to missing basestring instance
+    # ref: https://github.com/amnong/easywebdav/issues/58
     easywebdav.client.basestring = (str, bytes)
     webdav = easywebdav.connect("localhost", port="8080")
     return webdav
