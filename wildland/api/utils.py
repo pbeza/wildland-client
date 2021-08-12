@@ -55,6 +55,7 @@ class ProcessExecManager:
 
     async def create_executor(self):
         """Creates Process Pool Executor"""
+        # pylint: disable=consider-using-with
         self.executor = ProcessPoolExecutor()
 
     def get_executor(self):

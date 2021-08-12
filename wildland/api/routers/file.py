@@ -23,8 +23,7 @@ Wildland File Rest API
 import io
 import os
 from pathlib import Path
-from typing import Optional
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, status
 from fastapi.responses import Response
 from PIL import Image
 from wildland.api.dependency import ContextObj, get_ctx, get_webdav, ensure_wl_mount
@@ -85,7 +84,7 @@ def generate_thumbnail(webdav, path):
     mimetype = image.get_format_mimetype()
 
     try:
-        # if you need to load the image after using image.verify() 
+        # if you need to load the image after using image.verify()
         # method, you must reopen the image file.
         image.verify()
         bio.seek(0)
