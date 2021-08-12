@@ -82,7 +82,7 @@ def test_user_no_wl():
     assert response.json() == MESSAGE_NOT_MOUNTED
 
 
-def test_bridge_list(cli, base_dir):
+def test_bridge_list(cli):
     cli("user", "create", "Pat", "--key", "0xbbb")
     cli("user", "create", "RefUser", "--key", "0xbbb", "--path", "/OriginalPath")
     cli(
@@ -105,7 +105,7 @@ def test_bridge_list(cli, base_dir):
     assert user == "https://example.com/RefUser.yaml"
 
 
-def test_container_list(cli, base_dir):
+def test_container_list(cli):
     time.sleep(2)
     cli("user", "create", "Gryphon", "--key", "0xaaa")
     cli("container", "create", "Container", "--path", "/PATH")
