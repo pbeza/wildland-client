@@ -20,13 +20,11 @@
 Wildland Container Rest API
 """
 
-import logging
 from fastapi import APIRouter, Depends, HTTPException
 from wildland.api.dependency import ContextObj, get_ctx, ensure_wl_mount
 from wildland.wildland_object.wildland_object import WildlandObject
 
 router = APIRouter()
-logger = logging.getLogger("gunicorn.error")
 
 
 @router.get("/container/", tags=["container"], dependencies=[Depends(ensure_wl_mount)])
@@ -36,9 +34,8 @@ async def read_containers(ctx: ContextObj = Depends(get_ctx)):
     containers = ctx.client.load_all(WildlandObject.Type.CONTAINER)
     container_list = []
     for container in containers:
-        setattr(container, "mounted", False)
-        container_obj = container.__dict__
-        del container_obj["client"]
+        container_obj = container.to_manifest_fields(inline=False)
+        container_obj['mounted'] = False
         container_list.append(container_obj)
 
         for storage in storages:
@@ -46,7 +43,7 @@ async def read_containers(ctx: ContextObj = Depends(get_ctx)):
             (smaller, bigger) = sorted([paths, container.paths], key=len)
             bigger_set = set(bigger)
             if any(item in bigger_set for item in smaller):
-                setattr(container, "mounted", True)
+                container_obj['mounted'] = True
     return container_list
 
 
