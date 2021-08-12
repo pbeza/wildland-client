@@ -78,7 +78,7 @@ class FuseEnv:
 
         options = ['log=-', 'socket=' + str(self.socket_path)]
 
-        # pylint: disable=bad-option-value,consider-using-with
+        # pylint: disable=consider-using-with
         self.proc = subprocess.Popen([
             ENTRY_POINT, self.mnt_dir,
             '-f', '-d',
