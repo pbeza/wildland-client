@@ -24,7 +24,7 @@ import os
 from pathlib import PurePosixPath
 import struct
 
-IPC_NAME = PurePosixPath("/tmp/event_ipc")
+IPC_NAME = PurePosixPath("/tmp/wildland_event_ipc")
 
 
 class EventIPC:
