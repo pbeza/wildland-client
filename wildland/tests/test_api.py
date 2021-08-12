@@ -101,9 +101,8 @@ def test_bridge_list(cli, base_dir):
     assert response.status_code == 200
 
     bridge_list = response.json()
-
-    local_path = bridge_list[0]["manifest"]["local_path"] if bridge_list else None
-    assert local_path == f"{base_dir}/bridges/Bridge.bridge.yaml"
+    user = bridge_list[0]["user"] if bridge_list else None
+    assert user == "https://example.com/RefUser.yaml"
 
 
 def test_container_list(cli, base_dir):
@@ -116,8 +115,8 @@ def test_container_list(cli, base_dir):
     assert response.status_code == 200
 
     container_list = response.json()
-    local_path = container_list[0]["manifest"]["local_path"] if container_list else None
-    assert local_path == f"{base_dir}/containers/Container.container.yaml"
+    owner = container_list[0]["owner"] if container_list else None
+    assert owner == "0xaaa"
 
 
 # @pytest.mark.timeout(10, method='thread')
