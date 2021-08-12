@@ -21,7 +21,6 @@ Wildland File Rest API
 """
 
 import io
-import logging
 import os
 from pathlib import Path
 from typing import Optional
@@ -46,12 +45,11 @@ SUPPORTED_MIMETYPES = {
     "image/tiff": "TIFF",
     "image/webp": "WEBP",
 }
-logger = logging.getLogger("gunicorn.error")
+THUMBNAIL_SIZE = (96, 96)
 
 
 @router.get("/file/", tags=["file"])
 async def read_dir(
-    _q: Optional[str] = Query(None, title="Path Query"),
     path: str = "/",
     webdav=Depends(get_webdav),
 ):
@@ -64,7 +62,6 @@ async def read_dir(
 
 @router.get("/file/read/", tags=["file"])
 async def read_file(
-    _q: Optional[str] = Query(None, title="Path Query"),
     path: str = "/",
     webdav=Depends(get_webdav),
 ):
@@ -88,7 +85,9 @@ def generate_thumbnail(webdav, path):
     mimetype = image.get_format_mimetype()
 
     try:
-        image.verify()  # if you need to load the image after using this method, you must reopen the image file. # pylint: disable=line-too-long
+        # if you need to load the image after using image.verify() 
+        # method, you must reopen the image file.
+        image.verify()
         bio.seek(0)
         image.close()
         image = Image.open(bio)
@@ -96,7 +95,6 @@ def generate_thumbnail(webdav, path):
         raise FileNotFoundError("No thumbnail available.") from exp
 
     thumb_bytes = io.BytesIO()
-    THUMBNAIL_SIZE = (96, 96)
     image.thumbnail(THUMBNAIL_SIZE, Image.BICUBIC)
     thumb_extension = SUPPORTED_MIMETYPES.get(mimetype, None)
     if not thumb_extension:
@@ -109,7 +107,6 @@ def generate_thumbnail(webdav, path):
 
 @router.get("/file/thumbnail/", tags=["file"])
 async def read_thumbnail(
-    _q: Optional[str] = Query(None, title="Path Query"),
     path: str = "/",
     webdav=Depends(get_webdav),
 ):
@@ -135,7 +132,6 @@ async def read_thumbnail(
 )
 def find_container_by_path(
     ctx: ContextObj = Depends(get_ctx),
-    _q: Optional[str] = Query(None, title="Path Query"),
     path: str = "/",
 ):
     """Finds container information for given file path and returns"""
