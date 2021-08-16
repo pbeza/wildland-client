@@ -24,8 +24,9 @@ import io
 import os
 from pathlib import Path
 from fastapi import APIRouter, Depends, status
+from fastapi.exceptions import HTTPException
 from fastapi.responses import Response
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 from wildland.api.dependency import ContextObj, get_ctx, get_webdav, ensure_wl_mount
 from wildland.api.utils import ProcessExecManager
 from wildland.control_client import ControlClientError
@@ -33,7 +34,6 @@ from wildland.control_client import ControlClientError
 exec_manager = ProcessExecManager()
 router = APIRouter()
 SUPPORTED_MIMETYPES = {
-    "application/pdf": "PDF",
     "image/bmp": "BMP",
     "image/gif": "GIF",
     "image/jpeg": "JPEG",
@@ -80,24 +80,24 @@ def generate_thumbnail(webdav, path):
         raise ConnectionError("Failed to download.") from exp
 
     bio.seek(0)
-    image = Image.open(bio)
-    mimetype = image.get_format_mimetype()
-
+    try:
+        image = Image.open(bio)
+        mimetype = image.get_format_mimetype()
+        thumb_extension = SUPPORTED_MIMETYPES.get(mimetype, None)
+        assert thumb_extension
+    except UnidentifiedImageError as exp:
+        raise FileNotFoundError(f"Unsupported mimetype {str(exp)}") from exp
     try:
         # if you need to load the image after using image.verify()
         # method, you must reopen the image file.
         image.verify()
         bio.seek(0)
-        image.close()
         image = Image.open(bio)
     except Exception as exp:
         raise FileNotFoundError("No thumbnail available.") from exp
 
     thumb_bytes = io.BytesIO()
     image.thumbnail(THUMBNAIL_SIZE, Image.BICUBIC)
-    thumb_extension = SUPPORTED_MIMETYPES.get(mimetype, None)
-    if not thumb_extension:
-        raise FileNotFoundError(f"Unsupported mimetype {mimetype}")
 
     image.save(thumb_bytes, thumb_extension)
     image.close()
@@ -117,13 +117,15 @@ async def read_thumbnail(
         )
         return Response(content=thumb_bytes.getvalue())
     except FileNotFoundError as error:
-        return Response(
-            content=error, status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
-        )
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=str(error)
+        ) from error
     except ConnectionError as error:
-        return Response(
-            content=error, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(error)
+        ) from error
 
 
 @router.get(

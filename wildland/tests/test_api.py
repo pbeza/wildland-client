@@ -22,20 +22,81 @@
 
 import threading
 import time
+from base64 import b64decode
+from io import BytesIO
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 from requests.exceptions import ConnectionError
 
 from wildland.api.main import api_with_version
 from wildland.ipc import EventIPC
 
 
+MESSAGE_FAILED_TO_DOWNLOAD = {"detail": "Failed to download."}
+MESSAGE_NO_THUMBNAIL = {"detail": "No thumbnail available."}
 MESSAGE_NOT_MOUNTED = {"detail": "Wildland is not mounted"}
 MESSAGE_NOT_IMPLEMENTED = {"detail": "Not Implemented"}
+MESSAGE_UNSUPPORTED_MIMETYPE = {"detail": "Unsupported mimetype"}
+PX128_IMG64 = "iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAIAAABMXPacAAABU" \
+"0lEQVR4nOzTwQnCQABEUZGtxJNt2IAtWI9gixJIF8kpRezhEfJfBQOfGb/Pcjuz" \
+"1/bVE6bc9YCrKwBWAKwAWAGwAmAFwAqAFQArAFYArABYAbACYAXACoAVACsAVgC" \
+"sAFgBsAJgBcAKgBUAKwBWAKwAWAGwAmAFwAqAFQArAFYArABYAbACYAXACoAVAC" \
+"sAVgCsAFgBsAJgBcAKgBUAKwBWAKwAWAGwAmAFwAqAFQArAFYArABYAbACYAXAx" \
+"v+x6w1T3s9VT5jSA7ACYAXACoAVACsAVgCsAFgBsAJgBcAKgBUAKwBWAKwAWAGw" \
+"AmAFwAqAFQArAFYArABYAbACYAXACoAVACsAVgCsAFgBsAJgBcAKgBUAKwBWAKw" \
+"AWAGwAmAFwAqAFQArAFYArABYAbACYAXACoAVACsAVgCsAFgBsAJgBcAKgBUAKw" \
+"BWAOwIAAD//5psB+MfT8zoAAAAAElFTkSuQmCC"
+PDF_BASE64 = "JVBERi0xLg10cmFpbGVyPDwvUm9vdDw8L1BhZ2VzPDwvS2lkc1" \
+"s8PC9NZWRpYUJveFswIDAgMyAzXT4+XT4+Pj4+Pg=="
 
 api_client = TestClient(api_with_version)
 
+
+class WebDAV:
+    '''Mock for WebDAV Client'''
+    def __init__(self, host: str, port: str):
+        pass
+
+    @staticmethod
+    def ls(_path):
+        return ["/"]
+
+    @staticmethod
+    def download(path: str, bio: bytes):
+        if path == "/path/to/img.png":
+            img_bytes = b64decode(PX128_IMG64)
+            bio.write(img_bytes)
+        if path == "path/to/unsupported.pdf":
+            pdf_bytes = b64decode(PDF_BASE64)
+            bio.write(pdf_bytes)
+        if path == "/path/to/fail.png":
+            raise Exception("nooo I failed so hard")
+        return b''
+
+class mockPIL:
+    '''Mock for PIL Image class'''
+    def __init__(self, bio: bytes):
+        pass
+
+    def close(self):
+        pass
+
+    @staticmethod
+    def get_format_mimetype():
+        return "image/png"
+
+    def save(self, bio, format):
+        pass
+
+    def thumbnail(self):
+        pass
+
+    @staticmethod
+    def verify():
+        raise Exception("verification failed")
 
 def test_root():
     response = api_client.get("/")
@@ -109,6 +170,16 @@ def test_container_list(cli):
     time.sleep(2)
     cli("user", "create", "Gryphon", "--key", "0xaaa")
     cli("container", "create", "Container", "--path", "/PATH")
+    cli(
+        "storage",
+        "create",
+        "local",
+        "Storage",
+        "--location",
+        "/riddle",
+        "--container",
+        "Container",
+    )
     cli("start", "--default-user", "Gryphon")
 
     response = api_client.get("/container")
@@ -135,8 +206,9 @@ def test_event_ws():
         assert data == {"topic": "EMIT", "label": "WL_TEST"}
 
 
-@pytest.mark.skip(reason="WebDAV connection needs to be mocked")
+@patch("easywebdav.connect", WebDAV)
 def test_file_list(cli):
+
     time.sleep(2)
     cli("user", "create", "Lory", "--key", "0xbbb")
     cli("start", "--default-user", "Lory")
@@ -148,19 +220,83 @@ def test_file_list(cli):
     assert file_list == []
 
 
-@pytest.mark.skip(reason="WebDAV connection needs to be mocked")
-def test_file_container_info():
-    pass
+@patch("easywebdav.connect", WebDAV)
+def test_file_container_info(cli):
+    time.sleep(2)
+    cli("user", "create", "Lory", "--key", "0xbbb")
+    cli("start", "--default-user", "Lory")
+
+    response = api_client.get("/file/container")
+    assert response.status_code == 200
+
+    container_information = response.json()
+    assert container_information == []
 
 
-@pytest.mark.skip(reason="WebDAV connection needs to be mocked")
-def test_file_content():
-    pass
+@patch("easywebdav.connect", WebDAV)
+def test_file_content(cli):
+    time.sleep(2)
+    cli("user", "create", "Lory", "--key", "0xbbb")
+    cli("start", "--default-user", "Lory")
+
+    response = api_client.get("/file/read")
+    assert response.status_code == 200
+
+    file = response.content
+    assert file == b''
 
 
-@pytest.mark.skip(reason="WebDAV connection needs to be mocked")
-def test_file_thumbnail():
-    pass
+@patch("easywebdav.connect", WebDAV)
+def test_file_thumbnail(cli):
+    time.sleep(2)
+    cli("user", "create", "Lory", "--key", "0xbbb")
+    cli("start", "--default-user", "Lory")
+
+    response = api_client.get("/file/thumbnail?path=/path/to/img.png")
+    assert response.status_code == 200
+
+    file = response.content
+    image = Image.open(BytesIO(file))
+    width, height = image.size
+
+    assert width >= 96 and height >= 96
+
+
+@patch("easywebdav.connect", WebDAV)
+def test_file_thumbnail_fail(cli):
+    time.sleep(2)
+    cli("user", "create", "Lory", "--key", "0xbbb")
+    cli("start", "--default-user", "Lory")
+
+    response = api_client.get("/file/thumbnail?path=/path/to/fail.png")
+    assert response.status_code == 500
+    assert response.json() == MESSAGE_FAILED_TO_DOWNLOAD
+
+@patch("easywebdav.connect", WebDAV)
+def test_file_thumbnail_unsupported(cli):
+    time.sleep(2)
+    cli("user", "create", "Lory", "--key", "0xbbb")
+    cli("start", "--default-user", "Lory")
+
+    response = api_client.get("/file/thumbnail?path=/path/to/unsupported.pdf")
+    assert response.status_code == 415
+
+    result = response.json()
+    assert result.get('detail').startswith(
+        MESSAGE_UNSUPPORTED_MIMETYPE.get('detail')
+    )
+
+
+@patch("easywebdav.connect", WebDAV)
+@patch("PIL.Image.open", mockPIL)
+def test_file_thumbnail_broken(cli):
+    time.sleep(2)
+    cli("user", "create", "Lory", "--key", "0xbbb")
+    cli("start", "--default-user", "Lory")
+
+    response = api_client.get("/file/thumbnail?path=/path/to/img.png")
+    assert response.status_code == 415
+    assert response.json() == MESSAGE_NO_THUMBNAIL
 
 
 def test_storage_list(cli):
@@ -196,6 +332,24 @@ def test_storage_list(cli):
 def test_user_list(cli):
     time.sleep(2)
     cli("user", "create", "Eaglet", "--key", "0xbbb")
+    cli(
+        "container",
+        "create",
+        "Container",
+        "--path",
+        "/riddle",
+        "--no-encrypt-manifest",
+    )
+    cli(
+        "storage",
+        "create",
+        "local",
+        "Storage",
+        "--location",
+        "/riddle",
+        "--container",
+        "Container",
+    )
     cli("start", "--default-user", "Eaglet")
 
     response = api_client.get("/user")
