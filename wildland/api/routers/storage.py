@@ -31,10 +31,12 @@ router = APIRouter()
 async def read_storages(ctx: ContextObj = Depends(get_ctx)):
     """Returns all wildland storages as a list"""
     storages = ctx.client.load_all(WildlandObject.Type.STORAGE)
+    containers = ctx.client.load_all(WildlandObject.Type.CONTAINER)
 
     backend_list = []
-    for container in ctx.client.load_all(WildlandObject.Type.CONTAINER):
-        for backend in container.manifest._fields.get("backends", {}).get(
+    for container in containers:
+        container_obj = container.to_manifest_fields(inline=False)
+        for backend in container_obj.get("backends", {}).get(
             "storage", []
         ):
             if not backend:
