@@ -49,6 +49,10 @@ class EventIPC:
         msg = EventIPC.create_msg(content)
         os.write(self.ipc, msg)
 
+    def close(self):
+        """Closes named pipe file"""
+        os.close(self.ipc)
+
     @staticmethod
     def encode_msg_size(size: int) -> bytes:
         """Encodes data/message size"""
