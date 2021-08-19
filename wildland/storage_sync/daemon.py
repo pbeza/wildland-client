@@ -26,7 +26,6 @@ Wildland sync daemon.
 import logging
 import signal
 import threading
-import time
 
 from pathlib import Path, PurePosixPath
 from threading import Lock
@@ -36,6 +35,7 @@ import click
 
 from wildland.client import Client
 from wildland.config import Config
+from wildland.container import Container
 from wildland.exc import WildlandError
 from wildland.hashdb import HashDb
 from wildland.log import init_logging
@@ -43,7 +43,7 @@ from wildland.control_server import ControlServer, control_command
 from wildland.manifest.schema import Schema
 from wildland.storage import Storage
 from wildland.storage_backends.base import StorageBackend, OptionalError
-from wildland.storage_sync.base import BaseSyncer
+from wildland.storage_sync.base import BaseSyncer, SyncerStatus
 from wildland.wildland_object.wildland_object import WildlandObject
 
 logger = logging.getLogger('sync-daemon')
@@ -59,12 +59,13 @@ class SyncJob:
                  target: StorageBackend, continuous: bool, unidirectional: bool):
         self.syncer = syncer
         self.stop_event = threading.Event()
-        self.thread = threading.Thread(target=self._worker, args=(syncer, self.stop_event))
+        self.thread = threading.Thread(target=self._worker, args=(self,))
         self.container_name = container_name
         self.source = source
         self.target = target
         self.continuous = continuous
         self.unidirectional = unidirectional
+        self.error: Optional[str] = None
 
     def start(self):
         """
@@ -79,57 +80,48 @@ class SyncJob:
         self.stop_event.set()
         self.thread.join()
 
+    def syncer_status(self) -> SyncerStatus:
+        """
+        Status of this sync job as SyncerStatus.
+        """
+        return self.syncer.status()
+
+    def status(self) -> str:
+        """
+        Status of this sync job as human-readable string.
+        """
+
+        ret = f'{self.container_name} {self.syncer.status()} {str(self.source)} ' \
+              f'{"->" if self.unidirectional else "<->"} {str(self.target)}'
+        if not self.continuous:
+            ret += ' [one-shot]'
+
+        try:
+            conflict = list(self.syncer.iter_conflicts())
+            if len(conflict) > 0:
+                for e in conflict:
+                    ret += f'\n   {e}'
+        except OptionalError:
+            pass
+
+        if self.error:
+            ret += f'\n   [!] {self.error}'
+
+        return ret
+
     @staticmethod
-    def _worker(syncer: BaseSyncer, stop: threading.Event):
+    def _worker(job: 'SyncJob'):
         """
         Function for the worker thread.
         """
         try:
-            syncer.start_sync()
-        except FileNotFoundError as ex:
-            raise WildlandError(f'Storage root not found! Details: {ex}') from ex
-
-        while not stop.is_set():
-            time.sleep(0.1)
-
-        syncer.stop_sync()
-
-
-class SyncStatus:
-    """
-    Status of a single sync job.
-    """
-    def __init__(self, job: SyncJob):
-        self.job = job
-
-    def __str__(self):
-        try:
-            if self.job.syncer.is_running():
-                running = 'RUNNING '
-            else:
-                running = 'STOPPED '
-        except OptionalError:
-            running = ' '
-
-        ret = f'{self.job.container_name}: {running}{str(self.job.source)} ' \
-              f'{"->" if self.job.unidirectional else "<->"} {str(self.job.target)}'
-        if not self.job.continuous:
-            ret += ' [one-shot]'
-
-        try:
-            if self.job.syncer.is_synced():
-                ret += ' [SYNCED]'
-            else:
-                ret += ' [NOT SYNCED]'
-        except OptionalError:
-            pass
-
-        errors = list(self.job.syncer.iter_errors())
-        if len(errors) > 0:
-            for e in errors:
-                ret += f'\n   {e}'
-
-        return ret
+            job.syncer.start_sync()
+            job.stop_event.wait()
+        except Exception as ex:
+            logger.exception('Exception:')
+            job.error = f'Error: {ex}'
+        finally:
+            job.syncer.stop_sync()
 
 
 def _get_storage_by_id_or_type(id_or_type: str, storages: List[Storage]) -> Storage:
@@ -148,7 +140,6 @@ class SyncDaemon:
     """
     Daemon for processing storage sync requests.
     """
-
     def __init__(self, base_dir: Optional[str] = None, socket_path: Optional[str] = None,
                  log_path: Optional[str] = None):
         self.lock = Lock()
@@ -170,6 +161,11 @@ class SyncDaemon:
             cmd: schema.validate for cmd, schema in command_schemas.items()
         })
 
+    @staticmethod
+    def _sync_id(container: Container) -> str:
+        # this might also be derived from source and target storages
+        return container.owner + '|' + container.uuid
+
     def start_sync(self, container_name: str, continuous: bool, unidirectional: bool,
                    source: Optional[str] = None, target: Optional[str] = None) -> str:
         """
@@ -184,11 +180,13 @@ class SyncDaemon:
                        the container if not present.
         :return: Response message.
         """
-
         client = Client(base_dir=self.base_dir)
         container = client.load_object_from_name(WildlandObject.Type.CONTAINER, container_name)
 
         all_storages = list(client.all_storages(container))
+        cache = client.cache_storage(container)
+        if cache:
+            all_storages.append(cache)
 
         if source:
             source_storage = _get_storage_by_id_or_type(source, all_storages)
@@ -221,7 +219,7 @@ class SyncDaemon:
 
         target_backend = StorageBackend.from_params(target_storage.params)
 
-        sync_id = container.uuid  # this might also be derived from source and target storages
+        sync_id = self._sync_id(container)
         with self.lock:
             if sync_id in self.jobs.keys():
                 raise WildlandError("Sync process for this container is already running; use "
@@ -270,9 +268,10 @@ class SyncDaemon:
         container = client.load_object_from_name(WildlandObject.Type.CONTAINER, container_name)
         with self.lock:
             try:
-                sync_thread = self.jobs[container.uuid]
+                sync_id = self._sync_id(container)
+                sync_thread = self.jobs[sync_id]
                 sync_thread.stop()
-                self.jobs.pop(container.uuid)
+                self.jobs.pop(sync_id)
             except KeyError:
                 # pylint: disable=raise-missing-from
                 raise WildlandError(f'Sync for container {container_name} is not running')
@@ -299,9 +298,29 @@ class SyncDaemon:
         Return a list of currently running sync jobs with their status.
         """
         with self.lock:
-            ret = [str(SyncStatus(x)) for x in self.jobs.values()]
+            ret = [x.status() for x in self.jobs.values()]
 
         return ret
+
+    @control_command('container-status')
+    def control_container_status(self, _handler, container: str) -> Optional[int]:
+        """
+        Return status of a syncer for the given container.
+        """
+        client = Client(base_dir=self.base_dir)
+        cont = client.load_object_from_name(WildlandObject.Type.CONTAINER, container)
+        sync_id = self._sync_id(cont)
+        if sync_id in self.jobs.keys():
+            return self.jobs[sync_id].syncer_status().value
+
+        return None
+
+    @control_command('shutdown')
+    def control_shutdown(self, _handler):
+        """
+        Stops all sync jobs and shuts down the daemon.
+        """
+        self.stop(0, None)
 
     # pylint: disable=unused-argument
     def stop(self, signalnum, frame):
@@ -312,6 +331,7 @@ class SyncDaemon:
         with self.lock:
             for job in self.jobs.values():
                 job.stop()
+
         self.control_server.stop()
 
     def main(self):
@@ -322,6 +342,10 @@ class SyncDaemon:
         signal.signal(signal.SIGTERM, self.stop)
         signal.signal(signal.SIGINT, self.stop)
         self.control_server.start(self.socket_path)
+        # main thread exiting seems to cause weird errors in the S3 plugin in other threads
+        # (see issue #517)
+        assert self.control_server.server_thread
+        self.control_server.server_thread.join()
 
     def init_logging(self):
         """

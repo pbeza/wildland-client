@@ -24,7 +24,7 @@
 """
 Socket server for controlling Wildland FS.
 """
-
+import os
 from pathlib import Path
 import logging
 import threading
@@ -206,7 +206,10 @@ class ControlHandler(BaseRequestHandler):
         if request and request.id:
             response['id'] = request.id
 
-        self._send_message(response)
+        try:
+            self._send_message(response)
+        except Exception:
+            logger.exception('error when sending response')
 
 
 class SocketServer(ThreadingMixIn, UnixStreamServer):
@@ -288,6 +291,11 @@ class ControlServer:
         self.server_thread = threading.Thread(
             name='control-server',
             target=self._serve_forever)
+        try:
+            os.chmod(socket_path, 0o600)
+        except OSError as e:
+            logger.critical('failed to set socket permission')
+            raise ControlRequestError from e
         self.server_thread.start()
 
     def _serve_forever(self) -> None:
@@ -312,7 +320,8 @@ class ControlServer:
         # server is not inside serve_forever() loop
         if self.server_thread.is_alive():
             self.socket_server.shutdown()
-            self.server_thread.join()
+            if self.server_thread:
+                self.server_thread.join()
 
         # Close connection for all threads and wait for them
         for thread in self.socket_server._threads:  # type: ignore # pylint: disable=protected-access

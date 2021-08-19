@@ -29,6 +29,7 @@ from __future__ import annotations
 import abc
 import hashlib
 import itertools
+import json
 import logging
 import os
 import pathlib
@@ -41,7 +42,6 @@ from uuid import UUID
 from typing import Optional, Dict, Type, Any, List, Iterable, Tuple, Union, TYPE_CHECKING
 
 import click
-import yaml
 
 import wildland
 from ..manifest.schema import Schema
@@ -313,8 +313,8 @@ class StorageBackend(metaclass=abc.ABCMeta):
         """
 
         hasher = hashlib.md5()
-        params_for_hash = dict((k, v) for (k, v) in params.items() if k != 'storage')
-        hasher.update(yaml.dump(params_for_hash, sort_keys=True).encode('utf-8'))
+        params_for_hash = dict((k, str(v)) for (k, v) in params.items() if k != 'storage')
+        hasher.update(json.dumps(params_for_hash, sort_keys=True).encode('utf-8'))
 
         return str(UUID(hasher.hexdigest()))
 
@@ -741,6 +741,21 @@ class StorageBackend(metaclass=abc.ABCMeta):
         assert url.startswith(self.params['public-url'])
         return pathlib.PurePosixPath(
             url[len(self.params['public-url']):].lstrip('/'))
+
+    def start_bulk_writing(self) -> None:
+        """
+        Indicates that we want to do many writing/creation operation.
+        Writing may be cached (or just invisible in local cache) so from now on reading what we are
+        writing/updating is undefined (files may or may not be updated).
+        Reading untouched files should works as usual.
+        """
+
+    def stop_bulk_writing(self) -> None:
+        """
+        Indicates that we end up bulk writing.
+        This method should accomplish cached writing operations (like the flush method).
+        The cache should be (possibly) invalidated if applicable.
+        """
 
 
 def _inner_proxy(method_name):
