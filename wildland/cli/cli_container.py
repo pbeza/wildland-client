@@ -887,6 +887,7 @@ def mount(obj: ContextObj, container_names: Tuple[str], remount: bool, save: boo
 
     _mount(obj, container_names, remount, save, import_users, with_subcontainers,
            only_subcontainers, list_all, manifests_catalog, cache_template)
+    obj.ipc.emit(topic="MOUNT", label="CONTAINER")
 
 
 def _mount(obj: ContextObj, container_names: Sequence[str],
@@ -998,6 +999,7 @@ def unmount(obj: ContextObj, path: str, with_subcontainers: bool, undo_save: boo
     """
     _unmount(obj, container_names=container_names, path=path, with_subcontainers=with_subcontainers,
              undo_save=undo_save)
+    obj.ipc.emit(topic="UNMOUNT", label="CONTAINER")
 
 
 def _unmount(obj: ContextObj, container_names: Sequence[str], path: str,
