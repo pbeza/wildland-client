@@ -21,9 +21,11 @@ Wildland Event Websocket
 """
 
 import asyncio
+import concurrent.futures
+import errno
 import logging
 import os
-import select
+from typing import Optional
 from fastapi import APIRouter
 from fastapi.websockets import WebSocket, WebSocketDisconnect
 
@@ -47,36 +49,42 @@ except FileExistsError:
 fifo = os.open(IPC_NAME, os.O_RDONLY | os.O_NONBLOCK)
 
 
-def get_message(ipc: int) -> str:
+def get_message(ipc: int) -> Optional[str]:
     """Get a message from the named pipe."""
-    msg_size_bytes = os.read(ipc, 4)
+    msg_size_bytes = None
+    try:
+        msg_size_bytes = os.read(ipc, 4)
+    except IOError as e:
+        if e.errno == errno.EWOULDBLOCK:
+            pass
+    if not msg_size_bytes:
+        return None
     msg_size = EventIPC.decode_msg_size(msg_size_bytes)
     msg_content = os.read(ipc, msg_size).decode("utf8")
     return msg_content
 
 
+async def watch_pipe(loop, fd) -> None :
+    """Add named pipe into asyncio reader and resolve future in any change"""
+    future: asyncio.Future = asyncio.Future()
+    loop.add_reader(fd, future.set_result, None)
+    future.add_done_callback(lambda f: loop.remove_reader(fd))
+    await future
+
+
 async def status_event_generator(websocket: WebSocket, manager: ConnectionManager):
     """Watch IPC communication to yield emitted event data for Websocket"""
     await manager.connect(websocket)
+    loop = asyncio.get_event_loop()
     try:
-        try:
-            # Create a polling object to monitor the pipe for new event data
-            poll = select.poll()
-            poll.register(fifo, select.POLLIN)
-            try:
-                while True:
-                    # Check if data to read, timeout after a second
-                    if (fifo, select.POLLIN) in poll.poll(1000):
-                        msg = get_message(fifo)
-                        yield msg
-                    else:
-                        # If no data, sleep a second
-                        await asyncio.sleep(1)
-            finally:
-                poll.unregister(fifo)
-        finally:
-            os.close(fifo)
-
+        while True:
+            await watch_pipe(loop, fifo)
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                msg = await loop.run_in_executor(pool, get_message, fifo)
+                if msg:
+                    yield msg
+                else:
+                    asyncio.sleep(1)
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 

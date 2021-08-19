@@ -218,6 +218,26 @@ def test_event_ws():
         websocket_in_thread.start()
 
 
+@pytest.mark.timeout(10, method="thread")
+def test_event_ws_blocking_io():
+    def emit_event():
+        time.sleep(2)
+        ipc = EventIPC(True)
+        for _i in range(0, 20):
+            ipc.emit("EMIT", "WL_TEST")
+
+    def listen_thread():
+        with client.websocket_connect("/stream") as websocket:
+            wl_in_thread = threading.Thread(target=emit_event)
+            wl_in_thread.start()
+            data = websocket.receive_json()
+            websocket.close()
+            assert data == '{"topic": "EMIT", "label": "WL_TEST"}'
+
+    with TestClient(api_with_version) as client:
+        websocket_in_thread = threading.Thread(target=listen_thread, daemon=True)
+        websocket_in_thread.start()
+
 @patch("easywebdav.connect", MockWebDAV)
 def test_file_list(cli):
 
