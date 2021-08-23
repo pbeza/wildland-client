@@ -40,6 +40,8 @@ MESSAGE_NO_THUMBNAIL = {"detail": "No thumbnail available."}
 MESSAGE_NOT_MOUNTED = {"detail": "Wildland is not mounted"}
 MESSAGE_NOT_IMPLEMENTED = {"detail": "Not Implemented"}
 MESSAGE_UNSUPPORTED_MIMETYPE = {"detail": "Unsupported mimetype"}
+
+# 128x128px png image in base64 scheme
 PX128_IMG64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAIAAABMXPacAAABU"
     "0lEQVR4nOzTwQnCQABEUZGtxJNt2IAtWI9gixJIF8kpRezhEfJfBQOfGb/Pcjuz"
@@ -51,6 +53,7 @@ PX128_IMG64 = (
     "AWAGwAmAFwAqAFQArAFYArABYAbACYAXACoAVACsAVgCsAFgBsAJgBcAKgBUAKw"
     "BWAOwIAAD//5psB+MfT8zoAAAAAElFTkSuQmCC"
 )
+# minimal pdf file in base64 scheme
 PDF_BASE64 = (
     "JVBERi0xLg10cmFpbGVyPDwvUm9vdDw8L1BhZ2VzPDwvS2lkc1"
     "s8PC9NZWRpYUJveFswIDAgMyAzXT4+XT4+Pj4+Pg=="
