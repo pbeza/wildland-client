@@ -33,6 +33,7 @@ async def read_storages(ctx: ContextObj = Depends(get_ctx)):
     storages = ctx.client.load_all(WildlandObject.Type.STORAGE)
     containers = ctx.client.load_all(WildlandObject.Type.CONTAINER)
 
+    storage_list = []
     backend_list = []
     for container in containers:
         container_obj = container.to_manifest_fields(inline=False)
@@ -45,7 +46,11 @@ async def read_storages(ctx: ContextObj = Depends(get_ctx)):
             if not isinstance(backend, str):
                 backend_list.append(backend)
 
-    return list(storages) + backend_list
+    for storage in storages:
+        storage_obj = storage.to_manifest_fields(inline=False)
+        storage_list.append(storage_obj)
+
+    return storage_list + backend_list
 
 
 @router.get("/storage/{name}", tags=["storage"])
