@@ -30,20 +30,17 @@ router = APIRouter()
 @router.get("/container/", tags=["container"], dependencies=[Depends(ensure_wl_mount)])
 async def read_containers(ctx: ContextObj = Depends(get_ctx)):
     """Returns all wildland containers as a list"""
-    storages = list(ctx.fs_client.get_info().values())
     containers = ctx.client.load_all(WildlandObject.Type.CONTAINER)
     container_list = []
     for container in containers:
         container_obj = container.to_manifest_fields(inline=False)
         container_obj['mounted'] = False
         container_list.append(container_obj)
-
-        for storage in storages:
-            paths = storage["paths"]
-            (smaller, bigger) = sorted([paths, container.paths], key=len)
-            bigger_set = set(bigger)
-            if any(item in bigger_set for item in smaller):
-                container_obj['mounted'] = True
+        storage = ctx.client.select_storage(container)
+        mount_path = ctx.fs_client.get_primary_unique_mount_path(container, storage)
+        storage_id = ctx.fs_client.find_storage_id_by_path(mount_path)
+        if storage_id:
+            container_obj['mounted'] = True
     return container_list
 
 
