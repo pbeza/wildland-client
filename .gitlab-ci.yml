@@ -59,8 +59,10 @@ pytest:
     - export PYTEST_ADDOPTS="--color=yes"
     - ./ci/ci-pytest
   artifacts:
+    when: always
     paths:
       - artifacts/htmlcov/
+      - wl-sync.log
     reports:
       junit: artifacts/wildland.xml
       cobertura: artifacts/coverage.xml

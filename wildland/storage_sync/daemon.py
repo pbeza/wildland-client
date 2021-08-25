@@ -48,7 +48,7 @@ from wildland.wildland_object.wildland_object import WildlandObject
 
 logger = logging.getLogger('sync-daemon')
 
-DEFAULT_LOG_PATH = '/tmp/wl-sync.log'
+DEFAULT_LOG_PATH = 'wl-sync.log'
 
 
 class SyncJob:
