@@ -146,12 +146,12 @@ def find_container_by_path(
 
 
 @router.on_event("startup")
-async def startup_event():
+def startup_event():
     """Create ProcessPoolExecutor"""
     exec_manager.create_executor()
 
 
 @router.on_event("shutdown")
-async def on_shutdown():
+def on_shutdown():
     """Shutdown ProcessPoolExecutor"""
     exec_manager.shutdown()

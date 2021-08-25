@@ -27,6 +27,7 @@ from io import BytesIO
 from unittest.mock import patch
 
 import pytest
+from async_asgi_testclient import TestClient as AsyncTestClient
 from fastapi.testclient import TestClient
 from PIL import Image
 from requests.exceptions import ConnectionError
@@ -178,7 +179,6 @@ def test_bridge_list(cli):
 
 
 def test_container_list(cli):
-    time.sleep(2)
     cli("user", "create", "Gryphon", "--key", "0xaaa")
     cli("container", "create", "Container", "--path", "/PATH")
     cli(
@@ -201,50 +201,23 @@ def test_container_list(cli):
     assert owner == "0xaaa"
 
 
-@pytest.mark.timeout(10, method="thread")
-def test_event_ws():
+@pytest.mark.asyncio
+async def test_event_ws():
     def emit_event():
-        time.sleep(2)
         ipc = EventIPC(True)
         ipc.emit("EMIT", "WL_TEST")
 
-    def listen_thread():
-        with client.websocket_connect("/stream") as websocket:
+    async with AsyncTestClient(api_with_version, timeout=30) as ws_client:
+        async with ws_client.websocket_connect("/stream") as websocket:
             wl_in_thread = threading.Thread(target=emit_event)
             wl_in_thread.start()
-            data = websocket.receive_json()
+            data = await websocket.receive_json()
             websocket.close()
             assert data == '{"topic": "EMIT", "label": "WL_TEST"}'
 
-    with TestClient(api_with_version) as client:
-        websocket_in_thread = threading.Thread(target=listen_thread, daemon=True)
-        websocket_in_thread.start()
-
-
-@pytest.mark.timeout(10, method="thread")
-def test_event_ws_blocking_io():
-    def emit_event():
-        time.sleep(2)
-        ipc = EventIPC(True)
-        for _i in range(0, 20):
-            ipc.emit("EMIT", "WL_TEST")
-
-    def listen_thread():
-        with client.websocket_connect("/stream") as websocket:
-            wl_in_thread = threading.Thread(target=emit_event)
-            wl_in_thread.start()
-            data = websocket.receive_json()
-            websocket.close()
-            assert data == '{"topic": "EMIT", "label": "WL_TEST"}'
-
-    with TestClient(api_with_version) as client:
-        websocket_in_thread = threading.Thread(target=listen_thread, daemon=True)
-        websocket_in_thread.start()
 
 @patch("easywebdav.connect", MockWebDAV)
 def test_file_list(cli):
-
-    time.sleep(2)
     cli("user", "create", "Lory", "--key", "0xbbb")
     cli("start", "--default-user", "Lory")
 
@@ -257,7 +230,6 @@ def test_file_list(cli):
 
 @patch("easywebdav.connect", MockWebDAV)
 def test_file_container_info(cli):
-    time.sleep(2)
     cli("user", "create", "Lory", "--key", "0xbbb")
     cli("start", "--default-user", "Lory")
 
@@ -272,7 +244,6 @@ def test_file_container_info(cli):
 @patch("wildland.control_client.ControlClient._recv_message")
 def test_file_container_info_fail(_recv_message, cli):
 
-    time.sleep(2)
     cli("user", "create", "Lory", "--key", "0xbbb")
     cli("start", "--default-user", "Lory")
 
@@ -291,7 +262,6 @@ def test_file_container_info_fail(_recv_message, cli):
 
 @patch("easywebdav.connect", MockWebDAV)
 def test_file_content(cli):
-    time.sleep(2)
     cli("user", "create", "Lory", "--key", "0xbbb")
     cli("start", "--default-user", "Lory")
 
@@ -304,7 +274,6 @@ def test_file_content(cli):
 
 @patch("easywebdav.connect", MockWebDAV)
 def test_file_thumbnail(cli):
-    time.sleep(2)
     cli("user", "create", "Lory", "--key", "0xbbb")
     cli("start", "--default-user", "Lory")
 
@@ -321,7 +290,6 @@ def test_file_thumbnail(cli):
 
 @patch("easywebdav.connect", MockWebDAV)
 def test_file_thumbnail_fail(cli):
-    time.sleep(2)
     cli("user", "create", "Lory", "--key", "0xbbb")
     cli("start", "--default-user", "Lory")
 
@@ -332,7 +300,6 @@ def test_file_thumbnail_fail(cli):
 
 @patch("easywebdav.connect", MockWebDAV)
 def test_file_thumbnail_unsupported(cli):
-    time.sleep(2)
     cli("user", "create", "Lory", "--key", "0xbbb")
     cli("start", "--default-user", "Lory")
 
@@ -343,20 +310,7 @@ def test_file_thumbnail_unsupported(cli):
     assert result.get("detail").startswith(MESSAGE_UNSUPPORTED_MIMETYPE.get("detail"))
 
 
-@patch("easywebdav.connect", MockWebDAV)
-@patch("PIL.Image.open", MockPIL)
-def test_file_thumbnail_broken(cli):
-    time.sleep(2)
-    cli("user", "create", "Lory", "--key", "0xbbb")
-    cli("start", "--default-user", "Lory")
-
-    response = api_client.get("/file/thumbnail?path=/path/to/img.png")
-    assert response.status_code == 415
-    assert response.json() == MESSAGE_NO_THUMBNAIL
-
-
 def test_storage_list(cli):
-    time.sleep(2)
     cli("user", "create", "Duck", "--key", "0xaaa")
     cli(
         "container",
@@ -386,7 +340,6 @@ def test_storage_list(cli):
 
 
 def test_user_list(cli):
-    time.sleep(2)
     cli("user", "create", "Eaglet", "--key", "0xbbb")
     cli(
         "container",
@@ -430,7 +383,6 @@ def test_specific_container():
 
 
 def test_forest_list(cli):
-    time.sleep(2)
     cli("user", "create", "Duchess", "--key", "0xbbb")
     cli("start", "--default-user", "Duchess")
 
