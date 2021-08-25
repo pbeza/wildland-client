@@ -21,7 +21,6 @@
 # pylint: disable=missing-docstring,redefined-builtin, not-context-manager
 
 import threading
-import time
 from base64 import b64decode
 from io import BytesIO
 from unittest.mock import patch
