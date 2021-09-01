@@ -20,9 +20,11 @@
 Wildland Interprocess Communication Channel based on NamedPipe
 """
 import json
-import os
 from pathlib import PurePosixPath
 import struct
+
+import asyncio
+
 
 IPC_NAME = PurePosixPath("/tmp/wildland_event_ipc")
 
@@ -34,24 +36,33 @@ class EventIPC:
         self.is_enabled = is_enabled
         if not is_enabled:
             return
+        self.reader, self.writer = self.handle_unix_connection()
+
+    @staticmethod
+    def handle_unix_connection():
+        """Sets up unix server for an ipc connection"""
+        loop = asyncio.get_event_loop()
         try:
-            os.mkfifo(IPC_NAME)
-        except FileExistsError:
-            pass
-        self.ipc = os.open(IPC_NAME, os.O_WRONLY)
+            conn_fut = asyncio.open_unix_connection(IPC_NAME, loop=loop)
+            return loop.run_until_complete(conn_fut)
+        except FileNotFoundError:
+            return None, None
 
     def emit(self, topic, label):
         """Emits given topic and label as bytes"""
         if not self.is_enabled:
             return
+        if not self.writer:
+            return
+
         data = json.dumps(dict(topic=topic, label=label))
         content = f"{data}".encode("utf8")
-        msg = EventIPC.create_msg(content)
-        os.write(self.ipc, msg)
+        message = EventIPC.create_msg(content)
+        self.writer.write(message)
 
     def close(self):
-        """Closes named pipe file"""
-        os.close(self.ipc)
+        """Closes named StreamWriter"""
+        self.writer.close()
 
     @staticmethod
     def encode_msg_size(size: int) -> bytes:

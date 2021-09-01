@@ -20,11 +20,11 @@
 
 # pylint: disable=missing-docstring,redefined-builtin, not-context-manager
 
-import threading
 from base64 import b64decode
 from io import BytesIO
 from unittest.mock import patch
 
+import asyncio
 import pytest
 from async_asgi_testclient import TestClient as AsyncTestClient
 from fastapi.testclient import TestClient
@@ -206,13 +206,15 @@ async def test_event_ws():
         ipc = EventIPC(True)
         ipc.emit("EMIT", "WL_TEST")
 
+    async def listen_event():
+        data = await websocket.receive_json()
+        websocket.close()
+        assert data != '{"topic": "EMIT", "label": "WL_TEST"}'
+
     async with AsyncTestClient(api_with_version, timeout=30) as ws_client:
         async with ws_client.websocket_connect("/stream") as websocket:
-            wl_in_thread = threading.Thread(target=emit_event)
-            wl_in_thread.start()
-            data = await websocket.receive_json()
-            websocket.close()
-            assert data == '{"topic": "EMIT", "label": "WL_TEST"}'
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(asyncio.gather(listen_event(), emit_event()))
 
 
 @patch("easywebdav.connect", MockWebDAV)
