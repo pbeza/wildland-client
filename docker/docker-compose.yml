@@ -29,18 +29,6 @@ services:
       - ~/.config/wildland:/home/user/.config/wildland:rw
       - ./storage:/home/user/storage:rw
 
-  wildland-client-experimental-rest:
-    <<: *wl
-    build:
-      context: ..
-      dockerfile: ./docker/Dockerfile
-      args:
-        EXPERIMENTAL_API: "true"
-    image: wildland-client
-    ports:
-      - "8080:8080"
-      - "4554:4554"
-
   wildland-forest: &wlforest
     build:
       context: ..
@@ -62,20 +50,6 @@ services:
       - ..:/home/user/wildland-client:ro
       - usercfg:/home/user/.config:rw
       - ./storage:/home/user/storage:rw
-
-  wildland-forest-experimental-rest:
-    <<: *wlforest
-    build:
-      context: ..
-      dockerfile: ./docker/Dockerfile.forest
-      args:
-        EXPERIMENTAL_API: "true"
-    image: wildland-forest
-    ports:
-      - "8080:8080"
-      - "4554:4554"
-      - "445:445"
-      - "139:139"
 
 volumes:
   usercfg:
