@@ -30,7 +30,6 @@ Client class
 import collections.abc
 import functools
 import glob
-import logging
 import os
 import sys
 import time
@@ -44,6 +43,7 @@ import yaml
 import requests
 
 from wildland.bridge import Bridge
+from wildland.control_client import ControlClientUnableToConnectError
 from wildland.wildland_object.wildland_object import WildlandObject
 from .control_client import ControlClient
 from .user import User
@@ -52,7 +52,7 @@ from .link import Link
 from .storage import Storage
 from .wlpath import WildlandPath, PathError
 from .manifest.sig import DummySigContext, SodiumSigContext, SigContext
-from .manifest.manifest import ManifestError, Manifest
+from .manifest.manifest import ManifestDecryptionKeyUnavailableError, ManifestError, Manifest
 from .session import Session
 from .storage_backends.base import StorageBackend, verify_local_access
 from .fs_client import WildlandFSClient
@@ -61,8 +61,9 @@ from .envprovider import EnvProvider
 from .exc import WildlandError
 from .search import Search
 from .storage_driver import StorageDriver
+from .log import get_logger
 
-logger = logging.getLogger('client')
+logger = get_logger('client')
 
 
 HTTP_TIMEOUT_SECONDS = 5
@@ -106,11 +107,14 @@ class Client:
         for d in self.dirs.values():
             d.mkdir(exist_ok=True, parents=True)
 
+        self.cache_dir = Path(self.config.get('cache-dir'))
+        self.cache_dir.mkdir(exist_ok=True, parents=True)
+
         mount_dir = Path(self.config.get('mount-dir'))
-        bridge_separator = '\uFF1A' if self.config.get('alt-bridge-separator') else ':'
+        self.bridge_separator = '\uFF1A' if self.config.get('alt-bridge-separator') else ':'
         fs_socket_path = Path(self.config.get('fs-socket-path'))
-        self.fs_client = WildlandFSClient(mount_dir, fs_socket_path,
-                                          bridge_separator=bridge_separator)
+        self.fs_client = WildlandFSClient(base_dir, mount_dir, fs_socket_path,
+                                          bridge_separator=self.bridge_separator)
 
         # we only connect to sync daemon if needed
         self._sync_client: Optional[ControlClient] = None
@@ -121,7 +125,7 @@ class Client:
             default_user = fuse_status.get('default-user')
             if default_user:
                 self.config.override(override_fields={'@default': default_user})
-        except (ConnectionRefusedError, FileNotFoundError):
+        except ControlClientUnableToConnectError:
             pass
 
         #: save (import) users encountered while traversing WL paths
@@ -144,12 +148,24 @@ class Client:
 
         if load:
             self.recognize_users_and_bridges()
+            self.caches: List[Storage] = []
+            self.load_caches()
+
+    def load_caches(self):
+        """
+        Load local cache storages from manifests to memory for fast access.
+        """
+        self.caches.clear()
+        for cache in self.load_all(WildlandObject.Type.STORAGE, decrypt=True,
+                                   base_dir=self.cache_dir, quiet=True):
+            cache.params['is-local-owner'] = True
+            self.caches.append(cache)
 
     def connect_sync_daemon(self):
         """
         Connect to the sync daemon. Starts the daemon if not running.
         """
-        delay = 0.1
+        delay = 0.5
         daemon_started = False
         sync_socket_path = Path(self.config.get('sync-socket-path'))
         self._sync_client = ControlClient()
@@ -157,7 +173,7 @@ class Client:
             try:
                 self._sync_client.connect(sync_socket_path)
                 return
-            except (ConnectionRefusedError, FileNotFoundError):
+            except ControlClientUnableToConnectError:
                 if not daemon_started:
                     self.start_sync_daemon()
                     daemon_started = True
@@ -171,6 +187,7 @@ class Client:
         cmd = [sys.executable, '-m', 'wildland.storage_sync.daemon']
         if self.base_dir:
             cmd.extend(['--base-dir', str(self.base_dir)])
+        logger.debug('starting sync daemon: %s', cmd)
         Popen(cmd)
 
     def run_sync_command(self, name, **kwargs) -> Any:
@@ -327,7 +344,7 @@ class Client:
         otherwise.
         """
         if 'encrypted' in dictionary.keys():
-            raise WildlandError('Cannot decrypt manifest: decryption key unavailable')
+            raise ManifestDecryptionKeyUnavailableError()
         if dictionary.get('object') == 'link':
             link = self.load_link_object(dictionary, expected_owner)
             obj = self.load_object_from_bytes(object_type, link.get_target_file())
@@ -590,7 +607,8 @@ class Client:
         container.add_storage_from_obj(storage, inline, storage_name)
         self.save_object(WildlandObject.Type.CONTAINER, container)
 
-    def load_all(self, object_type: WildlandObject.Type, decrypt: bool = True):
+    def load_all(self, object_type: WildlandObject.Type, decrypt: bool = True,
+                 base_dir: Path = None, quiet: bool = False):
         """
         Load object manifests from the appropriate directory.
         """
@@ -603,13 +621,15 @@ class Client:
         else:
             client = self
 
-        if self.dirs[object_type].exists():
-            for path in sorted(self.dirs[object_type].glob('*.yaml')):
+        base_dir = base_dir or self.dirs[object_type]
+        if base_dir.exists():
+            for path in sorted(base_dir.glob('*.yaml')):
                 try:
                     obj_ = client.load_object_from_file_path(object_type, path, decrypt=decrypt)
                 except WildlandError as e:
-                    logger.warning('error loading %s manifest: %s: %s',
-                                   object_type.value, path, e)
+                    if not quiet:
+                        logger.warning('error loading %s manifest: %s: %s',
+                                       object_type.value, path, e)
                 else:
                     yield obj_
 
@@ -663,24 +683,24 @@ class Client:
                         bridges_map
                     )
 
-    def ensure_mount_reference_container(self, containers) -> Tuple[List[Container], str, bool]:
+    def ensure_mount_reference_container(self, containers: Iterator[Container],
+                                         callback_iter_func=iter) -> \
+            Tuple[List[Container], str]:
         """
-        Ensure that for any storage with MOUNT_REFERENCE_CONTAINER corresponding
-        reference_container appears in sequence before the referencer.
+        Ensure that for any storage with ``MOUNT_REFERENCE_CONTAINER`` corresponding
+        ``reference_container`` appears in sequence before the referencer.
         """
 
         dependency_graph: Dict[Container, Set[Container]] = dict()
         exc_msg = ""
-        failed = False
         containers_to_process = []
         try:
             for c in containers:
                 containers_to_process.append(c)
         except WildlandError as ex:
-            failed = True
             exc_msg += str(ex) + '\n'
 
-        def open_node(container):
+        def open_node(container: Container):
             for storage in self.all_storages(container):
                 if 'reference-container' not in storage.params:
                     continue
@@ -702,11 +722,10 @@ class Client:
                 if referenced not in containers_to_process:
                     containers_to_process.append(referenced)
 
-        for container in containers_to_process:
+        for container in callback_iter_func(containers_to_process):
             try:
                 open_node(container)
             except WildlandError as ex:
-                failed = True
                 exc_msg += str(ex) + '\n'
 
         ts = TopologicalSorter(dependency_graph)
@@ -718,7 +737,7 @@ class Client:
                 continue
             final_order.append(i)
         final_order = dependencies_first + final_order
-        return (final_order, exc_msg, failed)
+        return final_order, exc_msg
 
     @functools.lru_cache
     def get_bridge_paths_for_user(self, user: Union[User, str], owner: Optional[User] = None) \
@@ -813,7 +832,7 @@ class Client:
         return self.save_object(object_type, object_, path=path)
 
     def new_path(self, manifest_type: WildlandObject.Type, name: str,
-                 skip_numeric_suffix: bool = False) -> Path:
+                 skip_numeric_suffix: bool = False, base_dir: Path = None) -> Path:
         """
         Create a path in Wildland base_dir to save a new object of type manifest_type and name
         name. It follows Wildland conventions.
@@ -821,9 +840,10 @@ class Client:
         :param name: name of the object
         :param skip_numeric_suffix: should the path be extended with .1 etc. numeric suffix if
         first inferred path already exists
+        :param base_dir: override base directory if present
         :return: Path
         """
-        base_dir = self.dirs[manifest_type]
+        base_dir = base_dir or self.dirs[manifest_type]
 
         if not base_dir.exists():
             base_dir.mkdir(parents=True)
@@ -836,17 +856,27 @@ class Client:
                 return path
             i += 1
 
+    def cache_storage(self, container: Container) -> Optional[Storage]:
+        """
+        Return cache storage for the given container.
+        """
+        for cache in self.caches:
+            if cache.container_path == container.uuid_path and \
+                    cache.params['original-owner'] == container.owner:
+                return cache
+        return None
+
     @staticmethod
     def all_storages(container: Container, *, predicate=None) -> Iterator[Storage]:
         """
         Return (and load on returning) all storages for a given container.
 
-        In case of proxy storage, this will also load an reference storage and
+        In case of proxy storage, this will also load a reference storage and
         inline the manifest.
         """
         for storage in container.load_storages():
             if not StorageBackend.is_type_supported(storage.storage_type):
-                logging.warning('Unsupported storage manifest: (type %s)', storage.storage_type)
+                logger.warning('Unsupported storage manifest: (type %s)', storage.storage_type)
                 continue
             if predicate and not predicate(storage):
                 continue
@@ -864,7 +894,7 @@ class Client:
         except StopIteration as ex:
             raise ManifestError('no supported storage manifest') from ex
 
-    def get_storages_to_mount(self, container: Container) -> Iterable[Storage]:
+    def get_storages_to_mount(self, container: Container) -> List[Storage]:
         """
         Return valid, mountable storages for the given container
         """
@@ -885,7 +915,14 @@ class Client:
             storages[0].promote_to_primary()
         else:
             # Make sure the primary storage is first
-            storages = sorted(storages, key=lambda s: s.is_primary)
+            storages = sorted(storages, key=lambda s: not s.is_primary)
+
+        cache = self.cache_storage(container)
+        if cache:
+            cache.promote_to_primary()
+            cache.params['is-local-owner'] = True
+            storages.insert(0, cache)
+            storages[1].primary = False
 
         return storages
 
@@ -956,7 +993,7 @@ class Client:
                     # enumeration in general case. See #419 for details.
                     continue
                 with backend:
-                    for _, subcontainer in backend.get_children():
+                    for _, subcontainer in backend.get_children(self):
                         yield self.load_subcontainer_object(container, storage, subcontainer)
             except NotImplementedError:
                 continue

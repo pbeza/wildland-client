@@ -1,4 +1,5 @@
 # Core
+
 fuse-python>=1.0.0
 jsonschema
 pyyaml
@@ -6,9 +7,10 @@ click>=8.0  # smarter `show_default`: https://github.com/pallets/click/issues/15
 entrypoints
 pynacl
 graphlib-backport; python_version < '3.9'
-progress
+progressbar2
 
 # Storage
+
 python-gitlab
 ipfshttpclient
 protobuf
@@ -23,6 +25,7 @@ python-daemon
 pyxdg
 pybear @ https://github.com/golemfoundation/pybear/archive/7af236fef1bce0466188b00f8e96b5a269e38959.zip
 dropbox
+gitpython
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
@@ -30,6 +33,7 @@ httplib2shim
 treelib
 
 # Development / testing
+
 pip-tools
 psutil
 pytest
@@ -38,7 +42,10 @@ pylint
 mypy
 python-lorem
 yq
+pyinstrument
 
 # Documentation
+
 sphinx
 sphinx-autodoc-typehints
+colorama

@@ -23,7 +23,6 @@
 Templates for manifests.
 """
 
-import logging
 import re
 import uuid
 from typing import List, Optional, Union
@@ -41,8 +40,9 @@ from ..utils import load_yaml
 from ..exc import WildlandError
 from ..storage import Storage
 from ..storage_backends.base import StorageBackend
+from ..log import get_logger
 
-logger = logging.getLogger('wl-template')
+logger = get_logger('wl-template')
 
 TEMPLATE_SUFFIX = '.template.jinja'
 
@@ -240,6 +240,14 @@ class TemplateManager:
                     logger.warning('failed to load template file %s', file)
                     continue
         return templates
+
+    def get_storage_template(self, name: str) -> StorageTemplate:
+        """
+        Get StorageTemplate; can be specified as filename without suffix, complete filename or
+        StorageTemplate's internal name.
+        If there is more than one StorageTemplate with a given name, returns first one found.
+        """
+        return self.get_template_file_by_name(name).templates[0]
 
     def get_template_file_by_name(self, template_name: str) -> TemplateFile:
         """

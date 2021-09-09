@@ -13,7 +13,7 @@ Synopsis
 | :command:`wl storage create <type> --container <container> [-u|-n] [--user <user>] [<type-specific-options>] <storage>`
 | :command:`wl storage {sign|verify|edit} [...]`
 | :command:`wl storage create-from-template --storage-template <storage_template> <container>`
-| :command:`wl storage modify {set-location} [...] <file>`
+| :command:`wl storage modify [--location <path>] [--add-access <user>] [--del-access <user>] <file>`
 
 Description
 ===========
@@ -181,8 +181,8 @@ This is a HTTP storage that relies on directory listings. Currently used for buc
 .. program:: wl-storage-create-dropbox
 .. _wl-storage-create-dropbox:
 
-:command:`wl storage create dropbox --container <container> [-u] [--user <user>] --token <access_token> [--no-publish]`
------------------------------------------------------------------------------------------------------------------------
+:command:`wl storage create dropbox --container <container> [-u] [--user <user>] --token <access_token> --app-key <app_key> [--refresh-token <refresh_token>] [--no-publish]`
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 .. include:: include/wl-storage-create.rsti
 .. include:: include/storages/dropbox.rsti
@@ -195,6 +195,15 @@ This is a HTTP storage that relies on directory listings. Currently used for buc
 
 .. include:: include/wl-storage-create.rsti
 .. include:: include/storages/categorization.rsti
+
+.. program:: wl-storage-create-transpose
+.. _wl-storage-create-transpose:
+
+:command:`wl storage create transpose --container <container> [-u] [--user <user>] --reference-container-url <url> --rules <rules> --conflict <conflict> [--no-publish] <storage>`
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+.. include:: include/wl-storage-create.rsti
+.. include:: include/storages/transpose.rsti
 
 .. program:: wl-storage-create-googledrive
 .. _wl-storage-create-googledrive:
@@ -280,6 +289,15 @@ Create encrypted storage for a given container. Please read details below to und
 .. include:: include/wl-storage-create.rsti
 .. include:: include/storages/gitlab-graphql.rsti
 
+.. program:: wl-storage-create-git
+.. _wl-storage-create-git:
+
+:command:`wl storage create git --container <container> [-u] [--user <user>] --url <url> [--username <username>] [--password <password>] [--no-publish] <storage>`
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+.. include:: include/wl-storage-create.rsti
+.. include:: include/storages/git.rsti
+
 .. _wl-storage-sign:
 .. _wl-storage-verify:
 .. _wl-storage-edit:
@@ -316,36 +334,20 @@ Create storages for a given container based on the storage template provided.
 .. program:: wl-storage-modify
 .. _wl-storage-modify:
 
-.. _wl-storage-modify-set-location:
+:command:`wl storage modify [--location <path>] [--add-access <user>] [--del-access <user>] <file>`
+---------------------------------------------------------------------------------------------------
 
-:command:`wl storage modify set-location --location PATH <file>`
-----------------------------------------------------------------
-
-Set location in a storage |~| manifest given by *<file>*.
+Modify a storage |~| manifest given by *<file>*.
 
 .. option:: --location
 
    Path to directory containing the backend.
 
-.. _wl-storage-modify-add-access:
-
-:command:`wl storage modify add-access --access USER <file>`
-------------------------------------------------------------
-
-Allow an additional user |~| access to manifest given by *<file>*.
-
-.. option:: --access
+.. option:: --add-access
 
    User to add access for. Can be repeated.
 
-.. _wl-storage-modify-del-access:
-
-:command:`wl storage modify del-acccess --access USER <file>`
--------------------------------------------------------------
-
-Revoke user's |~| access to manifest given by *<file>*.
-
-.. option:: --access
+.. option:: --del-access
 
    User to revoke access from. Can be repeated.
 

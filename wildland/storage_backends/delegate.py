@@ -31,7 +31,12 @@ from pathlib import PurePosixPath
 import click
 
 from .base import StorageBackend, File, Attr
+from ..exc import WildlandError
 from ..manifest.schema import Schema
+from ..log import get_logger
+
+logger = get_logger('delegate')
+
 
 
 class DelegateProxyStorageBackend(StorageBackend):
@@ -55,16 +60,13 @@ class DelegateProxyStorageBackend(StorageBackend):
         "required": ["reference-container"],
         "properties": {
             "reference-container": {
-                "oneOf": [
-                    {"$ref": "/schemas/types.json#url"},
-                    {"$ref": "/schemas/container.schema.json"}
-                ],
+                "$ref": "/schemas/types.json#reference-container",
                 "description": ("Container to be used, either as URL "
                                 "or as an inlined manifest"),
             },
             "subdirectory": {
                 "$ref": "/schemas/types.json#abs-path",
-                "description": ("Subdirectory of reference-container to be exposed"),
+                "description": "Subdirectory of reference-container to be exposed",
             },
         }
     })
@@ -83,10 +85,10 @@ class DelegateProxyStorageBackend(StorageBackend):
     def cli_options(cls):
         return [
             click.Option(['--reference-container-url'], metavar='URL',
-                          help='URL for reference container manifest',
+                         help='URL for reference container manifest',
                          required=True),
             click.Option(['--subdirectory'], metavar='SUBDIRECTORY',
-                          help='Subdirectory of reference-container to be exposed',
+                         help='Subdirectory of reference-container to be exposed',
                          required=False),
         ]
 
@@ -101,6 +103,13 @@ class DelegateProxyStorageBackend(StorageBackend):
 
     def mount(self):
         self.reference.request_mount()
+        # Check if referenced subdirectory actually exists
+        try:
+            if self.reference.getattr(self._path(PurePosixPath('.'))):
+                return
+        except FileNotFoundError as err:
+            raise WildlandError('delegate container refers to nonexistent location'
+                                f' {self.subdirectory} of {self.reference}') from err
 
     def unmount(self):
         self.reference.request_unmount()
