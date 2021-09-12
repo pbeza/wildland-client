@@ -1,0 +1,124 @@
+diff --git a/webdav_frontend.go b/webdav_frontend.go
+index ae5668c..f651f9e 100644
+--- a/webdav_frontend.go
++++ b/webdav_frontend.go
+@@ -32,7 +32,6 @@ func main() {
+ 	fs := wildland_fs.WildlandFS()
+ 	wg := new(sync.WaitGroup)
+ 	wg.Add(1)
+-	go fs.Start(wg)
+ 	server := &webdav.Handler {
+ 		  FileSystem: fs,
+ 			LockSystem: webdav.NewMemLS(),
+@@ -50,9 +49,13 @@ func main() {
+ 	})
+ 	
+ 	http_fn := func() {
+-		log.Fatal(http.ListenAndServe(":8080", nil))
++		log.Println("webdav server begin to listen")
++		log.Println(http.ListenAndServe(":8080", nil))
++		log.Println("webdav server terminated")
+ 		wg.Done()
+ 	}
+ 	go  http_fn()
++	go fs.Start(wg)
+ 	wg.Wait()
++	log.Println("wait group does not wait anymore")
+ }
+diff --git a/wildland_fs/wildland_bridge.go b/wildland_fs/wildland_bridge.go
+index 6262a9e..ae2c4fb 100644
+--- a/wildland_fs/wildland_bridge.go
++++ b/wildland_fs/wildland_bridge.go
+@@ -10,6 +10,7 @@ import "C"
+ import "unsafe"
+ import "errors"
+ import "log"
++import "os"
+ 
+ /*
+ This is the bridge to Python code. No Python awareness allowed
+@@ -21,6 +22,7 @@ type PyObjRef *C.struct__object
+ 
+ type wildland struct {
+ 	imports map[string]PyObjRef
++	save *C.PyThreadState
+ }
+ 
+ 
+@@ -81,6 +83,8 @@ func initWildland() (*wildland, error) {
+ }
+ 
+ func (wl *wildland)setupEnvironment() error {
++	/* Could insert venv site packages into PYTHONPATH maybe (needed for
++           MacOS) */
+ 	
+ 	return nil
+ }
+@@ -89,27 +93,40 @@ func (wl *wildland)setupEnvironment() error {
+ 
+ func (wl *wildland)start() error {
+ 	C.Py_Initialize()
+-	defer C.Py_Finalize()
++//	defer C.Py_Finalize()
+ 
+-	socketPath := C.CString("/tmp/wlsocket.do_not_touch")
++	goSocketPath := os.Getenv("XDG_RUNTIME_DIR") + "wlfuse.sock"
++	log.Println("using control_server socket path: ", goSocketPath)
++	socketPath := C.CString(goSocketPath)
+ 	pySocketPath := C.PyUnicode_FromString(socketPath)
+ 	defer C.free(unsafe.Pointer(socketPath))
+ 	defer C.decref(pySocketPath)
+ 
+-	mod,err := wl.importModule("wildland.mac.fs")
++	log.Println("going to dump module search path now")
++	envdumpcmd := C.CString("import sys; print(sys.path);")
++	C.PyRun_SimpleString(envdumpcmd)
++	C.free(unsafe.Pointer(envdumpcmd))
++	log.Println("just dumped module search path")
++
++	mod,err := wl.importModule("wildland.go.fs")
+ 	if err != nil {
+ 		C.PyErr_Print()
+ 		return err
+ 	}
+ 
+-	pyfs := newPyObject(mod, "WildlandMacFS", pySocketPath)
++	pyfs := newPyObject(mod, "WildlandGoFS", pySocketPath)
+ 	if pyfs == nil {
+ 		C.PyErr_Print()
+ 		return errors.New("failed to instantiate python fs")
+ 	} else {
+-		defer C.decref(pyfs)
++		//defer C.decref(pyfs) - leaving immeadiately we need to keep this object alive
++		log.Println("invoking fs.start()")
+ 		callPyMethod(pyfs, "start")
++		log.Println("fs.start() invoked")
+ 	}
+-
++	wait_chan := make(chan struct{})
++	log.Println("I'm leaving the scope of bridge now!!!")
++	C.PyEval_SaveThread()
++	<- wait_chan
+ 	return nil
+ }
+diff --git a/wildland_fs/wildland_fs.go b/wildland_fs/wildland_fs.go
+index a9a79d8..81111e3 100644
+--- a/wildland_fs/wildland_fs.go
++++ b/wildland_fs/wildland_fs.go
+@@ -32,9 +32,14 @@ func (fs *wildland_fs)init() {
+ }
+ 
+ func (fs *wildland_fs)Start(wg *sync.WaitGroup) {
++	defer func() {
++		err := recover()
++		log.Println(err)
++	}()
+ 	log.Println("starting wildland")
+-	log.Fatal(fs.wl.start())
+-	wg.Done()
++	log.Println(fs.wl.start())
++	log.Println("wl start() exit")
++//	wg.Done()
+ }
+ 
+ 
