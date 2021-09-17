@@ -25,7 +25,6 @@
 """
 Manage containers
 """
-import time
 from itertools import combinations
 from pathlib import PurePosixPath, Path
 from typing import Any, Callable, Iterable, List, Optional, Sequence, Tuple, Union
@@ -60,7 +59,8 @@ from ..publish import Publisher
 from ..remounter import Remounter
 from ..storage import Storage, StorageBackend
 from ..log import init_logging, get_logger
-from ..storage_sync.base import BaseSyncer, SyncConflict, SyncerStatus
+from ..storage_sync.base import BaseSyncer, SyncConflict, SyncState, SyncStateEvent, \
+    SyncErrorEvent, SyncEvent, SyncConflictEvent
 from ..tests.profiling.profilers import profile
 
 try:
@@ -610,8 +610,8 @@ def _cache_sync(client: Client, container: Container, storages: List[Storage], v
             click.echo(f'Using cache at: {primary.params["location"]}')
         src = storages[1]  # [1] is the non-cache (old primary)
         cname = wl_path_for_container(client, container, user_paths)
-        status = client.run_sync_command('job-status', job_id=sync_id(container))
-        if not status:  # sync not running for this container
+        state = client.run_sync_command('state', job_id=sync_id(container))
+        if not state:  # sync not running for this container
             # start bidirectional sync (this also performs an initial one-shot sync)
             # this happens in the background, user can see sync status/progress using `wl sync`
             _do_sync(client, cname, sync_id(container), src.params, primary.params,
@@ -1006,7 +1006,7 @@ def _unmount(obj: ContextObj, container_names: Sequence[str], path: str,
 
         for storage_id in all_cache_ids:
             container = obj.fs_client.get_container_from_storage_id(storage_id)
-            obj.client.run_sync_command('stop', job_id=sync_id(container))
+            stop_sync(obj.client, sync_id(container))
             obj.fs_client.unmount_storage(storage_id)
 
     elif not undo_save:
@@ -1250,8 +1250,8 @@ def sync_container(obj: ContextObj, target_storage, source_storage, one_shot, no
             # pylint: disable=raise-missing-from
             raise WildlandError('No remote storage backend found: specify --target-storage.')
 
-    response = _do_sync(client, cont, sync_id(container), source.params, target.params,
-                        one_shot, unidir=False)
+    job_id = sync_id(container)
+    response = _do_sync(client, cont, job_id, source.params, target.params, one_shot, unidir=False)
 
     click.echo(response)
 
@@ -1260,16 +1260,44 @@ def sync_container(obj: ContextObj, target_storage, source_storage, one_shot, no
             click.echo('One-shot sync started, run `wl status` for current status and '
                        '`wl container stop-sync` to stop/clear its status.')
         else:
-            while True:
-                time.sleep(1)
-                status, response = client.run_sync_command('job-status', job_id=sync_id(container))
-                if status == SyncerStatus.STOPPED.value:
-                    click.echo('One-shot sync finished.')
-                    client.run_sync_command('stop', job_id=sync_id(container))
+            wait_for_sync(client, job_id)
+
+
+def wait_for_sync(client: Client, job_id: str, stop_on_finish: bool = True) -> Optional[SyncEvent]:
+    """
+    Wait for a sync job to complete (state: SYNCED).
+    Returns final sync event (state or error).
+    """
+    event: Optional[SyncEvent] = None
+    while True:
+        for event in client.get_sync_event():
+            assert event.job_id == job_id, 'Invalid response from sync daemon'
+
+            if isinstance(event, SyncStateEvent):
+                if event.state == SyncState.SYNCED:
+                    click.echo('Sync successful.')
                     break
-                if status == SyncerStatus.ERROR.value:
-                    click.echo(response)
-                    break
+                click.echo(f'Sync state changed to {event.state}')
+            elif isinstance(event, SyncConflictEvent):
+                click.echo(f'Sync conflict: {event.conflict}')
+            elif isinstance(event, SyncErrorEvent):
+                click.echo(f'Sync error: {event.message}')
+                break
+        else:
+            continue
+        break
+
+    if stop_on_finish:
+        stop_sync(client, job_id)
+
+    return event
+
+
+def stop_sync(client: Client, job_id: str) -> str:
+    """
+    Stop a sync job by job ID.
+    """
+    return client.run_sync_command('stop', job_id=job_id)
 
 
 @container_.command('stop-sync', short_help='stop syncing a container')
@@ -1280,7 +1308,7 @@ def stop_syncing_container(obj: ContextObj, cont):
     Stop sync process for the given container.
     """
     container = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, cont)
-    response = obj.client.run_sync_command('stop', job_id=sync_id(container))
+    response = stop_sync(obj.client, sync_id(container))
     click.echo(response)
 
 

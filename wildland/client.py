@@ -46,6 +46,7 @@ from wildland.bridge import Bridge
 from wildland.control_client import ControlClientUnableToConnectError
 from wildland.wildland_object.wildland_object import WildlandObject
 from .control_client import ControlClient
+from .storage_sync.base import SyncEvent
 from .user import User
 from .container import Container, ContainerStub
 from .link import Link
@@ -197,6 +198,14 @@ class Client:
             self.connect_sync_daemon()
         assert self._sync_client is not None
         return self._sync_client.run_command(name, **kwargs)
+
+    def get_sync_event(self) -> Iterator[SyncEvent]:
+        """
+        Wait for sync event and return it.
+        """
+        assert self._sync_client
+        for ev in self._sync_client.iter_events():
+            yield SyncEvent.fromJSON(str(ev))
 
     def sub_client_with_key(self, pubkey: str) -> Tuple['Client', str]:
         """
