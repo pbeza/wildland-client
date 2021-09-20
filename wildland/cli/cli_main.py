@@ -26,6 +26,7 @@ Wildland command-line interface.
 """
 
 import os
+import logging
 from pathlib import Path, PurePosixPath
 from typing import Dict, Iterable, List, Optional, Sequence, Union
 
@@ -57,6 +58,9 @@ from ..client import Client
 from .. import __version__ as _version
 
 
+logger = logging.getLogger('cli')
+
+
 PROJECT_PATH = Path(__file__).resolve().parents[1]
 FUSE_ENTRY_POINT = PROJECT_PATH / 'wildland-fuse'
 
@@ -74,13 +78,17 @@ FUSE_ENTRY_POINT = PROJECT_PATH / 'wildland-fuse'
 @click.pass_context
 def main(ctx: click.Context, base_dir, dummy, debug, verbose):
     # pylint: disable=missing-docstring, unused-argument
-    if base_dir:
-        os.environ['WL_BASE_DIR'] = base_dir # needs better way
-    client = Client(dummy=dummy, base_dir=base_dir)
-    is_ipc_enabled = os.environ.get('EXPERIMENTAL_API', False)
-    ctx.obj = ContextObj(client, ipc=bool(is_ipc_enabled))
     if verbose > 0:
         init_logging(level='DEBUG' if verbose > 1 else 'INFO')
+    else:
+        init_logging(level='WARNING')
+
+    if base_dir:
+        os.environ['WL_BASE_DIR'] = base_dir # needs better way
+
+    is_ipc_enabled = os.environ.get('EXPERIMENTAL_API', False)
+    client = Client(dummy=dummy, base_dir=base_dir)
+    ctx.obj = ContextObj(client, ipc=bool(is_ipc_enabled))
 
 
 main.add_command(cli_user.user_)
@@ -144,7 +152,7 @@ def _do_mount_containers(obj: ContextObj, to_mount):
         failed.append(f'Failed to mount: {e}')
 
     if failed:
-        click.echo('Non-critical error(s) occurred:\n' + "\n".join(failed))
+        logger.warning('Non-critical error(s) occurred: %s', "\n".join(failed))
 
 
 @main.command(short_help='mount Wildland filesystem')
@@ -342,23 +350,25 @@ def _print_container_title(title: Optional[str]) -> None:
 
 
 @main.command(short_help='unmount Wildland filesystem')
+@click.option('--keep-sync-daemon', is_flag=True, help='keep sync daemon running')
 @click.pass_obj
-def stop(obj: ContextObj) -> None:
+def stop(obj: ContextObj, keep_sync_daemon: bool) -> None:
     """
     Unmount the Wildland filesystem.
     """
 
-    click.echo(f'Stoping Wildland at: {obj.mount_dir}')
+    click.echo(f'Stopping Wildland at: {obj.mount_dir}')
     try:
         obj.fs_client.stop()
         obj.ipc.emit(topic="UNMOUNT", label="WILDLAND")
     except WildlandError as ex:
         raise CliError(str(ex)) from ex
 
-    try:
-        obj.client.run_sync_command('shutdown')
-    except ControlClientError:
-        pass  # we don't expect a response
+    if not keep_sync_daemon:
+        try:
+            obj.client.run_sync_command('shutdown')
+        except ControlClientError:
+            pass  # we don't expect a response
 
 
 @main.command(short_help='watch for changes')

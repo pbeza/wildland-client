@@ -1,4 +1,5 @@
 # Core
+
 fuse-python>=1.0.0
 jsonschema
 pyyaml
@@ -6,9 +7,10 @@ click>=8.0  # smarter `show_default`: https://github.com/pallets/click/issues/15
 entrypoints
 pynacl
 graphlib-backport; python_version < '3.9'
-progress
+progressbar2
 
 # Storage
+
 python-gitlab
 ipfshttpclient
 protobuf
@@ -31,17 +33,18 @@ httplib2shim
 treelib
 
 # Development / testing
-async_asgi_testclient
 pip-tools
 psutil
-pytest>=6.2.4
-pytest-asyncio>=0.15.1
-pytest-cov>=2.12.1
-pylint==2.8.3
+pytest
+pytest-cov
+pylint
 mypy
 python-lorem
 yq
+pyinstrument
 
 # Documentation
+
 sphinx
 sphinx-autodoc-typehints
+colorama

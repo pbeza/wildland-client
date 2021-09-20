@@ -26,7 +26,6 @@ Socket server for controlling Wildland FS.
 """
 import os
 from pathlib import Path
-import logging
 import threading
 from socketserver import ThreadingMixIn, UnixStreamServer, BaseRequestHandler
 from contextlib import closing
@@ -35,8 +34,9 @@ from typing import Callable, Dict, Optional
 import socket
 
 from .exc import WildlandError
+from .log import get_logger
 
-logger = logging.getLogger('control-server')
+logger = get_logger('control-server')
 
 
 class ControlRequestError(WildlandError):
@@ -339,7 +339,8 @@ class ControlServer:
                 except OSError:
                     # already shut down
                     pass
-            thread.join()
+            if threading.current_thread() != thread:
+                thread.join()
 
         self.socket_path.unlink(missing_ok=True)
 
