@@ -1765,6 +1765,35 @@ def test_container_dont_republish_if_not_modified(cli, tmp_path):
     assert out_lines[1] == 'Manifest has not changed.'
 
 
+def test_published_container_dump(cli, tmp_path, base_dir):
+    cli('user', 'create', 'Alice', '--key', '0xaaa')
+    cli('template', 'create', 'local', '--location', f'/{tmp_path}/wl-forest',
+        '--manifest-pattern', '/{path}.yaml', 'forest-tpl')
+    cli('forest', 'create', 'Alice', 'forest-tpl')
+
+    # Auto publish
+    cli('container', 'create', 'AliceContainer', '--path', '/MY/ALICE')
+
+    dump_container = wl_call_output(base_dir, 'container', 'dump', '0xaaa:/MY/ALICE:').decode()
+    assert '/MY/ALICE' in dump_container
+
+    # Remove locally and test again
+    cli('container', 'rm', '--no-unpublish', 'AliceContainer')
+
+    dump_container = wl_call_output(base_dir, 'container', 'dump', '0xaaa:/MY/ALICE:').decode()
+    assert '/MY/ALICE' in dump_container
+
+    # Remove remotely and test again
+
+    cli('container', 'unpublish', '0xaaa:/MY/ALICE:')
+
+    with pytest.raises(subprocess.CalledProcessError) as exception_info:
+        wl_call_output(base_dir, 'container', 'dump', '0xaaa:/MY/ALICE:').decode()
+
+    assert 'Error: Container not found for path:' \
+        in exception_info.value.stdout.decode()
+
+
 def test_container_delete(cli, base_dir):
     cli('user', 'create', 'User', '--key', '0xaaa')
     cli('container', 'create', 'Container', '--path', '/PATH')
@@ -1869,6 +1898,37 @@ def test_container_delete_umount(cli, base_dir, control_client):
     assert not container_path.exists()
 
 
+def test_container_delete_multiple(cli, base_dir):
+    cli('user', 'create', 'User', '--key', '0xaaa')
+    cli('container', 'create', 'Container1', '--path', '/PATH1')
+    cli('container', 'create', 'Container2', '--path', '/PATH2')
+
+    cli('storage', 'create', 'local', 'Storage1', '--location', '/PATH1',
+        '--container', 'Container1', '--no-inline')
+    cli('storage', 'create', 'local', 'Storage2', '--location', '/PATH2',
+        '--container', 'Container2', '--no-inline')
+
+    container1_path = base_dir / 'containers/Container1.container.yaml'
+    assert container1_path.exists()
+    container2_path = base_dir / 'containers/Container2.container.yaml'
+    assert container2_path.exists()
+    storage_path1 = base_dir / 'storage/Storage1.storage.yaml'
+    assert storage_path1.exists()
+    storage_path2 = base_dir / 'storage/Storage2.storage.yaml'
+    assert storage_path2.exists()
+
+    with pytest.raises(CliError, match='Container refers to local manifests'):
+        cli('container', 'delete', 'Container1', 'Container2')
+
+    # Should not complain if the storage manifest does not exist
+    storage_path1.unlink()
+    storage_path2.unlink()
+    cli('container', 'delete', 'Container1')
+    assert not container1_path.exists()
+    cli('container', 'delete', 'Container2')
+    assert not container2_path.exists()
+
+
 def test_container_list(cli, base_dir):
     cli('user', 'create', 'User', '--key', '0xaaa')
     cli('container', 'create', 'Container', '--path', '/PATH')
@@ -1910,20 +1970,53 @@ def test_container_info_cache(cli, base_dir):
 
 def test_container_cli_cache(cli, base_dir):
     cli('user', 'create', 'User', '--key', '0xaaa')
-    name, uuid, _, cache_dir = _cache_setup(cli, base_dir, ['Container'], 'User')[0]
+    params = _cache_setup(cli, base_dir, ['cli_cache1', 'cli_cache2'], 'User')
+    name1, uuid1, _, cache_dir1 = params[0]
+    name2, uuid2, _, cache_dir2 = params[1]
 
-    cli('container', 'create-cache', '--template', 't1', name)
+    cli('container', 'create-cache', '--template', 't1', name1)
 
-    cache_path = base_dir / 'cache' / f'0xaaa.{uuid}.storage.yaml'
-    assert cache_path.exists()
-    with open(cache_path) as cache:
+    cache_path1 = base_dir / 'cache' / f'0xaaa.{uuid1}.storage.yaml'
+    cache_path2 = base_dir / 'cache' / f'0xaaa.{uuid2}.storage.yaml'
+
+    assert cache_path1.exists()
+    with open(cache_path1) as cache:
         lines = cache.read()
-        assert f'container-path: /.uuid/{uuid}' in lines
-    assert cache_dir.exists()
+        assert f'container-path: /.uuid/{uuid1}' in lines
+    assert cache_dir1.exists()
 
-    cli('container', 'delete-cache', name)
-    assert not cache_path.exists()
-    assert cache_dir.exists()  # we don't want actual cache contents deleted
+    cli('container', 'delete-cache', name1)
+    assert not cache_path1.exists()
+    assert cache_dir1.exists()  # we don't want actual cache contents deleted
+    shutil.rmtree(cache_dir1)
+
+    # multiple containers
+    cli('container', 'create-cache', '--template', 't1', name1, name2)
+    assert cache_path1.exists()
+    assert cache_path2.exists()
+    assert cache_dir1.exists()
+    assert cache_dir2.exists()
+
+    cli('container', 'delete-cache', ':*:')
+    assert not cache_path1.exists()
+    assert not cache_path2.exists()
+    assert cache_dir1.exists()
+    assert cache_dir2.exists()
+    shutil.rmtree(cache_dir1)
+    shutil.rmtree(cache_dir2)
+
+    # wildcard
+    cli('container', 'create-cache', '--template', 't1', name1, name2)
+    assert cache_path1.exists()
+    assert cache_path2.exists()
+    assert cache_dir1.exists()
+    assert cache_dir2.exists()
+
+    cli('container', 'delete-cache', ':*:')
+    assert not cache_path1.exists()
+    assert not cache_path2.exists()
+    assert cache_dir1.exists()
+    assert cache_dir2.exists()
 
 
 def test_container_mount(cli, base_dir, control_client):
@@ -2044,9 +2137,12 @@ def _cache_setup(cli, base_dir, container_names, user_name, subcont_path: str = 
     return data
 
 
-def _cache_test(cli, cli_fail, base_dir, container_data, user_key):
+def _cache_test(cli, cli_fail, base_dir, container_data, user_key, mount_cmd=None):
     container_names = [x[0] for x in container_data]
-    args = ['container', 'mount', '--with-subcontainers', '--with-cache'] + container_names
+    if mount_cmd is None:
+        args = ['container', 'mount', '--with-subcontainers', '--with-cache'] + container_names
+    else:
+        args = mount_cmd
     cli(*args)
     user_mount_path = base_dir / 'wildland' / '.users' / f'{user_key}:'
 
@@ -2129,6 +2225,16 @@ def test_container_mount_with_cache_multiple(base_dir, sync, cli, cli_fail):
     data = _cache_setup(cli, base_dir, container_names, 'User')
     cli('start', '--skip-forest-mount')
     _cache_test(cli, cli_fail, base_dir, data, '0xaaa')
+
+
+# pylint: disable=unused-argument
+def test_container_mount_with_cache_forest(base_dir, sync, cli, cli_fail):
+    cli('user', 'create', 'User', '--key', '0xaaa')
+    container_names = ['c1', 'c2']
+    data = _cache_setup(cli, base_dir, container_names, 'User')
+    cli('start', '--skip-forest-mount')
+    _cache_test(cli, cli_fail, base_dir, data, '0xaaa',
+        ['forest', 'mount', '--with-cache', '0xaaa:'])
 
 
 # pylint: disable=unused-argument
@@ -3718,11 +3824,11 @@ def test_bridge_create(cli, base_dir):
 # Test the CLI tools directly (cannot easily use above-mentioned methods because of demonization)
 
 def wl_call(base_config_dir, *args, **kwargs):
-    subprocess.check_call(['./wl', '--base-dir', base_config_dir, *args], **kwargs)
+    subprocess.check_call(['wl', '--base-dir', base_config_dir, *args], **kwargs)
 
 
 def wl_call_output(base_config_dir, *args, **kwargs):
-    return subprocess.check_output(['./wl', '--base-dir', base_config_dir, *args], **kwargs)
+    return subprocess.check_output(['wl', '--base-dir', base_config_dir, *args], **kwargs)
 
 
 # container-sync
@@ -4209,16 +4315,6 @@ def test_delegated_template(cli, base_dir):
                     'type': 'delegate',
                     'backend-id': mock.ANY,
                     'object': 'storage',
-                    'storage': {
-                        'location': '/STORAGE',
-                        'backend-id': mock.ANY,
-                        'type': 'local',
-                        'owner': '0xaaa',
-                        'version': '1',
-                        'object': 'storage',
-                        'container-path': mock.ANY,
-                        'is-local-owner': True
-                    }
                 }
             ]
         },
@@ -4252,6 +4348,7 @@ def test_proxy_storage_template(cli, base_dir):
     assert template_jinja[0] == {
         'read-only': False,
         'reference-container': f'file://{base_dir}/containers/Container.container.yaml',
+        'timeline-root': '/timeline',
         'type': 'date-proxy'
     }
 
@@ -4275,19 +4372,10 @@ def test_proxy_storage_template(cli, base_dir):
                 {
                     'read-only': False,
                     'reference-container': f'file://{base_dir}/containers/Container.container.yaml',
+                    'timeline-root': '/timeline',
                     'type': 'date-proxy',
                     'backend-id': mock.ANY,
                     'object': 'storage',
-                    'storage': {
-                        'location': '/STORAGE',
-                        'backend-id': mock.ANY,
-                        'type': 'local',
-                        'owner': '0xaaa',
-                        'version': '1',
-                        'object': 'storage',
-                        'container-path': mock.ANY,
-                        'is-local-owner': True
-                    }
                 }
             ]
         },
@@ -5500,8 +5588,11 @@ def test_wl_help(cli):
 
 
 def test_wl_version(cli):
-    result = cli('--version', capture=True)
-    assert 'version' in result
+    result_1 = cli('--version', capture=True)
+    result_2 = cli('version', capture=True)
+    assert result_1 == result_2
+    version_numbers = result_1.split(" ")[0].split(".")
+    assert len(version_numbers) == 3
 
 
 def test_set_default_cache(cli, base_dir):

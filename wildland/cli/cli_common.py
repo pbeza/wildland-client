@@ -49,6 +49,7 @@ from ..manifest.manifest import (
 )
 from ..manifest.schema import SchemaError
 from ..exc import WildlandError
+from ..user import User
 
 
 def find_manifest_file(client: Client, name: str, manifest_type: Optional[str]) -> Path:
@@ -82,10 +83,9 @@ def validate_manifest(manifest: Manifest, manifest_type, client: Client):
             backend.validate()
 
 
-@click.command(short_help='Wildland version')
-def version():
+def wl_version():
     """
-    Returns Wildland version
+    Detect wildland version, including git commit ID if appropriate.
     """
     # Fallback version
     wildland_version = __version__
@@ -107,7 +107,15 @@ def version():
         pass
     if commit_hash:
         wildland_version = f"{wildland_version} (commit {commit_hash})"
-    print(wildland_version)
+    return wildland_version
+
+
+@click.command(short_help='Wildland version')
+def version():
+    """
+    Returns Wildland version
+    """
+    print(wl_version())
 
 
 @click.command(short_help='manifest signing tool')
@@ -124,10 +132,7 @@ def sign(ctx: click.Context, input_file, output_file, in_place):
     the manifest against schema.
     """
     obj: ContextObj = ctx.obj
-
-    manifest_type = ctx.parent.command.name if ctx.parent else None
-    if manifest_type == 'main':
-        manifest_type = None
+    manifest_type = _get_expected_manifest_type(ctx)
 
     if in_place:
         if not input_file:
@@ -135,6 +140,7 @@ def sign(ctx: click.Context, input_file, output_file, in_place):
         if output_file:
             raise click.ClickException('Cannot use both -i and -o')
 
+    path = None
     if input_file:
         path = find_manifest_file(obj.client, input_file, manifest_type)
         data = path.read_bytes()
@@ -143,29 +149,60 @@ def sign(ctx: click.Context, input_file, output_file, in_place):
 
     manifest = Manifest.from_unsigned_bytes(data, obj.client.session.sig)
     manifest.skip_verification()
-    if manifest_type:
+
+    path_to_save = path if in_place else output_file
+    _sign_and_save(obj, manifest, manifest_type, path_to_save)
+
+
+def _get_expected_manifest_type(ctx: click.Context) -> Optional[str]:
+    """Return expected manifest type based on wl subcommand.
+
+    > wl container dump ... -> 'container'
+    > wl user modify ... -> 'user'
+    > wl edit ... -> None
+    """
+    manifest_type = ctx.parent.command.name if ctx.parent else None
+    if manifest_type == 'wl':
+        manifest_type = None
+    return manifest_type
+
+
+def _sign_and_save(
+        obj: ContextObj, manifest: Manifest, manifest_type: Optional[str], path: Optional[Path]):
+    """
+    Sign and try to save given manifest.
+
+    Validate manifest before signing if manifest_type is given.
+    If path is not given, signed manifest is printed to stdout.
+    """
+    if manifest_type is not None:
         try:
             validate_manifest(manifest, manifest_type, obj.client)
-        except SchemaError as se:
-            raise CliError(f'Invalid manifest: {se}') from se
+        except (SchemaError, ManifestError, WildlandError) as ex:
+            raise CliError(f'Invalid manifest: {ex}') from ex
 
-    if manifest_type == 'user' or manifest.fields.get('object') == 'user':
+    if manifest_type == 'user':
         # for user manifests, allow loading keys for signing even if the manifest was
         # previously malformed and couldn't be loaded
         obj.client.session.sig.use_local_keys = True
 
-    manifest.encrypt_and_sign(obj.client.session.sig,
-                              only_use_primary_key=(manifest_type == 'user'))
+        # update signing context keys
+        updated_user = User.from_manifest(manifest, obj.client)
+        obj.client.session.sig.remove_owner(updated_user.owner)
+        updated_user.add_user_keys(obj.client.session.sig)
+
+    try:
+        manifest.encrypt_and_sign(obj.client.session.sig,
+                                  only_use_primary_key=(manifest_type == 'user'))
+    except SigError as se:
+        raise CliError(f'Cannot sign manifest: {se}') from se
+
     signed_data = manifest.to_bytes()
 
-    if in_place:
-        print(f'Saving: {path}')
+    if path:
         with open(path, 'wb') as f:
             f.write(signed_data)
-    elif output_file:
-        print(f'Saving: {output_file}')
-        with open(output_file, 'wb') as f:
-            f.write(signed_data)
+        click.echo(f'Saved: {path}')
     else:
         sys.stdout.buffer.write(signed_data.decode())
 
@@ -181,10 +218,7 @@ def verify(ctx: click.Context, input_file):
     also validate the manifest against schema.
     """
     obj: ContextObj = ctx.obj
-
-    manifest_type = ctx.parent.command.name if ctx.parent else None
-    if manifest_type == 'main':
-        manifest_type = None
+    manifest_type = _get_expected_manifest_type(ctx)
 
     if input_file:
         path = find_manifest_file(obj.client, input_file, manifest_type)
@@ -218,9 +252,7 @@ def dump(ctx: click.Context, input_file, decrypt, **_callback_kwargs):
         raise CliError('This command supports only an absolute path to a file. Consider using '
                        'dump command for a specific object, e.g. wl container dump')
 
-    manifest_type = ctx.parent.command.name if ctx.parent else None
-    if manifest_type == 'main':
-        manifest_type = None
+    manifest_type = _get_expected_manifest_type(ctx)
 
     path = find_manifest_file(obj.client, input_file, manifest_type)
 
@@ -286,8 +318,7 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
     data = b'# All YAML comments will be discarded when the manifest is saved\n' + data
     original_data = data
 
-    new_manifest = None
-    while not new_manifest:
+    while True:
         edited_s = click.edit(data.decode(), editor=editor, extension='.yaml',
                               require_save=False)
         assert edited_s
@@ -307,32 +338,16 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
             click.echo('Changes not saved.')
             return False
 
-        if manifest_type is not None:
-            try:
-                validate_manifest(manifest, manifest_type, obj.client)
-            except (SchemaError, ManifestError, WildlandError) as e:
-                click.secho(f'Manifest validation error: {e}', fg="red")
-                if click.confirm('Do you want to edit the manifest again to fix the error?'):
-                    continue
-                click.echo('Changes not saved.')
-                return False
-        if manifest_type == 'user':
-            # for user manifests, allow loading keys for signing even if the manifest was
-            # previously malformed and couldn't be loaded
-            obj.client.session.sig.use_local_keys = True
-
         try:
-            manifest.encrypt_and_sign(obj.client.session.sig,
-                                      only_use_primary_key=(manifest_type == 'user'))
-        except SigError as se:
-            raise CliError(f'Cannot save manifest: {se}') from se
-
-        new_manifest = manifest
-
-    signed_data = new_manifest.to_bytes()
-    with open(path, 'wb') as f:
-        f.write(signed_data)
-    click.echo(f'Saved: {path}')
+            _sign_and_save(obj, manifest, manifest_type, path)
+        except CliError as e:
+            click.secho(f'Manifest signing error: {e}', fg="red")
+            if click.confirm('Do you want to edit the manifest again to fix the error?'):
+                continue
+            click.echo('Changes not saved.')
+            return False
+        else:
+            break
 
     if remount and manifest_type == 'container' and obj.fs_client.is_running():
         path = find_manifest_file(obj.client, input_file, manifest_type)
@@ -374,11 +389,7 @@ def modify_manifest(pass_ctx: click.Context, input_file: str, edit_funcs: List[C
     determine if it should be republished).
     """
     obj: ContextObj = pass_ctx.obj
-
-    manifest_type = pass_ctx.parent.command.name if pass_ctx.parent else None
-    if manifest_type == 'main':
-        manifest_type = None
-
+    manifest_type = _get_expected_manifest_type(pass_ctx)
     manifest_path = find_manifest_file(obj.client, input_file, manifest_type)
 
     sig_ctx = obj.client.session.sig
@@ -402,19 +413,7 @@ def modify_manifest(pass_ctx: click.Context, input_file: str, edit_funcs: List[C
         click.echo('Manifest has not changed.')
         return False
 
-    if manifest_type is not None:
-        try:
-            validate_manifest(modified_manifest, manifest_type, obj.client)
-        except SchemaError as se:
-            raise CliError(f'Invalid manifest: {se}') from se
-
-    modified_manifest.encrypt_and_sign(sig_ctx, only_use_primary_key=(manifest_type == 'user'))
-
-    signed_data = modified_manifest.to_bytes()
-    with open(manifest_path, 'wb') as f:
-        f.write(signed_data)
-
-    click.echo(f'Saved: {manifest_path}')
+    _sign_and_save(obj, modified_manifest, manifest_type, manifest_path)
 
     if remount and manifest_type == 'container' and obj.fs_client.is_running():
         path = find_manifest_file(obj.client, input_file, 'container')

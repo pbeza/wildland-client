@@ -22,15 +22,13 @@ Currently the primary method of running wildland-client, is to use bundled docke
 
 .. code-block:: sh
 
-   cd docker
-   docker-compose build
-   docker-compose run --service-ports wildland-client
+   ./wildland-docker.sh
 
-Alternatively, run directly:
+Alternatively, run the docker-compose directly:
 
 .. code-block:: sh
 
-   ./wildland-docker.sh
+   docker-compose run --service-ports wildland-client
 
 To run with experimantal Rest API, call `wildland-client-experimental-rest` instead of `wildland-client`:
 
@@ -63,12 +61,12 @@ Repository structure
 * ``docker/``: Docker setup for local testing
 * ``wl``, ``wildland-cli``: command-line interface entry point
 * ``wildland-fuse``: FUSE driver entry point
+* ``plugins/``: storage backends source code, at some point to be removed from Wildland's core
 * ``wildland/``: Python source code
 
   * ``wildland/schemas/``: Manifest schemas in `JSON Schema <https://json-schema.org/>`_
     format
   * ``wildland/tests/``: Tests (in Pytest framework)
-* ``plugins/``: storage backends (as separate Python packages)
 
 License
 -------

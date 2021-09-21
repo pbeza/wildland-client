@@ -10,14 +10,8 @@ while [ $# -gt 0 ] ; do
 done
 
 localdir="$(readlink -f "$(dirname "$0")")"
-cd "$localdir/docker"
+cd "$localdir"
 
-# build docker services
-docker-compose build
-
-if [ "$p_out" ]; then
-    # run wildland-client service
-    docker-compose run --service-ports wildland-client-experimantal-rest "$@"
-else
-    docker-compose run --service-ports wildland-client "$@"
-fi
+# run wildland-client service
+docker-compose pull wildland-client
+docker-compose run --service-ports wildland-client "$@"
