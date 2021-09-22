@@ -21,48 +21,46 @@ Wildland Interprocess Communication Channel based on NamedPipe
 """
 import json
 from pathlib import PurePosixPath
+import socket
 import struct
-
-import asyncio
 
 
 IPC_NAME = PurePosixPath("/tmp/wildland_event_ipc")
 
 
 class EventIPC:
-    """Creates Unidirectional IPC for Event-Data Streaming"""
+    """Establishes Unidirectional IPC connection for Event-Data Streaming"""
 
     def __init__(self, is_enabled):
         self.is_enabled = is_enabled
         if not is_enabled:
             return
-        self.reader, self.writer = self.handle_unix_connection()
+        self.client = self.handle_unix_connection()
 
-    @staticmethod
-    def handle_unix_connection():
-        """Sets up unix server for an ipc connection"""
-        loop = asyncio.get_event_loop()
+    def handle_unix_connection(self):
+        """Connects to the unix server for an ipc connection"""
         try:
-            conn_fut = asyncio.open_unix_connection(IPC_NAME, loop=loop)
-            return loop.run_until_complete(conn_fut)
+            client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            client.connect(str(IPC_NAME))
+            return client
         except FileNotFoundError:
-            return None, None
+            return None
 
     def emit(self, topic, label):
         """Emits given topic and label as bytes"""
         if not self.is_enabled:
             return
-        if not self.writer:
+        if not self.client:
             return
 
         data = json.dumps(dict(topic=topic, label=label))
         content = f"{data}".encode("utf8")
         message = EventIPC.create_msg(content)
-        self.writer.write(message)
+        self.client.send(message)
 
     def close(self):
-        """Closes named StreamWriter"""
-        self.writer.close()
+        """Closes unix socket connection"""
+        self.client.close()
 
     @staticmethod
     def encode_msg_size(size: int) -> bytes:
@@ -76,6 +74,6 @@ class EventIPC:
 
     @staticmethod
     def create_msg(content: bytes) -> bytes:
-        """Creates PIPE message body"""
+        """Creates message body"""
         size = len(content)
         return EventIPC.encode_msg_size(size) + content
