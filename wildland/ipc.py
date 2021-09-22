@@ -35,16 +35,11 @@ class EventIPC:
         self.is_enabled = is_enabled
         if not is_enabled:
             return
-        self.client = self.handle_unix_connection()
-
-    def handle_unix_connection(self):
-        """Connects to the unix server for an ipc connection"""
         try:
-            client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            client.connect(str(IPC_NAME))
-            return client
+            self.client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self.client.connect(str(IPC_NAME))
         except FileNotFoundError:
-            return None
+            self.client = None
 
     def emit(self, topic, label):
         """Emits given topic and label as bytes"""
@@ -60,6 +55,8 @@ class EventIPC:
 
     def close(self):
         """Closes unix socket connection"""
+        if not self.client:
+            return
         self.client.close()
 
     @staticmethod
