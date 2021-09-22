@@ -23,6 +23,7 @@ import json
 from pathlib import PurePosixPath
 import socket
 import struct
+from typing import Union
 
 
 IPC_NAME = PurePosixPath("/tmp/wildland_event_ipc")
@@ -35,6 +36,7 @@ class EventIPC:
         self.is_enabled = is_enabled
         if not is_enabled:
             return
+        self.client: Union[socket.socket, None] = None
         try:
             self.client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             self.client.connect(str(IPC_NAME))
