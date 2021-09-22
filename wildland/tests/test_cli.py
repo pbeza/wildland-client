@@ -3845,7 +3845,7 @@ def wl_call_output(base_config_dir, *args, **kwargs):
 
 
 # pylint: disable=unused-argument
-def test_cli_container_sync(base_dir, sync, cli):
+def test_container_sync(base_dir, sync, cli):
     base_data_dir = base_dir / 'wldata'
     storage1_data = base_data_dir / 'storage1'
     storage2_data = base_data_dir / 'storage2'
@@ -3867,7 +3867,7 @@ def test_cli_container_sync(base_dir, sync, cli):
 
 
 # pylint: disable=unused-argument
-def test_cli_container_sync_oneshot(base_dir, sync, cli):
+def test_container_sync_oneshot(base_dir, sync, cli):
     base_data_dir = base_dir / 'wldata'
     storage1_data = base_data_dir / 'storage1'
     storage2_data = base_data_dir / 'storage2'
@@ -3893,7 +3893,7 @@ def test_cli_container_sync_oneshot(base_dir, sync, cli):
 
 
 # pylint: disable=unused-argument
-def test_cli_container_sync_oneshot_error(base_dir, sync, cli):
+def test_container_sync_oneshot_error(base_dir, sync, cli):
     base_data_dir = base_dir / 'wldata'
     storage1_data = base_data_dir / 'storage1'
     storage2_data = base_data_dir / 'storage2'
@@ -3916,7 +3916,7 @@ def test_cli_container_sync_oneshot_error(base_dir, sync, cli):
 
 
 # pylint: disable=unused-argument
-def test_cli_container_sync_oneshot_nowait(base_dir, sync, cli):
+def test_container_sync_oneshot_nowait(base_dir, sync, cli):
     base_data_dir = base_dir / 'wldata'
     storage1_data = base_data_dir / 'storage1'
     storage2_data = base_data_dir / 'storage2'
@@ -3948,7 +3948,7 @@ def test_cli_container_sync_oneshot_nowait(base_dir, sync, cli):
 
 
 # pylint: disable=unused-argument
-def test_cli_container_sync_tg_remote(base_dir, sync, cli):
+def test_container_sync_tg_remote(base_dir, sync, cli):
     base_data_dir = base_dir / 'wldata'
     storage1_data = base_data_dir / 'storage1'
     storage2_data = base_data_dir / 'storage2'
@@ -4140,7 +4140,7 @@ def test_nonexistent_container_under_existing_bridge(cli, base_dir, tmpdir):
 # Storage templates
 
 
-def test_cli_storage_template_create(cli, base_dir):
+def test_storage_template_create(cli, base_dir):
     cli('template', 'create', 'local', '--location', '/foo', 't1')
 
     with open(base_dir / 'templates/t1.template.jinja', 'r') as f:
@@ -4152,7 +4152,7 @@ def test_cli_storage_template_create(cli, base_dir):
         }]
 
 
-def test_cli_storage_template_create_cache(cli, base_dir):
+def test_storage_template_create_cache(cli, base_dir):
     cli('template', 'create', 'local', '--location', '/foo', '--default-cache', 't1')
 
     with open(base_dir / 'config.yaml') as f:
@@ -4160,7 +4160,7 @@ def test_cli_storage_template_create_cache(cli, base_dir):
     assert "default-cache-template: t1" in config
 
 
-def test_cli_storage_template_create_custom_access(cli, base_dir):
+def test_storage_template_create_custom_access(cli, base_dir):
     cli('user', 'create', 'UserA', '--key', '0xaaa')
     cli('user', 'create', 'UserB', '--key', '0xbbb')
     cli('template', 'create', 'local', '--location', '/foo',
@@ -4192,7 +4192,7 @@ def test_cli_storage_template_create_custom_access(cli, base_dir):
             '--access', '*', '--access', 'UserA', 't3')
 
 
-def test_cli_remove_storage_template(cli, base_dir):
+def test_remove_storage_template(cli, base_dir):
     cli('template', 'create', 'local', '--location', '/foo', 't1')
 
     assert Path(base_dir / 'templates/t1.template.jinja').exists()
@@ -4202,7 +4202,7 @@ def test_cli_remove_storage_template(cli, base_dir):
     assert not Path(base_dir / 'templates/t1.template.jinja').exists()
 
 
-def test_cli_remove_nonexisting_storage_template(cli):
+def test_remove_nonexisting_storage_template(cli):
     with pytest.raises(CliError, match='does not exist'):
         cli('template', 'remove', 't1')
 
