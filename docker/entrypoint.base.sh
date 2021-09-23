@@ -16,7 +16,6 @@ mkdir "$MOUNT_DIR"
 
 # Run Gunicorn if experimental api flag provided
 if [ "$EXPERIMENTAL_API" = true ]; then
-    cd /home/user/wildland-client/wildland/api
     gunicorn -c /home/user/wildland-client/gunicorn.py --daemon
 fi
 
