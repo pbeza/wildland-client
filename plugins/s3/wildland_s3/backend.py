@@ -336,15 +336,18 @@ class S3StorageBackend(FileSubcontainersMixin, CachedStorageMixin, StorageBacken
 
         token = None
         while True:
-            if token:
-                resp = self.client.list_objects_v2(
-                    Bucket=self.bucket,
-                    ContinuationToken=token,
-                )
-            else:
-                resp = self.client.list_objects_v2(
-                    Bucket=self.bucket,
-                )
+            try:
+                if token:
+                    resp = self.client.list_objects_v2(
+                        Bucket=self.bucket,
+                        ContinuationToken=token,
+                    )
+                else:
+                    resp = self.client.list_objects_v2(
+                        Bucket=self.bucket,
+                    )
+            except botocore.exceptions.ClientError as ex:
+                raise WildlandError(f"Could not connect to AWS: {ex}") from ex
 
             for summary in resp.get('Contents', []):
                 full_path = PurePosixPath('/') / summary['Key']
