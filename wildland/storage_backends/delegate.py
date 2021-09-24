@@ -32,7 +32,6 @@ import click
 
 from .base import StorageBackend, File, Attr
 from ..cli.cli_base import CliError
-from ..exc import WildlandError
 from ..manifest.schema import Schema
 from ..log import get_logger
 from ..wlpath import WildlandPath
@@ -110,12 +109,12 @@ class DelegateProxyStorageBackend(StorageBackend):
     def mount(self):
         self.reference.request_mount()
         # Check if referenced subdirectory actually exists
-        try:
-            if self.reference.getattr(self._path(PurePosixPath('.'))):
-                return
-        except FileNotFoundError as err:
-            raise WildlandError('delegate container refers to nonexistent location'
-                                f' {self.subdirectory} of {self.reference}') from err
+        # try:
+        #     if self.reference.getattr(self._path(PurePosixPath('.'))):
+        #         return
+        # except FileNotFoundError as err:
+        #     raise WildlandError('delegate container refers to nonexistent location'
+        #                         f' {self.subdirectory} of {self.reference}') from err
 
     def unmount(self):
         self.reference.request_unmount()
