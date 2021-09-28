@@ -1,4 +1,4 @@
-version: '3'
+version: '3.4'
 
 #############################################
 # This file is for development purposes only
@@ -11,12 +11,14 @@ version: '3'
 services:
   wildland-client-base:
     build:
+      network: host
       context: ..
       dockerfile: ./docker/Dockerfile.base
     image: wildland-client-base
 
   wildland-client:
     build:
+      network: host
       context: ..
       dockerfile: ./docker/Dockerfile.dev
     image: wildland-client
@@ -39,6 +41,7 @@ services:
 
   wildland-client-ci:
     build:
+      network: host
       context: ..
       dockerfile: ./docker/Dockerfile.ci
     image: wildland-client-ci
@@ -55,6 +58,7 @@ services:
 
   wildland-client-gcp:
     build:
+      network: host
       context: ..
       dockerfile: ./docker/Dockerfile.gcp
     image: wildland-client-gcp
