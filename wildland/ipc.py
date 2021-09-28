@@ -17,7 +17,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Wildland Interprocess Communication Channel based on NamedPipe
+Wildland Interprocess Communication Channel based on Unix Socket
 """
 import json
 from pathlib import PurePosixPath
@@ -45,9 +45,7 @@ class EventIPC:
 
     def emit(self, topic, label):
         """Emits given topic and label as bytes"""
-        if not self.is_enabled:
-            return
-        if not self.client:
+        if not self.is_enabled or not self.client:
             return
 
         data = json.dumps(dict(topic=topic, label=label))
@@ -57,8 +55,9 @@ class EventIPC:
 
     def close(self):
         """Closes unix socket connection"""
-        if not self.client:
+        if not self.is_enabled or not self.client:
             return
+
         self.client.close()
 
     @staticmethod
