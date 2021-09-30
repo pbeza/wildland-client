@@ -1,6 +1,8 @@
 # Wildland Project
 #
-# Copyright (C) 2021 Golem Foundation,
+# Copyright (C) 2021 Golem Foundation
+#
+# Authors:
 #                    Muhammed Tanrikulu <muhammed@wildland.io>
 #
 # This program is free software: you can redistribute it and/or modify
