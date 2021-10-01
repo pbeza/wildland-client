@@ -50,11 +50,11 @@ from wildland.wildland_object.wildland_object import WildlandObject
 from .cli_base import aliased_group, ContextObj, CliError
 from .cli_common import sign, verify, edit as base_edit, modify_manifest, add_fields, del_fields, \
     set_fields, del_nested_fields, find_manifest_file, dump as base_dump, check_options_conflict, \
-    check_if_any_options
+    check_if_any_options, remount_container
 from .cli_storage import do_create_storage_from_templates
 from ..container import Container
 from ..exc import WildlandError
-from ..manifest.manifest import ManifestError
+from ..manifest.manifest import ManifestError, Manifest
 from ..manifest.template import TemplateManager
 from ..publish import Publisher
 from ..remounter import Remounter
@@ -1402,6 +1402,7 @@ def _resolve_container(
         ) -> Tuple[Container, bool]:
 
     client: Client = ctx.obj.client
+    obj: ContextObj = ctx.obj
 
     if client.is_url(path) and not path.startswith('file:'):
         container = client.load_object_from_url(
@@ -1411,15 +1412,21 @@ def _resolve_container(
 
         if container.local_path:
             # modify local manifest
+            local_path = container.local_path
+            old_manifest = Manifest.from_file(local_path, obj.client.session.sig)
+            initial_owner = old_manifest.fields['owner']
             manifest_modified = ctx.invoke(callback, pass_ctx=ctx,
                                            input_file=str(container.local_path), **callback_kwargs)
             container = client.load_object_from_name(
-                WildlandObject.Type.CONTAINER, str(container.local_path))
+                WildlandObject.Type.CONTAINER, str(local_path))
         else:
             # download, modify and optionally save manifest
             with tempfile.NamedTemporaryFile(suffix='.tmp.container.yaml') as f:
                 f.write(container.manifest.to_bytes())
                 f.flush()
+                local_path = f.name
+                old_manifest = Manifest.from_file(local_path, obj.client.session.sig)
+                initial_owner = old_manifest.fields['owner']
 
                 manifest_modified = ctx.invoke(
                     callback, pass_ctx=ctx, input_file=f.name, **callback_kwargs)
@@ -1439,6 +1446,9 @@ def _resolve_container(
         if local_path:
             path = str(local_path)
 
+        old_manifest = Manifest.from_file(local_path, obj.client.session.sig)
+        initial_owner = old_manifest.fields['owner']
+
         manifest_modified = ctx.invoke(callback, pass_ctx=ctx, input_file=path, **callback_kwargs)
 
         container = client.load_object_from_name(WildlandObject.Type.CONTAINER, path)
@@ -1446,5 +1456,11 @@ def _resolve_container(
     if callback not in [base_edit, modify_manifest]:
         assert manifest_modified is None
         manifest_modified = False
+
+    new_manifest = Manifest.from_file(local_path, obj.client.session.sig)
+    new_owner = new_manifest.fields['owner']
+
+    if new_owner!=initial_owner:
+        remount_container(obj, local_path)
 
     return container, manifest_modified
