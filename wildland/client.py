@@ -234,6 +234,7 @@ class Client:
         if self.base_dir:
             cmd.extend(['--base-dir', str(self.base_dir)])
         logger.debug('starting sync daemon: %s', cmd)
+        print('@@@ starting sync daemon: %s', cmd)
         Popen(cmd)
 
     def run_sync_command(self, name, **kwargs) -> Any:
