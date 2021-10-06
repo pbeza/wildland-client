@@ -29,6 +29,7 @@ import os
 import logging
 from pathlib import Path, PurePosixPath
 from typing import Dict, Iterable, List, Optional, Sequence, Union
+from distutils.util import strtobool
 
 import click
 
@@ -57,6 +58,14 @@ from ..manifest.manifest import ManifestError
 from ..client import Client
 from .cli_common import wl_version
 
+if strtobool(os.environ["DEBUGPY"]):
+    import debugpy
+    port = 5678
+    print(f"debugpy listen on port {port}",)
+    debugpy.listen(("0.0.0.0", port))
+    if strtobool(os.environ["DEBUGPY__WAIT"]):
+        print("waiting for vscode remote attach")
+        debugpy.wait_for_client()
 
 logger = logging.getLogger('cli')
 
