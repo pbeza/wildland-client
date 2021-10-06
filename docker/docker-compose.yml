@@ -32,6 +32,10 @@ services:
     ports:
       - "8080:8080"
       - "4554:4554"
+      - "5678:5678" # debugpy
+    environment:
+      DEBUGPY: "True"
+      DEBUGPY__WAIT: "False"
     volumes:
       - ..:/home/user/wildland-client:ro
       - ~/.config/wildland:/home/user/.config/wildland:rw
