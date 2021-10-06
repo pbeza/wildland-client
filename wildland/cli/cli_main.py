@@ -58,12 +58,12 @@ from ..manifest.manifest import ManifestError
 from ..client import Client
 from .cli_common import wl_version
 
-if strtobool(os.environ["DEBUGPY"]):
+if strtobool(os.environ.get("DEBUGPY", "False")):
     import debugpy
     port = 5678
     print(f"debugpy listen on port {port}",)
     debugpy.listen(("0.0.0.0", port))
-    if strtobool(os.environ["DEBUGPY__WAIT"]):
+    if strtobool(os.environ.get("DEBUGPY__WAIT", "False")):
         print("waiting for vscode remote attach")
         debugpy.wait_for_client()
 
