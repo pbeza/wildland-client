@@ -34,6 +34,7 @@ services:
       - "4554:4554"
     volumes:
       - ..:/home/user/wildland-client:ro
+      - ../artifacts:/home/user/wildland-client/artifacts:ro
       - ~/.config/wildland:/home/user/.config/wildland:rw
       - ./storage:/home/user/storage:rw
 
