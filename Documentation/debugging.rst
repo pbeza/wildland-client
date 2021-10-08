@@ -15,6 +15,33 @@ Method 1: Python: Remote Attach
 Using debugpy server from the inside of docker container.
 
 1. Configure your `.vscode/launch.json` -- see `.vscode.example`
+2. Set env vars in `docker/docker-compose.yml`
+
+.. code-block:: yaml
+
+  serivce:
+    wildland-client:
+      environment:
+        DEBUGPY: "True"
+        DEBUGPY__WAIT: "True"
+      ports:
+      - "5678:5678" # debugpy listener port
+
+3. Classic start with container in another terminal
+
+.. code-block:: sh
+
+    cd docker
+    docker-compose run --service-ports wildland-client
+
+4. Set some brakepoints
+5. Run wl command
+6. Start debugger in vscode  
+  Run and Debug -> Run Python: Remote Attach
+
+Voilà !
+    
+.. image:: _static/vscode_remote_attach.png
 
 
 Method 2: Attach to Running Container
