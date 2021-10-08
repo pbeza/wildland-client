@@ -37,6 +37,7 @@ Using debugpy server from the inside of docker container.
 4. Set some brakepoints
 5. Run wl command
 6. Start debugger in vscode  
+
   Run and Debug -> Run Python: Remote Attach
 
 Voilà !
@@ -59,6 +60,7 @@ Method 2: Attach to Running Container
 .. image:: _static/vscode_inside_docker.png
 
 3. Start debugger in vscode
+
   Run and Debug -> Run Python: Current File
 
 Voilà !
