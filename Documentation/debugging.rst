@@ -46,3 +46,21 @@ Voilà !
 
 Method 2: Attach to Running Container
 -------------------------------------
+
+1. Classic start with container in another terminal
+
+.. code-block:: sh
+
+    cd docker
+    docker-compose run --service-ports wildland-client
+
+2. Open a new vscode window inside docker container
+
+.. image:: _static/vscode_inside_docker.png
+
+3. Start debugger in vscode
+  Run and Debug -> Run Python: Current File
+
+Voilà !
+
+.. image:: _static/vscode_inside_docker2.png
