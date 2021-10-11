@@ -10,3 +10,5 @@ mypy
 python-lorem
 psutil
 pyinstrument
+debugpy==1.5.0
+ipython==7.28.0

@@ -56,7 +56,10 @@ from ..log import init_logging
 from ..manifest.manifest import ManifestError
 from ..client import Client
 from .cli_common import wl_version
+from ..debug import start_debugpy_server_if_enabled
 
+
+start_debugpy_server_if_enabled()
 
 logger = logging.getLogger('cli')
 
