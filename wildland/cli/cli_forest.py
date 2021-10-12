@@ -100,6 +100,7 @@ def mount(ctx: click.Context, forest_names, save: bool,
         refresh_users(obj)
 
     mount_container(obj, forests, save=save, cache_template=cache_template, list_all=list_all)
+    obj.ipc.emit(topic="MOUNT", label="FOREST")
 
 
 @forest_.command(short_help='Unmount Wildland Forest', alias=['umount'])
@@ -123,6 +124,7 @@ def unmount(ctx: click.Context, path: str, forest_names):
                 f'For example, ":/forests/User:" is a valid forest name')
         forests.append(f'{forest_name}*:')
     unmount_container(obj, path=path, container_names=forests)
+    obj.ipc.emit(topic="UNMOUNT", label="FOREST")
 
 
 @forest_.command(short_help='Bootstrap Wildland Forest')

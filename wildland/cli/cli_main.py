@@ -78,18 +78,25 @@ FUSE_ENTRY_POINT = PROJECT_PATH / 'wildland-fuse'
 @click.pass_context
 def main(ctx: click.Context, base_dir, dummy, debug, verbose, version):
     # pylint: disable=missing-docstring, unused-argument
+
     if not ctx.invoked_subcommand:
         if version:
             print(wl_version())
             return
         click.echo(ctx.get_help())
         return
+
     if verbose > 0:
         init_logging(level='DEBUG' if verbose > 1 else 'INFO')
     else:
         init_logging(level='WARNING')
+
+    if base_dir:
+        os.environ['WL_BASE_DIR'] = base_dir # needs better way
+
+    is_ipc_enabled = os.environ.get('EXPERIMENTAL_API', False)
     client = Client(dummy=dummy, base_dir=base_dir)
-    ctx.obj = ContextObj(client)
+    ctx.obj = ContextObj(client, ipc=bool(is_ipc_enabled))
 
 
 main.add_command(cli_user.user_)
@@ -222,6 +229,7 @@ def start(obj: ContextObj, remount: bool, debug: bool, mount_containers: Sequenc
     if not debug:
         obj.fs_client.start(single_thread=single_thread, default_user=user)
         _do_mount_containers(obj, to_mount)
+        obj.ipc.emit(topic="MOUNT", label="WILDLAND")
         return
 
     print(f'Mounting in foreground: {obj.mount_dir}')
@@ -237,6 +245,8 @@ def start(obj: ContextObj, remount: bool, debug: bool, mount_containers: Sequenc
 
     if p.returncode != 0:
         raise CliError('FUSE driver exited with failure')
+
+    obj.ipc.emit(topic="MOUNT", label="WILDLAND")
 
 
 @main.command(short_help='display mounted containers and sync jobs')
@@ -361,6 +371,7 @@ def stop(obj: ContextObj, keep_sync_daemon: bool) -> None:
     click.echo(f'Stopping Wildland at: {obj.mount_dir}')
     try:
         obj.fs_client.stop()
+        obj.ipc.emit(topic="UNMOUNT", label="WILDLAND")
     except WildlandError as ex:
         raise CliError(str(ex)) from ex
 
