@@ -1,7 +1,9 @@
 *.egg-info
 .*cache
 /build/
+build
 /env/
+env
 __pycache__
 htmlcov
 .mypy_cache

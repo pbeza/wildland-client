@@ -83,6 +83,7 @@ RUN apt-get -qy update && apt-get install -y \
         git \
     && python3 -m venv /home/user/env/ \
     && . /home/user/env/bin/activate \
+    && pip install --upgrade pip \
     && pip install --no-cache-dir --no-warn-script-location -r requirements.base.txt \
     && pip install --no-cache-dir --no-warn-script-location . plugins/* \
     && apt-get remove --purge -y pkg-config libfuse-dev git gcc python3-pip python3-venv \

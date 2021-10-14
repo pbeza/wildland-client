@@ -3,10 +3,6 @@ sudo chown -R user:user ~/.config ~/storage
 
 . /home/user/env/bin/activate
 
-# --no-deps is provided in order to run service in offline mode.
-# 'install_requires' such as 'pybear @ git+https://github.com/golemfoundation/pybear#egg=0.0.20200914'
-# makes pip requesting network access on startup. This is unsuitable for offline mode.
-pip install --no-deps -q . plugins/*
 
 # Migration from ~/mnt to ~/wildland
 if [ -e ~/.config/wildland/config.yaml ]; then
