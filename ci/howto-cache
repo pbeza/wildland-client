@@ -11,6 +11,9 @@ userid=$(get_userid yatima)
 
 run wl start --skip-forest-mount
 
+# workaround for issue #588
+python -m wildland.storage_sync.daemon &
+
 ## Single container
 
 # FIXME: use real remote storage (see issue #587)
@@ -73,9 +76,7 @@ run wl set-default-cache cache-tpl
 
 # mount with cache
 
-# FIXME: run command hangs here, but similar mount command for Pandora below doesn't...
-# see issue #588
-wl c mount -c cache-test
+run wl c mount -c cache-test
 
 cache_uuid=$(wl s dump ~/.config/wildland/cache/$userid.$cont_uuid.storage.yaml | grep backend-id: | cut -d ' ' -f 2)
 

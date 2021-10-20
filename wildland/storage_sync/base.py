@@ -24,35 +24,18 @@ Storage syncing.
 """
 # pylint: disable=no-self-use
 import abc
+import json
 from enum import Enum
-from typing import Optional, Iterable, Dict, Type, List
+from typing import Optional, Iterable, Dict, Type, List, Callable, Any
 from pathlib import Path
 from wildland.storage import StorageBackend
 from ..storage_backends.base import OptionalError
 from ..exc import WildlandError
 
 
-class SyncError:
+class SyncConflict:
     """
-    General class representing syncing errors.
-    """
-
-
-class SyncWriteError(SyncError):
-    """
-    Error representing write error while syncing.
-    """
-
-
-class SyncReadError(SyncError):
-    """
-    Error representing read error while syncing.
-    """
-
-
-class SyncConflict(SyncError):
-    """
-    Error representing file conflict encountered during sync.
+    Class representing file conflict encountered during sync.
     """
     def __init__(self, path: Path, backend1_id: str, backend2_id: str):
         self.path = path
@@ -74,9 +57,9 @@ class SyncConflict(SyncError):
             sorted([other.backend1_id, other.backend2_id])
 
 
-class SyncerStatus(Enum):
+class SyncState(Enum):
     """
-    Current status of a syncer.
+    Current state of a syncer.
     """
     STOPPED = 1  # no sync running
     RUNNING = 2  # continuous sync running with pending events (storages are not synced)
@@ -86,6 +69,132 @@ class SyncerStatus(Enum):
 
     def __str__(self):
         return str(self.name)
+
+
+class SyncEvent(metaclass=abc.ABCMeta):
+    """
+    Base class for sync events.
+    """
+    type: str
+    value: str
+    job_id: Optional[str]
+
+    @staticmethod
+    def fromJSON(s: str) -> 'SyncEvent':
+        """
+        Deserialize from JSON.
+        """
+        obj = json.loads(s)
+        event: SyncEvent
+        if obj['type'] == SyncStateEvent.type:
+            event = SyncStateEvent.fromJSON(s)
+        elif obj['type'] == SyncConflictEvent.type:
+            event = SyncConflictEvent.fromJSON(s)
+        elif obj['type'] == SyncErrorEvent.type:
+            event = SyncErrorEvent.fromJSON(s)
+        else:
+            raise WildlandError('Invalid sync event type')
+
+        if 'job_id' in obj.keys():
+            event.job_id = obj['job_id']
+
+        return event
+
+    def toJSON(self) -> str:
+        """
+        Serialize to JSON.
+        """
+        # can't use json.dumps(self.__dict__) because that misses fields not initialized
+        # in __init__
+        if self.job_id:
+            return f'{{"type" : "{self.type}", "value": "{self.value}", "job_id": "{self.job_id}"}}'
+
+        return f'{{"type" : "{self.type}", "value": "{self.value}"}}'
+
+    def __repr__(self):
+        if self.job_id:
+            return f"<{self.type}: {self.value}> ({self.job_id})"
+
+        return f"<{self.type}: {self.value}>"
+
+    def __str__(self):
+        return self.__repr__()
+
+    def __eq__(self, other):
+        if not issubclass(type(other), SyncEvent):
+            return False
+
+        if self.type != other.type:
+            return False
+
+        if self.value != other.value:
+            return False
+
+        if self.job_id and self.job_id != other.job_id:
+            return False
+
+        return True
+
+
+class SyncStateEvent(SyncEvent):
+    """
+    State change event.
+    """
+    type = 'state'
+
+    @staticmethod
+    def fromJSON(s: str) -> 'SyncStateEvent':
+        """
+        Deserialize from JSON.
+        """
+        obj = json.loads(s)
+        assert obj['type'] == SyncStateEvent.type
+        return SyncStateEvent(SyncState[obj['value']])
+
+    def __init__(self, state: SyncState, job_id: Optional[str] = None):
+        self.state = state
+        self.value = str(self.state.name)
+        self.job_id = job_id
+
+
+class SyncConflictEvent(SyncEvent):
+    """
+    New conflict.
+    """
+    type = 'conflict'
+
+    @staticmethod
+    def fromJSON(s: str) -> 'SyncConflictEvent':
+        """
+        Deserialize from JSON.
+        """
+        obj = json.loads(s)
+        assert obj['type'] == SyncConflictEvent.type
+        return SyncConflictEvent(obj['value'])
+
+    def __init__(self, message: str, job_id: Optional[str] = None):
+        self.value = message
+        self.job_id = job_id
+
+
+class SyncErrorEvent(SyncEvent):
+    """
+    Sync error event.
+    """
+    type = 'error'
+
+    @staticmethod
+    def fromJSON(s: str) -> 'SyncErrorEvent':
+        """
+        Deserialize from JSON.
+        """
+        obj = json.loads(s)
+        assert obj['type'] == SyncErrorEvent.type
+        return SyncErrorEvent(obj['value'])
+
+    def __init__(self, message: str, job_id: Optional[str] = None):
+        self.value = message
+        self.job_id = job_id
 
 
 class BaseSyncer(metaclass=abc.ABCMeta):
@@ -124,6 +233,9 @@ class BaseSyncer(metaclass=abc.ABCMeta):
         self.log_prefix = log_prefix
         self.source_mnt_path = source_mnt_path
         self.target_mnt_path = target_mnt_path
+        self._state = SyncState.STOPPED
+        self._event_callback: Optional[Callable] = None
+        self._event_context: Any = None
 
     def one_shot_sync(self, unidirectional: bool = False):
         """
@@ -146,22 +258,49 @@ class BaseSyncer(metaclass=abc.ABCMeta):
         """
         raise OptionalError
 
-    def status(self) -> SyncerStatus:
+    @property
+    def state(self) -> SyncState:
         """
-        Current status of the syncer.
+        Current state of the syncer.
         """
-        raise NotImplementedError
+        return self._state
+
+    @state.setter
+    def state(self, state: SyncState):
+        """
+        Set syncer state and automatically notify registered event callback.
+        Doesn't change the state if current state is SyncState.ERROR.
+        """
+        if self._state != SyncState.ERROR and self._state != state:
+            self._state = state
+            self.notify_event(SyncStateEvent(state))
+
+    def set_event_callback(self, callback: Callable[[SyncEvent, Any], None], context: Any = None):
+        """
+        Set a callback that will be notified of sync events.
+        :param callback Handler that will be called on an event.
+        :param context User data that will be passed to the callback along with the event.
+        """
+        self._event_callback = callback
+        self._event_context = context
+
+    def notify_event(self, event: SyncEvent):
+        """
+        Notifies registered event callback (if any).
+        """
+        if self._event_callback:
+            self._event_callback(event, self._event_context)
 
     @abc.abstractmethod
-    def iter_errors(self) -> Iterable[SyncError]:
+    def iter_conflicts_force(self) -> Iterable[SyncConflict]:
         """
-        Iterate over discovered syncer errors.
+        Walk through the storages and iterate over all conflicts. Doesn't require running sync.
         """
 
     @abc.abstractmethod
     def iter_conflicts(self) -> Iterable[SyncConflict]:
         """
-        Iterate over discovered sync conflicts.
+        Iterate over discovered sync conflicts. Requires that the sync is/was running.
         """
 
     @classmethod

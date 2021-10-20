@@ -45,6 +45,8 @@ from wildland.bridge import Bridge
 from wildland.control_client import ControlClientUnableToConnectError
 from wildland.wildland_object.wildland_object import WildlandObject
 from .control_client import ControlClient
+from .storage_sync.base import SyncEvent, SyncStateEvent, SyncState, SyncConflictEvent, \
+    SyncErrorEvent
 from .user import User
 from .container import Container, ContainerStub
 from .link import Link
@@ -243,6 +245,30 @@ class Client:
             self.connect_sync_daemon()
         assert self._sync_client is not None
         return self._sync_client.run_command(name, **kwargs)
+
+    def get_sync_event(self) -> Iterator[SyncEvent]:
+        """
+        Wait for sync event and return it.
+        """
+        assert self._sync_client
+        for event in self._sync_client.iter_events():
+            yield SyncEvent.fromJSON(str(event))
+
+    def get_sync_job_state(self, job_id: str) -> Optional[Tuple[SyncState, str]]:
+        """
+        Return state of a sync job or None if the job doesn't exist.
+        Returned tuple contains SyncState and a human-readable description.
+        """
+        state = self.run_sync_command('job-state', job_id=job_id)
+        if state:
+            return SyncState(state[0]), state[1]
+        return None
+
+    def stop_sync(self, job_id: str) -> str:
+        """
+        Stop a sync job by job ID.
+        """
+        return self.run_sync_command('stop', job_id=job_id)
 
     def sub_client_with_key(self, pubkey: str) -> Tuple['Client', str]:
         """
@@ -1344,3 +1370,36 @@ class Client:
         kwargs = {'container_name': container_name, 'job_id': job_id, 'continuous': not one_shot,
                   'unidirectional': unidir, 'source': source, 'target': target}
         return self.run_sync_command('start', **kwargs)
+
+    def wait_for_sync(self, job_id: str, stop_on_finish: bool = True) -> Tuple[str, bool]:
+        """
+        Wait for a sync job to complete (state: SYNCED).
+        Returns response messages and a bool meaning if the operation succeeded.
+        """
+        msg = ''
+        success = True
+        while True:
+            for event in self.get_sync_event():
+                assert event.job_id == job_id, 'Invalid response from sync daemon'
+
+                if isinstance(event, SyncStateEvent):
+                    if event.state == SyncState.SYNCED:
+                        msg += 'Sync successful.'
+                        break
+                    logger.debug('Sync state changed to %s', event.state)
+                elif isinstance(event, SyncConflictEvent):
+                    logger.debug('Sync conflict: %s', event.value)
+                    msg += f'Sync conflict: {event.value}'
+                elif isinstance(event, SyncErrorEvent):
+                    logger.warning('Sync error: %s', event.value)
+                    msg += f'Sync error: {event.value}'
+                    success = False
+                    break
+            else:
+                continue
+            break
+
+        if stop_on_finish:
+            self.stop_sync(job_id)
+
+        return msg, success
