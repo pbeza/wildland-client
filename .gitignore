@@ -5,6 +5,6 @@ env/
 *.egg-info
 build/
 artifacts/
+.vscode
 .mypy_cache
-.pytest_cache
 /*.log
