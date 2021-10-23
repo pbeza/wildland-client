@@ -97,12 +97,12 @@ pytest:
 #  extends: .plugin_test
 #  script:
 #    - ./ci/wildland-test-runner.sh ./ci/ci-bearnotes
-#
-#categorization-proxy-test:
-#  extends: .plugin_test
-#  script:
-#    - ./ci/ci-categorization-proxy
-#
+
+categorization-proxy-test:
+  extends: .plugin_test
+  script:
+    - ./ci/ci-categorization-proxy
+
 #gitlab-test:
 #  extends: .plugin_test
 #  script:
@@ -122,17 +122,17 @@ pytest:
 #  extends: .plugin_test
 #  script:
 #    - ./ci/ci-imap
-#
-#ipfs-test:
-#  extends: .plugin_test
-#  script:
-#    - ./ci/ci-ipfs
-#
-#sshfs-test:
-#  extends: .plugin_test
-#  script:
-#    - ./ci/ci-sshfs
-#
+
+ipfs-test:
+  extends: .plugin_test
+  script:
+    - ./ci/ci-ipfs
+
+sshfs-test:
+  extends: .plugin_test
+  script:
+    - ./ci/ci-sshfs
+
 #s3-test:
 #  extends: .plugin_test
 #  script:
@@ -142,12 +142,12 @@ pytest:
 #    extends: .plugin_test
 #    script:
 #      - ./ci/ci-transpose
-#
-#webdav-test:
-#    extends: .plugin_test
-#    script:
-#      - ./ci/ci-webdav
-#
+
+webdav-test:
+    extends: .plugin_test
+    script:
+      - ./ci/ci-webdav
+
 #encrypted-test:
 #  extends: .plugin_test
 #  script:
