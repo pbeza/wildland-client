@@ -103,10 +103,10 @@ pytest:
 #  script:
 #    - ./ci/ci-categorization-proxy
 
-#gitlab-test:
-#  extends: .plugin_test
-#  script:
-#    - ./ci/ci-gitlab
+gitlab-test:
+  extends: .plugin_test
+  script:
+    - ./ci/ci-gitlab
 #
 #git-test:
 #  extends: .plugin_test
@@ -165,10 +165,10 @@ pytest:
 #  script:
 #    - ./ci/ci-dropbox "" "$DROPBOX_TEST_APP_KEY" "$DROPBOX_TEST_REFRESH_TOKEN"
 
-googledrive-test:
-  extends: .plugin_test
-  script:
-    - ./ci/ci-googledrive "$GOOGLEDRIVE_TEST_ACCESS_TOKEN"
+#googledrive-test:
+#  extends: .plugin_test
+#  script:
+#    - ./ci/ci-googledrive "$GOOGLEDRIVE_TEST_ACCESS_TOKEN"
 
 #zip-archive-test:
 #  extends: .plugin_test
