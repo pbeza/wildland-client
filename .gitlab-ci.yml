@@ -170,11 +170,11 @@ googledrive-test:
   script:
     - ./ci/ci-googledrive "$GOOGLEDRIVE_TEST_ACCESS_TOKEN"
 
-zip-archive-test:
-  extends: .plugin_test
-  script:
-    - ./ci/ci-zip-archive
-
+#zip-archive-test:
+#  extends: .plugin_test
+#  script:
+#    - ./ci/ci-zip-archive
+#
 #howto-quick-start-test:
 #  stage: test
 #  image: $CONTAINER_TEST_IMAGE
