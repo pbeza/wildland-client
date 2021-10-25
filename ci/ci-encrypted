@@ -7,10 +7,10 @@ set -ex
 
 # pytest
 
-pytest -v \
-       --cov plugins/encrypted/wildland_encrypted \
-       plugins/encrypted
-mv /tmp/.coverage.wildland /tmp/.coverage.wildland.pytest
+#pytest -v \
+#       --cov plugins/encrypted/wildland_encrypted \
+#       plugins/encrypted
+#mv /tmp/.coverage.wildland /tmp/.coverage.wildland.pytest
 
 # Minio
 
