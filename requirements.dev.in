@@ -9,6 +9,9 @@ mypy==0.910
 python-lorem==1.1.2
 pyinstrument==4.0.4
 
+# Additional, not neccessary
+weasyprint==53.3 # module wildland.md_pdf
+
 # Documentation
 sphinx==4.2.0
 sphinx-autodoc-typehints==1.12.0
