@@ -96,6 +96,7 @@ class BasicRenderer(RendererBase):
         # trim from root to start_path dir
         r = Resolver('name')
         node = r.get(root, "/#" + str(self.traveller.start_path))
+        node.parent = None
         return node
 
     def run(self) -> None:
