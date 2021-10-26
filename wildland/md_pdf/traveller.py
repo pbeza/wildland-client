@@ -5,14 +5,14 @@ from pathlib import Path
 
 
 class TravellerBase:
-    def run(self) -> Iterable[Path]:
-        ...
-
-
-class MarkdownEverySubdir(TravellerBase):
     def __init__(self, start_path: Path = Path.home()/"wildland") -> None:
         self.start_path = start_path
 
+    def run(self) -> Iterable[Path]:
+        raise NotImplementedError
+
+
+class MarkdownEverySubdir(TravellerBase):
     def run(self) -> Iterable[Path]:
         return self.markdowns()
 

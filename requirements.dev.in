@@ -11,6 +11,7 @@ pyinstrument==4.0.4
 
 # Additional, not neccessary
 weasyprint==53.3 # module wildland.md_pdf
+anytree==2.8.0
 
 # Documentation
 sphinx==4.2.0
