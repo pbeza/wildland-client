@@ -25,6 +25,7 @@ RUN apt-get -qy update && apt-get install -y \
       vim \
       ranger \
       nnn \
+      wkhtmltopd \
     && apt-get autoremove -y \
     && python3 -m venv /home/user/env/ \
     && . /home/user/env/bin/activate \
