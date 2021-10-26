@@ -7,12 +7,13 @@ export __fish_prompt_hostname="$HOSTNAME"
 export LC_ALL=C.UTF-8
 export XDG_RUNTIME_DIR=/tmp/docker-user-runtime
 export DEBIAN_FRONTEND="noninteractive"
+export PYTHONPATH="$HOME/wildland-client:$PYTHONPATH"
 
 # workaround for https://github.com/docker/distribution/issues/2853
 sudo chmod 666 /dev/fuse
 
 MOUNT_DIR="$HOME/wildland"
-mkdir "$MOUNT_DIR"
+mkdir -p "$MOUNT_DIR"
 
 sudo service apache2 start
 
