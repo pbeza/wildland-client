@@ -16,13 +16,13 @@ base58==2.1.0 \
     --hash=sha256:171a547b4a3c61e1ae3807224a6f7aec75e364c4395e7562649d7335768001a2 \
     --hash=sha256:8225891d501b68c843ffe30b86371f844a21c6ba00da76f52f9b998ba771fb48
     # via multiaddr
-boto3==1.19.3 \
-    --hash=sha256:2dfc8cf34d6dfbdfca4c88e8fddf9fe95cde489fb83144fe35f989ec6790e325 \
-    --hash=sha256:e36ffaf9969648e2f435aa1f0029956fea3aac52466eef3bcb43bde498a182dd
+boto3==1.19.4 \
+    --hash=sha256:492962f8cd5ff4aaaaa6bfb321eb526e4758755856226e233b5ead3b3a9c35a5 \
+    --hash=sha256:5493c0af5ab79e15f3a37d8b9c86461ac04bae5cb5b82fb911c78dbcfbdab07e
     # via -r requirements.base.in
-botocore==1.22.3 \
-    --hash=sha256:53ca22aeac9b53fe5ec1f40b8ca9620ffe8b054458abfeb9ab74bbe9e0b0ecfa \
-    --hash=sha256:aacdb9b8e09e356515966251d1e08d9929575a76af504992bfb941553dee59c2
+botocore==1.22.4 \
+    --hash=sha256:579e682b1453fa142dd2f76d09e9c567017f2ae85000329084db8bb49316c228 \
+    --hash=sha256:ecc6f90dc27c4d74246a83474edf5ad272e614bebe8c5fb8b9516db4437dbf59
     # via
     #   boto3
     #   s3transfer
@@ -96,9 +96,9 @@ click==8.0.3 \
     --hash=sha256:353f466495adaeb40b6b5f592f9f91cb22372351c84caeb068132442a4518ef3 \
     --hash=sha256:410e932b050f5eed773c4cda94de75971c89cdb3155a72a0831139a79e5ecb5b
     # via -r requirements.base.in
-docutils==0.17.1 \
-    --hash=sha256:686577d2e4c32380bb50cbb22f575ed742d58168cee37e99117a854bcd88f125 \
-    --hash=sha256:cf316c8370a737a022b72b56874f6602acf974a37a9fba42ec2876387549fc61
+docutils==0.18 \
+    --hash=sha256:a31688b2ea858517fa54293e5d5df06fbb875fb1f7e4c64529271b77781ca8fc \
+    --hash=sha256:c1d5dab2b11d16397406a282e53953fe495a46d69ae329f55aa98a5c4e3c5fbb
     # via python-daemon
 dropbox==11.22.0 \
     --hash=sha256:0a9cc253391cae7fccf1954da75edf8459d6567ba764e21b471019f0fa001ab4 \
@@ -124,17 +124,17 @@ gitpython==3.1.18 \
     --hash=sha256:b838a895977b45ab6f0cc926a9045c8d1c44e2b653c1fcc39fe91f42c6e8f05b \
     --hash=sha256:fce760879cd2aebd2991b3542876dc5c4a909b30c9d69dfc488e504a8db37ee8
     # via -r requirements.base.in
-google-api-core==2.1.1 \
-    --hash=sha256:39ae7ca2208090c2942ebe1b38ca2928441a14b795c725717d38d7e30adb5fbf \
-    --hash=sha256:646d9399c3c478fe475cfe523e84572ab31a340814ea977fb2774eca5a6549a2
+google-api-core==2.2.0 \
+    --hash=sha256:8d20c8919fa32bfc9e2f67f98def477218102aae6b70e4912818aeb53fd4c256 \
+    --hash=sha256:dca67b5e369a5127ec00c8ea02de48517e39c1aad882e2e6d85da8050520cab6
     # via google-api-python-client
-google-api-python-client==2.27.0 \
-    --hash=sha256:0b1bd4fe6cbe3c22e4ed264cadf257bc981ebc745e959bdf8fd9ae7c3fffb984 \
-    --hash=sha256:659e9955f0f1e02fcce5dec85622eb5af1807572ef0f09c49d68d8426da670e7
+google-api-python-client==2.28.0 \
+    --hash=sha256:07e6fdfc489a452d79c5efdc4cc2d5cfd7f7aa207dec82786bfcc436b208e027 \
+    --hash=sha256:953cbdf88051d1eb5343e11697d2211b25350aa0bbaf239685cc906214a5c452
     # via -r requirements.base.in
-google-auth==2.3.1 \
-    --hash=sha256:4d73e41f4a59892bdd728ce1143f0dc3e1dd4f0130543ce492ce8de7cf5c9a18 \
-    --hash=sha256:6f3457723762eb5618429e4498c9d8dbd726963a1f25bd95f80682d2f6040d7d
+google-auth==2.3.2 \
+    --hash=sha256:2dc5218ee1192f9d67147cece18f47a929a9ef746cb69c50ab5ff5cfc983647b \
+    --hash=sha256:6e99f4b3b099feb50de20302f2f8987c1c36e80a3f856ce852675bdf7a0935d3
     # via
     #   google-api-core
     #   google-api-python-client
