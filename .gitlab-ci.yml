@@ -98,25 +98,25 @@ mypy-plugins:
 #  script:
 #    - ./ci/wildland-test-runner.sh ./ci/ci-bearnotes
 
-#categorization-proxy-test:
+categorization-proxy-test:
+  extends: .plugin_test
+  script:
+    - ./ci/ci-categorization-proxy
+
+#gitlab-test:
 #  extends: .plugin_test
 #  script:
-#    - ./ci/ci-categorization-proxy
-
-gitlab-test:
-  extends: .plugin_test
-  script:
-    - ./ci/ci-gitlab
-
-git-test:
-  extends: .plugin_test
-  script:
-    - ./ci/ci-git
-
-gitlab-graphql-test:
-  extends: .plugin_test
-  script:
-    - ./ci/ci-gitlab-graphql
+#    - ./ci/ci-gitlab
+#
+#git-test:
+#  extends: .plugin_test
+#  script:
+#    - ./ci/ci-git
+#
+#gitlab-graphql-test:
+#  extends: .plugin_test
+#  script:
+#    - ./ci/ci-gitlab-graphql
 
 #imap-test:
 #  extends: .plugin_test
@@ -132,11 +132,11 @@ gitlab-graphql-test:
 #  extends: .plugin_test
 #  script:
 #    - ./ci/ci-sshfs
-#
-#s3-test:
-#  extends: .plugin_test
-#  script:
-#    - ./ci/ci-s3
+
+s3-test:
+  extends: .plugin_test
+  script:
+    - ./ci/ci-s3
 #
 #transpose-test:
 #    extends: .plugin_test
