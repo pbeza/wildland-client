@@ -230,18 +230,18 @@ pages-test:
     paths:
       - artifacts/docs
 
-pages:
-  stage: docs
-  image: $CONTAINER_TEST_IMAGE
-  dependencies:
-    - pytest
-  only:
-    - master
-  script:
-    - ./ci/ci-docs
-    - cp -r artifacts/docs/html public
-    - cp -r artifacts/docs/man public/man
-    - cp -r artifacts/htmlcov public/coverage
-  artifacts:
-    paths:
-      - public/
+#pages:
+#  stage: docs
+#  image: $CONTAINER_TEST_IMAGE
+#  dependencies:
+#    - pytest
+#  only:
+#    - master
+#  script:
+#    - ./ci/ci-docs
+#    - cp -r artifacts/docs/html public
+#    - cp -r artifacts/docs/man public/man
+#    - cp -r artifacts/htmlcov public/coverage
+#  artifacts:
+#    paths:
+#      - public/
