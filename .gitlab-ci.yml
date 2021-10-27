@@ -133,10 +133,10 @@ sshfs-test:
   script:
     - ./ci/ci-sshfs
 
-#s3-test:
-#  extends: .plugin_test
-#  script:
-#    - ./ci/ci-s3
+s3-test:
+  extends: .plugin_test
+  script:
+    - ./ci/ci-s3
 #
 #transpose-test:
 #    extends: .plugin_test
