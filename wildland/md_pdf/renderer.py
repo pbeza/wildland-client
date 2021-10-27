@@ -100,20 +100,26 @@ class MarkdownRenderer:
 
     def run(self) -> None:
         paths: Iterable[Path] = self.find_markdowns()
+        # paths = list(paths)[:5]
         node = self.make_tree(paths) # internal tree
         print(RenderTree(node))
 
         for subnode in PreOrderIter(node):
+            if subnode.is_leaf:
+                continue
             subpaths: List[Path] = [leaf.markdown_path for leaf in subnode.leaves]
             squashed = self.squash_markdowns(subpaths)
-
-            # TODO create dirs, write squashed markdowns to pdf
-            stream: BytesIO = self.engine.render(squashed)
-            self.engine.render_to_file(squashed, Path('dupa.pdf'))   
+            out_dir: Path = self.write_start_dir / self._node_fullpath(subnode).strip("/")      
+            out_dir.mkdir(parents=True, exist_ok=True)
+            self.engine.render_to_file(squashed, out_dir/'issues.pdf')
 
 
 if __name__ == "__main__":
-    read_start_dir = Path.home()/"wildland/gitlab/cargo"
-    write_start_dir = Path.home()/"wildland-client/dupa"
-    renderer = MarkdownRenderer(read_start_dir, write_start_dir)
-    renderer.run()
+    MarkdownRenderer(
+        read_start_dir=Path.home()/"wildland/gitlab/cargo", # mounted wildland gitlab backend container
+        write_start_dir=Path.home()/"wildland-client/cargo_issues" # local fs dir
+    ).run()
+    MarkdownRenderer(
+        read_start_dir=Path.home()/"wildland/labels/needs/breakdown",
+        write_start_dir=Path.home()/"wildland-client/cargo_issues"
+    ).run()
