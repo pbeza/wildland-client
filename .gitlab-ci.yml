@@ -103,20 +103,20 @@ pytest:
 #  script:
 #    - ./ci/ci-categorization-proxy
 
-gitlab-test:
-  extends: .plugin_test
-  script:
-    - ./ci/ci-gitlab
+#gitlab-test:
+#  extends: .plugin_test
+#  script:
+#    - ./ci/ci-gitlab
 #
 #git-test:
 #  extends: .plugin_test
 #  script:
 #    - ./ci/ci-git
 #
-#gitlab-graphql-test:
-#  extends: .plugin_test
-#  script:
-#    - ./ci/ci-gitlab-graphql
+gitlab-graphql-test:
+  extends: .plugin_test
+  script:
+    - ./ci/ci-gitlab-graphql
 
 #imap-test:
 #  extends: .plugin_test
