@@ -79,10 +79,10 @@ pytest:
     - /home/user/env/bin/python3 -m coverage report --include=wildland/*
     - sed -i -e '/<source><\/source>/d' artifacts/coverage.xml
   artifacts:
-    paths:
-      - artifacts/htmlcov/
+#    paths:
+#      - artifacts/htmlcov/
     reports:
-      junit: artifacts/wildland.xml
+#      junit: artifacts/wildland.xml
       cobertura: artifacts/coverage.xml
   coverage: '/TOTAL.*\s(\d+)%/'
 
