@@ -79,10 +79,10 @@ pytest:
     - /home/user/env/bin/python3 -m coverage report --include=wildland/*
     - sed -i -e '/<source><\/source>/d' artifacts/coverage.xml
   artifacts:
-#    paths:
-#      - artifacts/htmlcov/
+    paths:
+      - artifacts/htmlcov/
     reports:
-#      junit: artifacts/wildland.xml
+      junit: artifacts/wildland.xml
       cobertura: artifacts/coverage.xml
   coverage: '/TOTAL.*\s(\d+)%/'
 
@@ -144,42 +144,42 @@ s3-test:
   script:
     - ./ci/ci-s3
 
-transpose-test:
-    extends: .plugin_test
-    script:
-      - ./ci/ci-transpose
-
-webdav-test:
-    extends: .plugin_test
-    script:
-      - ./ci/ci-webdav
-
-encrypted-test:
-  extends: .plugin_test
-  script:
-    - ./ci/ci-encrypted
-
-dropbox-test-legacy:
-  extends: .plugin_test
-  allow_failure: true
-  script:
-    - ./ci/ci-dropbox "$DROPBOX_TEST_ACCESS_TOKEN"
-
-dropbox-test:
-  extends: .plugin_test
-  allow_failure: true
-  script:
-    - ./ci/ci-dropbox "" "$DROPBOX_TEST_APP_KEY" "$DROPBOX_TEST_REFRESH_TOKEN"
-
-googledrive-test:
-  extends: .plugin_test
-  script:
-    - ./ci/ci-googledrive "$GOOGLEDRIVE_TEST_ACCESS_TOKEN"
-
-zip-archive-test:
-  extends: .plugin_test
-  script:
-    - ./ci/ci-zip-archive
+#transpose-test:
+#    extends: .plugin_test
+#    script:
+#      - ./ci/ci-transpose
+#
+#webdav-test:
+#    extends: .plugin_test
+#    script:
+#      - ./ci/ci-webdav
+#
+#encrypted-test:
+#  extends: .plugin_test
+#  script:
+#    - ./ci/ci-encrypted
+#
+#dropbox-test-legacy:
+#  extends: .plugin_test
+#  allow_failure: true
+#  script:
+#    - ./ci/ci-dropbox "$DROPBOX_TEST_ACCESS_TOKEN"
+#
+#dropbox-test:
+#  extends: .plugin_test
+#  allow_failure: true
+#  script:
+#    - ./ci/ci-dropbox "" "$DROPBOX_TEST_APP_KEY" "$DROPBOX_TEST_REFRESH_TOKEN"
+#
+#googledrive-test:
+#  extends: .plugin_test
+#  script:
+#    - ./ci/ci-googledrive "$GOOGLEDRIVE_TEST_ACCESS_TOKEN"
+#
+#zip-archive-test:
+#  extends: .plugin_test
+#  script:
+#    - ./ci/ci-zip-archive
 
 howto-quick-start-test:
   stage: test
