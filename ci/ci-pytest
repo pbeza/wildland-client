@@ -9,4 +9,4 @@ set -ex
 #    --junitxml=artifacts/wildland.xml \
 #    --ignore=plugins \
 #    "$@"
-python3 -m coverage run -p -m pytest -v "$@"
+python3 -m coverage run -p -m pytest -v --junitxml=artifacts/wildland.xml "$@"
