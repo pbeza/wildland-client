@@ -144,15 +144,15 @@ s3-test:
   script:
     - ./ci/ci-s3
 
-transpose-test:
-    extends: .plugin_test
-    script:
-      - ./ci/ci-transpose
-
-webdav-test:
-    extends: .plugin_test
-    script:
-      - ./ci/ci-webdav
+#transpose-test:
+#    extends: .plugin_test
+#    script:
+#      - ./ci/ci-transpose
+#
+#webdav-test:
+#    extends: .plugin_test
+#    script:
+#      - ./ci/ci-webdav
 
 #encrypted-test:
 #  extends: .plugin_test
