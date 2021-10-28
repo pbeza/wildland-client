@@ -8,3 +8,4 @@ artifacts/
 .vscode
 .mypy_cache
 /*.log
+cargo_issues*
