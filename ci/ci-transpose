@@ -6,7 +6,7 @@ ROOT="$HOME/wildland"
 MANIFEST_CATALOG="/home/user/catalog"
 
 . /home/user/env/bin/activate
-pip install .
+. ci/install-inplace transpose
 
 WL='python3 -m coverage run -p ./wl'
 
