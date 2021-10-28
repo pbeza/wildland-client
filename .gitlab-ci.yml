@@ -79,10 +79,10 @@ pytest:
     - /home/user/env/bin/python3 -m coverage report --include=wildland/*
     - sed -i -e '/<source><\/source>/d' artifacts/coverage.xml
   artifacts:
-#    paths:
-#      - artifacts/htmlcov/
+    paths:
+      - artifacts/htmlcov/
     reports:
-#      junit: artifacts/wildland.xml
+      junit: artifacts/wildland.xml
       cobertura: artifacts/coverage.xml
   coverage: '/TOTAL.*\s(\d+)%/'
 
@@ -99,10 +99,10 @@ pytest:
     reports:
       cobertura: artifacts/coverage.xml
 
-#bearnotes-test:
-#  extends: .plugin_test
-#  script:
-#    - ./ci/wildland-test-runner.sh ./ci/ci-bearnotes
+bearnotes-test:
+  extends: .plugin_test
+  script:
+    - ./ci/wildland-test-runner.sh ./ci/ci-bearnotes
 
 categorization-proxy-test:
   extends: .plugin_test
@@ -144,78 +144,78 @@ s3-test:
   script:
     - ./ci/ci-s3
 
-#transpose-test:
-#    extends: .plugin_test
-#    script:
-#      - ./ci/ci-transpose
-#
-#webdav-test:
-#    extends: .plugin_test
-#    script:
-#      - ./ci/ci-webdav
-#
-#encrypted-test:
-#  extends: .plugin_test
-#  script:
-#    - ./ci/ci-encrypted
+transpose-test:
+    extends: .plugin_test
+    script:
+      - ./ci/ci-transpose
 
-#dropbox-test-legacy:
-#  extends: .plugin_test
-#  allow_failure: true
-#  script:
-#    - ./ci/ci-dropbox "$DROPBOX_TEST_ACCESS_TOKEN"
-#
-#dropbox-test:
-#  extends: .plugin_test
-#  allow_failure: true
-#  script:
-#    - ./ci/ci-dropbox "" "$DROPBOX_TEST_APP_KEY" "$DROPBOX_TEST_REFRESH_TOKEN"
+webdav-test:
+    extends: .plugin_test
+    script:
+      - ./ci/ci-webdav
 
-#googledrive-test:
-#  extends: .plugin_test
-#  script:
-#    - ./ci/ci-googledrive "$GOOGLEDRIVE_TEST_ACCESS_TOKEN"
+encrypted-test:
+  extends: .plugin_test
+  script:
+    - ./ci/ci-encrypted
 
-#zip-archive-test:
-#  extends: .plugin_test
-#  script:
-#    - ./ci/ci-zip-archive
-#
-#howto-quick-start-test:
-#  stage: test
-#  image: $CONTAINER_TEST_IMAGE
-#  script:
-#    - ./ci/howto-quick-start
-#
-#howto-sharing-test:
-#  stage: test
-#  image: $CONTAINER_TEST_IMAGE
-#  script:
-#    - ./ci/howto-sharing-and-access-control
-#
-#howto-forest-creation-test:
-#  stage: test
-#  image: $CONTAINER_TEST_IMAGE
-#  script:
-#    - ./ci/howto-forest-creation
-#
-#howto-group-users-test:
-#  stage: test
-#  image: $CONTAINER_TEST_IMAGE
-#  script:
-#    - ./ci/howto-group-users
-#
-#howto-encryption-backend-test:
-#  stage: test
-#  image: $CONTAINER_TEST_IMAGE
-#  script:
-#    - ./ci/howto-encryption-backend
-#
-#howto-cache-test:
-#  stage: test
-#  image: $CONTAINER_TEST_IMAGE
-#  script:
-#    - ./ci/howto-cache
+dropbox-test-legacy:
+  extends: .plugin_test
+  allow_failure: true
+  script:
+    - ./ci/ci-dropbox "$DROPBOX_TEST_ACCESS_TOKEN"
+
+dropbox-test:
+  extends: .plugin_test
+  allow_failure: true
+  script:
+    - ./ci/ci-dropbox "" "$DROPBOX_TEST_APP_KEY" "$DROPBOX_TEST_REFRESH_TOKEN"
+
+googledrive-test:
+  extends: .plugin_test
+  script:
+    - ./ci/ci-googledrive "$GOOGLEDRIVE_TEST_ACCESS_TOKEN"
+
+zip-archive-test:
+  extends: .plugin_test
+  script:
+    - ./ci/ci-zip-archive
+
+howto-quick-start-test:
+  stage: test
+  image: $CONTAINER_TEST_IMAGE
+  script:
+    - ./ci/howto-quick-start
+
+howto-sharing-test:
+  stage: test
+  image: $CONTAINER_TEST_IMAGE
+  script:
+    - ./ci/howto-sharing-and-access-control
+
+howto-forest-creation-test:
+  stage: test
+  image: $CONTAINER_TEST_IMAGE
+  script:
+    - ./ci/howto-forest-creation
+
+howto-group-users-test:
+  stage: test
+  image: $CONTAINER_TEST_IMAGE
+  script:
+    - ./ci/howto-group-users
+
+howto-encryption-backend-test:
+  stage: test
+  image: $CONTAINER_TEST_IMAGE
+  script:
+    - ./ci/howto-encryption-backend
+
+howto-cache-test:
+  stage: test
+  image: $CONTAINER_TEST_IMAGE
+  script:
+    - ./ci/howto-cache
 
 smoke-test:
   stage: test
@@ -236,18 +236,18 @@ pages-test:
     paths:
       - artifacts/docs
 
-#pages:
-#  stage: docs
-#  image: $CONTAINER_TEST_IMAGE
-#  dependencies:
-#    - pytest
-#  only:
-#    - master
-#  script:
-#    - ./ci/ci-docs
-#    - cp -r artifacts/docs/html public
-#    - cp -r artifacts/docs/man public/man
-#    - cp -r artifacts/htmlcov public/coverage
-#  artifacts:
-#    paths:
-#      - public/
+pages:
+  stage: docs
+  image: $CONTAINER_TEST_IMAGE
+  dependencies:
+    - pytest
+  only:
+    - master
+  script:
+    - ./ci/ci-docs
+    - cp -r artifacts/docs/html public
+    - cp -r artifacts/docs/man public/man
+    - cp -r artifacts/htmlcov public/coverage
+  artifacts:
+    paths:
+      - public/
