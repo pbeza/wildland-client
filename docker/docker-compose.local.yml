@@ -17,3 +17,10 @@ services:
       - ..:/home/user/wildland-client:ro
       - ../artifacts:/home/user/wildland-client/artifacts:rw
       - ../.mypy_cache:/home/user/wildland-client/.mypy_cache:rw
+  wildland-client:
+    ports:
+      - "5678:5678" # debugpy
+    environment:
+      DEBUGPY: "True"
+      DEBUGPY__WAIT: "False"
+
