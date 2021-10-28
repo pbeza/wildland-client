@@ -3,7 +3,7 @@
 set -ex
 
 . /home/user/env/bin/activate
-. ci/install-inplace
+#. ci/install-inplace
 
 # pytest
 
