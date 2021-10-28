@@ -118,20 +118,20 @@ gitlab-graphql-test:
   script:
     - ./ci/ci-gitlab-graphql
 
-#imap-test:
-#  extends: .plugin_test
-#  script:
-#    - ./ci/ci-imap
-#
-#ipfs-test:
-#  extends: .plugin_test
-#  script:
-#    - ./ci/ci-ipfs
-#
-#sshfs-test:
-#  extends: .plugin_test
-#  script:
-#    - ./ci/ci-sshfs
+imap-test:
+  extends: .plugin_test
+  script:
+    - ./ci/ci-imap
+
+ipfs-test:
+  extends: .plugin_test
+  script:
+    - ./ci/ci-ipfs
+
+sshfs-test:
+  extends: .plugin_test
+  script:
+    - ./ci/ci-sshfs
 
 s3-test:
   extends: .plugin_test
