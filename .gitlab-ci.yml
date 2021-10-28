@@ -66,19 +66,19 @@ mypy-plugins:
     reports:
       junit: artifacts/wildland-mypy-plugins.xml
 
-#pytest:
-#  stage: test
-#  image: $CONTAINER_TEST_IMAGE
-#  script:
-#    - export PYTEST_ADDOPTS="--color=yes"
-#    - ./ci/ci-pytest
-#  artifacts:
-#    paths:
-#      - artifacts/htmlcov/
-#    reports:
-#      junit: artifacts/wildland.xml
-#      cobertura: artifacts/coverage.xml
-#  coverage: '/TOTAL.*\s(\d+)%/'
+pytest:
+  stage: test
+  image: $CONTAINER_TEST_IMAGE
+  script:
+    - export PYTEST_ADDOPTS="--color=yes"
+    - ./ci/ci-pytest
+  artifacts:
+    paths:
+      - artifacts/htmlcov/
+    reports:
+      junit: artifacts/wildland.xml
+      cobertura: artifacts/coverage.xml
+  coverage: '/TOTAL.*\s(\d+)%/'
 
 .plugin_test:
   stage: test
