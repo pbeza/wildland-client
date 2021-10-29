@@ -7,9 +7,9 @@ set -ex
 
 # pytest
 
-#pytest -v \
-#       --cov plugins/zip_archive/wildland_zip \
-#       plugins/zip_archive
-#mv /tmp/.coverage.wildland /tmp/.coverage.wildland.pytest
+pytest -v \
+       --cov plugins/zip_archive/wildland_zip \
+       plugins/zip_archive
+mv /tmp/.coverage.wildland /tmp/.coverage.wildland.pytest
 
-python3 -m coverage run -p -m pytest -v plugins/zip_archive
+#python3 -m coverage run -p -m pytest -v plugins/zip_archive
