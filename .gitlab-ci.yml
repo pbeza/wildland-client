@@ -144,21 +144,21 @@ s3-test:
   script:
     - ./ci/ci-s3
 
-#transpose-test:
-#    extends: .plugin_test
-#    script:
-#      - ./ci/ci-transpose
-#
-#webdav-test:
-#    extends: .plugin_test
-#    script:
-#      - ./ci/ci-webdav
+transpose-test:
+    extends: .plugin_test
+    script:
+      - ./ci/ci-transpose
 
-#encrypted-test:
-#  extends: .plugin_test
-#  script:
-#    - ./ci/ci-encrypted
-#
+webdav-test:
+    extends: .plugin_test
+    script:
+      - ./ci/ci-webdav
+
+encrypted-test:
+  extends: .plugin_test
+  script:
+    - ./ci/ci-encrypted
+
 #dropbox-test-legacy:
 #  extends: .plugin_test
 #  allow_failure: true
