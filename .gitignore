@@ -8,3 +8,5 @@ artifacts/
 .mypy_cache
 .pytest_cache
 /*.log
+.vscode
+.devcontainer
