@@ -1,0 +1,23 @@
+
+{	
+	"workspaceFolder": "/home/user/wildland-client",
+	"settings": {
+		"logViewer.watch": ["/home/user/.local/share/wildland/wl-fuse.log"],
+		"python.defaultInterpreterPath": "/home/user/env/bin/python",
+		"python.venvPath": "/home/user/env",
+		"python.languageServer": "Pylance",
+		"python.linting.enabled": true,
+		"python.linting.pylintEnabled": true,
+		"python.venvFolders": [
+			"/home/user/env"
+		],
+		"python.pipenvPath": "/home/user/env/bin/activate",
+		"python.analysis.extraPaths": [
+			"/home/user/wildland-client"
+		],
+	},
+	"extensions": [
+		"ms-python.python",
+		"ms-python.vscode-pylance"
+	],
+}
