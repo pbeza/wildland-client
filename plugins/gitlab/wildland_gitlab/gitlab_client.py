@@ -156,17 +156,20 @@ class GitlabClient:
         epic = issue.attributes['epic']
         author = issue.attributes['author']['name']
         author_url = issue.attributes['author']['web_url']
-        assignees = " | ".join(issue.attributes['assignees'])
+        # logger.debug(assignees)
+        assignees: List[Tuple] = [(item['name'], item['web_url']) for item in issue.attributes['assignees']]
+        assignees: List[str] = [f"[{at[0]}]({at[1]})" for at in assignees]
+        assignees: str = " | ".join(assignees)
         web_url = issue.attributes['web_url']
 
-        markdown_text = f"""> ## issue info
-> *created at:* `{created_at}`
-> *labels:* `{labels}`
-> *milestone:* `{milestone}`
-> *epic:* `{epic}`
-> *author:* [{author}]({author_url})
-> *assignees:* `{assignees}`
-> *web_url:* [link]({web_url})
+        markdown_text = f""">\n  
+> created at: `{created_at}`  
+> labels: `{labels}`  
+> milestone: `{milestone}`  
+> epic: `{epic}`  
+> author: [{author}]({author_url})  
+> assignees: `{assignees}`  
+> web_url: [link]({web_url})  
 
 ## description
 {description}
