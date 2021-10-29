@@ -7,7 +7,7 @@ set -ex
 
 # pytest
 
-#pytest -v \
-#       --cov plugins/categorization_proxy/wildland_categorization_proxy \
-#       plugins/categorization_proxy
-#mv /tmp/.coverage.wildland /tmp/.coverage.wildland.pytest
+pytest -v \
+       --cov plugins/categorization_proxy/wildland_categorization_proxy \
+       plugins/categorization_proxy
+mv /tmp/.coverage.wildland /tmp/.coverage.wildland.pytest

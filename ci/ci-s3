@@ -7,10 +7,10 @@ set -ex
 
 # pytest
 
-#pytest -v \
-#       --cov plugins/s3/wildland_s3 \
-#       plugins/s3
-#mv /tmp/.coverage.wildland /tmp/.coverage.wildland.pytest
+pytest -v \
+       --cov plugins/s3/wildland_s3 \
+       plugins/s3
+mv /tmp/.coverage.wildland /tmp/.coverage.wildland.pytest
 
 # Setup
 ROOT="$HOME/wildland"
