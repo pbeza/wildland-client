@@ -49,5 +49,4 @@ time -p test -f "$ROOT"/prefix/t/2021/08/16/container2/Bye.md
 # checking the content of the files
 time -p chronic grep 'Hello' "$ROOT"/prefix/category/two/container1/Hello.md
 
-#$WL stop
- 
+$WL stop

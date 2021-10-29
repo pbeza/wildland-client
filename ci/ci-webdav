@@ -61,4 +61,4 @@ $WL container mount webdav-temp
 # Verify the template creation works
 tree "$MNT_PATH_2"
 
-#$WL stop
+$WL stop

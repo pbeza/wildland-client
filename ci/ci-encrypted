@@ -43,4 +43,4 @@ time sleep 2
 time -p chronic /bin/bash -c '[[ $(cat ~/wildland/decrypted/file) == "foo" ]]'
 time -p chronic /bin/bash -c '[[ $(cat ~/wildland/decrypted/subdir/file) == "bar" ]]'
 
-#$WL stop
+$WL stop
