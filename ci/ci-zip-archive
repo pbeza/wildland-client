@@ -3,11 +3,10 @@
 set -ex
 
 . /home/user/env/bin/activate
-. ci/install-inplace zip_archive
+. ci/install-inplace
 
 # pytest
 
 pytest -v \
        --cov plugins/zip_archive/wildland_zip \
        plugins/zip_archive
-mv /tmp/.coverage.wildland /tmp/.coverage.wildland.pytest
