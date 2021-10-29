@@ -24,15 +24,15 @@
 gitlab_client fetches the information necessary for exposing the issues
 in the backend.
 """
+from dataclasses import dataclass
+from datetime import datetime
 # pylint: disable=too-many-instance-attributes
 # pylint: disable=no-member
 from typing import List, Optional, Union
-from dataclasses import dataclass
-from datetime import datetime
 
-import requests
 import gitlab
-
+import requests
+from gitlab.v4.objects.issues import ProjectIssue
 from wildland.log import get_logger
 
 logger = get_logger('GitlabClient')
@@ -147,6 +147,32 @@ class GitlabClient:
 
         return to_return
 
+    @staticmethod
+    def _create_issue_content(issue: ProjectIssue) -> str:
+        description = issue.attributes['description']
+        created_at = issue.attributes['created_at']
+        labels = " | ".join(issue.attributes['labels'])
+        milestone = issue.attributes['milestone']
+        epic = issue.attributes['epic']
+        author = issue.attributes['author']['name']
+        author_url = issue.attributes['author']['web_url']
+        assignees = " | ".join(issue.attributes['assignees'])
+        web_url = issue.attributes['web_url']
+
+        markdown_text = f"""> ## issue info
+> *created at:* `{created_at}`
+> *labels:* `{labels}`
+> *milestone:* `{milestone}`
+> *epic:* `{epic}`
+> *author:* [{author}]({author_url})
+> *assignees:* `{assignees}`
+> *web_url:* [link]({web_url})
+
+## description
+{description}
+"""
+        return markdown_text
+
     def get_issue_description(self, issue: CompactIssue) -> str:
         """
         Fetches a description of a single issue from the server
@@ -154,6 +180,5 @@ class GitlabClient:
         logger.debug('retrieveing the issue description:')
 
         assert self.gitlab is not None
-        retrieved_issue = (self.gitlab.projects.get(issue.project_id)).issues.get(issue.iid)
-
-        return retrieved_issue.attributes['description']
+        retrieved_issue: ProjectIssue = (self.gitlab.projects.get(issue.project_id)).issues.get(issue.iid)
+        return self._create_issue_content(retrieved_issue)
