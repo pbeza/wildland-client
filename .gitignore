@@ -9,3 +9,5 @@ artifacts/
 .mypy_cache
 /*.log
 cargo_issues*
+.vscode
+.devcontainer
