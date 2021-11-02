@@ -149,9 +149,12 @@ class GitlabClient:
 
     @staticmethod
     def _create_issue_content(issue: ProjectIssue) -> str:
-        description = issue.attributes['description']
-        description = description.replace("\n", "  \n")
-        description += "  \n"
+        try:
+            description = issue.attributes['description']
+            description = description.replace("\n", "  \n")
+            description += "  \n"
+        except AttributeError:
+            description = 'None'
         created_at = issue.attributes['created_at']
         labels = " | ".join(issue.attributes['labels'])
         if labels == "": labels = None
@@ -159,7 +162,6 @@ class GitlabClient:
         epic = issue.attributes['epic']
         author = issue.attributes['author']['name']
         author_url = issue.attributes['author']['web_url']
-        # logger.debug(assignees)
         assignees: List[Tuple] = [(item['name'], item['web_url']) for item in issue.attributes['assignees']]
         assignees: List[str] = [f"[{at[0]}]({at[1]})" for at in assignees]
         assignees: str = " | ".join(assignees)
