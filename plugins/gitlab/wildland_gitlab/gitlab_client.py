@@ -155,7 +155,9 @@ class GitlabClient:
             description += "  \n"
         except AttributeError:
             description = 'None'
-        created_at = issue.attributes['created_at']
+        created_at: str = issue.attributes['created_at']
+        created_at: datetime = datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%S.%fZ")
+        created_at = created_at.strftime("%Y-%m-%d %H:%M")
         labels = " | ".join(issue.attributes['labels'])
         if labels == "": labels = None
         milestone = issue.attributes['milestone']
