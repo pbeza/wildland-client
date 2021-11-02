@@ -163,10 +163,11 @@ class GitlabClient:
         assignees: List[Tuple] = [(item['name'], item['web_url']) for item in issue.attributes['assignees']]
         assignees: List[str] = [f"[{at[0]}]({at[1]})" for at in assignees]
         assignees: str = " | ".join(assignees)
+        if assignees == "": assignees = None
         web_url = issue.attributes['web_url']
         ref_link = issue.attributes['references']['full']
 
-        markdown_text = f""">\n  
+        markdown_text = f""">  \n
 > created at: `{created_at}`  
 > labels: `{labels}`  
 > milestone: `{milestone}`  
