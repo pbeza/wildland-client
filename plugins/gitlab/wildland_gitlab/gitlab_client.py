@@ -152,9 +152,9 @@ class GitlabClient:
         description = issue.attributes['description']
         description = description.replace("\n", "  \n")
         description += "  \n"
-        logger.error(description)
         created_at = issue.attributes['created_at']
         labels = " | ".join(issue.attributes['labels'])
+        if labels == "": labels = None
         milestone = issue.attributes['milestone']
         epic = issue.attributes['epic']
         author = issue.attributes['author']['name']
