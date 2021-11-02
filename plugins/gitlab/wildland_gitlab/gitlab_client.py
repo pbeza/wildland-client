@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from datetime import datetime
 # pylint: disable=too-many-instance-attributes
 # pylint: disable=no-member
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Tuple
 
 import gitlab
 import requests
@@ -161,6 +161,7 @@ class GitlabClient:
         assignees: List[str] = [f"[{at[0]}]({at[1]})" for at in assignees]
         assignees: str = " | ".join(assignees)
         web_url = issue.attributes['web_url']
+        ref_link = issue.attributes['references']['full']
 
         markdown_text = f""">\n  
 > created at: `{created_at}`  
@@ -169,7 +170,7 @@ class GitlabClient:
 > epic: `{epic}`  
 > author: [{author}]({author_url})  
 > assignees: `{assignees}`  
-> web_url: [link]({web_url})  
+> web_url: [{ref_link}]({web_url})  
 
 ## description
 {description}
