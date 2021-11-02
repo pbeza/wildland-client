@@ -150,6 +150,9 @@ class GitlabClient:
     @staticmethod
     def _create_issue_content(issue: ProjectIssue) -> str:
         description = issue.attributes['description']
+        description = description.replace("\n", "  \n")
+        description += "  \n"
+        logger.error(description)
         created_at = issue.attributes['created_at']
         labels = " | ".join(issue.attributes['labels'])
         milestone = issue.attributes['milestone']
