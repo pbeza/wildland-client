@@ -159,15 +159,17 @@ class GitlabClient:
         created_at: datetime = datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%S.%fZ")
         created_at = created_at.strftime("%Y-%m-%d %H:%M")
         labels = " | ".join(issue.attributes['labels'])
-        if labels == "": labels = None
+        if labels == "":
+            labels = None
         milestone = issue.attributes['milestone']
         epic = issue.attributes['epic']
         author = issue.attributes['author']['name']
         author_url = issue.attributes['author']['web_url']
-        assignees: List[Tuple] = [(item['name'], item['web_url']) for item in issue.attributes['assignees']]
+        assignees: List[Tuple] = [(a['name'], a['web_url']) for a in issue.attributes['assignees']]
         assignees: List[str] = [f"[{at[0]}]({at[1]})" for at in assignees]
         assignees: str = " | ".join(assignees)
-        if assignees == "": assignees = None
+        if assignees == "":
+            assignees = None
         web_url = issue.attributes['web_url']
         ref_link = issue.attributes['references']['full']
 
@@ -192,5 +194,6 @@ class GitlabClient:
         logger.debug('retrieveing the issue description:')
 
         assert self.gitlab is not None
+        #pylint: disable=line-too-long
         retrieved_issue: ProjectIssue = (self.gitlab.projects.get(issue.project_id)).issues.get(issue.iid)
         return self._create_issue_content(retrieved_issue)
