@@ -162,7 +162,11 @@ class GitlabClient:
         if labels == "":
             labels = 'None'
         milestone = issue.attributes['milestone']
-        epic = issue.attributes['epic']
+        epic_attr = issue.attributes['epic']
+        if epic_attr == None:
+            epic = 'None'
+        else:
+            epic = epic_attr['title']
         author = issue.attributes['author']['name']
         author_url = issue.attributes['author']['web_url']
         assignees_tuples = [(a['name'], a['web_url']) for a in issue.attributes['assignees']]
