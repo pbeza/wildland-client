@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from datetime import datetime
 # pylint: disable=too-many-instance-attributes
 # pylint: disable=no-member
-from typing import List, Optional, Union, Tuple
+from typing import List, Optional, Union
 
 import gitlab
 import requests
@@ -163,7 +163,7 @@ class GitlabClient:
             labels = 'None'
         milestone = issue.attributes['milestone']
         epic_attr = issue.attributes['epic']
-        if epic_attr == None:
+        if epic_attr is None:
             epic = 'None'
         else:
             epic = epic_attr['title']
