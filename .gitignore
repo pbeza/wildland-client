@@ -1,3 +1,4 @@
+artifacts/
 __pycache__
 .mypy_cache
 htmlcov
@@ -6,8 +7,7 @@ env/
 build/
 artifacts/
 .vscode
-.mypy_cache
 /*.log
 cargo_issues*
-.vscode
+.pytest_cache
 .devcontainer

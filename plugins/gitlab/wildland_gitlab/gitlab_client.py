@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from datetime import datetime
 # pylint: disable=too-many-instance-attributes
 # pylint: disable=no-member
-from typing import List, Optional, Union, Tuple
+from typing import List, Optional, Union
 
 import gitlab
 import requests
@@ -155,19 +155,25 @@ class GitlabClient:
             description += "  \n"
         except AttributeError:
             description = 'None'
-        created_at: str = issue.attributes['created_at']
-        created_at: datetime = datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%S.%fZ")
-        created_at = created_at.strftime("%Y-%m-%d %H:%M")
+        created_at_str = issue.attributes['created_at']
+        created_at_dt: datetime = datetime.strptime(created_at_str, "%Y-%m-%dT%H:%M:%S.%fZ")
+        created_at = created_at_dt.strftime("%Y-%m-%d %H:%M")
         labels = " | ".join(issue.attributes['labels'])
-        if labels == "": labels = None
+        if labels == "":
+            labels = 'None'
         milestone = issue.attributes['milestone']
-        epic = issue.attributes['epic']
+        epic_attr = issue.attributes['epic']
+        if epic_attr is None:
+            epic = 'None'
+        else:
+            epic = epic_attr['title']
         author = issue.attributes['author']['name']
         author_url = issue.attributes['author']['web_url']
-        assignees: List[Tuple] = [(item['name'], item['web_url']) for item in issue.attributes['assignees']]
-        assignees: List[str] = [f"[{at[0]}]({at[1]})" for at in assignees]
-        assignees: str = " | ".join(assignees)
-        if assignees == "": assignees = None
+        assignees_tuples = [(a['name'], a['web_url']) for a in issue.attributes['assignees']]
+        assignees_strings = [f"[{at[0]}]({at[1]})" for at in assignees_tuples]
+        assignees: str = " | ".join(assignees_strings)
+        if assignees == "":
+            assignees = 'None'
         web_url = issue.attributes['web_url']
         ref_link = issue.attributes['references']['full']
 
@@ -192,5 +198,6 @@ class GitlabClient:
         logger.debug('retrieveing the issue description:')
 
         assert self.gitlab is not None
+        #pylint: disable=line-too-long
         retrieved_issue: ProjectIssue = (self.gitlab.projects.get(issue.project_id)).issues.get(issue.iid)
         return self._create_issue_content(retrieved_issue)
