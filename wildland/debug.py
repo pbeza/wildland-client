@@ -1,6 +1,6 @@
 # Wildland Project
 #
-# Copyright (C) 2020 Golem Foundation
+# Copyright (C) 2021 Golem Foundation
 #
 # Authors:
 #                    Michał Haponiuk <mhaponiuk@wildland.io>,
