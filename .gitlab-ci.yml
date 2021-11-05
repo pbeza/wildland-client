@@ -10,6 +10,7 @@ variables:
   CONTAINER_TEST_IMAGE: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG-ci
   CONTAINER_IMAGE_DEV: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG
   CONTAINER_RELEASE_IMAGE: $CI_REGISTRY_IMAGE:latest
+  CONTAINER_RELEASE_IMAGE_WITH_TAG: $CI_REGISTRY_IMAGE:$CI_COMMIT_TAG
 
 build:
   stage: build
@@ -25,6 +26,24 @@ build:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
     - docker push $CONTAINER_TEST_IMAGE
     - docker push $CONTAINER_IMAGE_DEV
+  except:
+    refs:
+      - tags
+
+release:
+  stage: build
+  image: docker/compose:latest
+  services:
+    - docker:dind
+  script:
+    - cd docker
+    - docker-compose build wildland-client-base wildland-client
+    - docker tag wildland-client $CONTAINER_RELEASE_IMAGE_WITH_TAG
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker push $CONTAINER_RELEASE_IMAGE_WITH_TAG
+  only:
+    refs:
+      - tags
 
 gcp:
   stage: build
@@ -44,12 +63,18 @@ gcp:
 
 lint:
   stage: test
+  except:
+    refs:
+      - tags
   image: $CONTAINER_TEST_IMAGE
   script:
     - ./ci/ci-lint
 
 mypy:
   stage: test
+  except:
+    refs:
+      - tags
   image: $CONTAINER_TEST_IMAGE
   script:
     - ./ci/ci-mypy --junit-xml artifacts/wildland-mypy.xml wildland
@@ -59,6 +84,9 @@ mypy:
 
 mypy-plugins:
   stage: test
+  except:
+    refs:
+      - tags
   image: $CONTAINER_TEST_IMAGE
   script:
     - ./ci/ci-mypy --junit-xml artifacts/wildland-mypy-plugins.xml plugins
@@ -68,6 +96,9 @@ mypy-plugins:
 
 pytest:
   stage: test
+  except:
+    refs:
+      - tags
   image: $CONTAINER_TEST_IMAGE
   script:
     - export PYTEST_ADDOPTS="--color=yes"
@@ -84,66 +115,99 @@ pytest:
 
 bear-test:
   stage: test
+  except:
+    refs:
+      - tags
   image: $CONTAINER_TEST_IMAGE
   script:
     - ./ci/wildland-test-runner.sh ./ci/ci-bear
 
 gitlab-test:
   stage: test
+  except:
+    refs:
+      - tags
   image: $CONTAINER_TEST_IMAGE
   script:
     - ./ci/ci-gitlab
 
 git-test:
-    stage: test
-    image: $CONTAINER_TEST_IMAGE
-    script:
-      - ./ci/ci-git
+  stage: test
+  except:
+    refs:
+      - tags
+  image: $CONTAINER_TEST_IMAGE
+  script:
+    - ./ci/ci-git
 
 gitlab-graphql-test:
-    stage: test
-    image: $CONTAINER_TEST_IMAGE
-    script:
-      - ./ci/ci-gitlab-graphql
+  stage: test
+  except:
+    refs:
+      - tags
+  image: $CONTAINER_TEST_IMAGE
+  script:
+    - ./ci/ci-gitlab-graphql
 
 imap-test:
   stage: test
+  except:
+    refs:
+      - tags
   image: $CONTAINER_TEST_IMAGE
   script:
     - ./ci/ci-imap
 
 ipfs-test:
   stage: test
+  except:
+    refs:
+      - tags
   image: $CONTAINER_TEST_IMAGE
   script:
     - ./ci/ci-ipfs
 
 sshfs-test:
   stage: test
+  except:
+    refs:
+      - tags
   image: $CONTAINER_TEST_IMAGE
   script:
     - ./ci/ci-sshfs
 
 s3-test:
   stage: test
+  except:
+    refs:
+      - tags
   image: $CONTAINER_TEST_IMAGE
   script:
     - ./ci/ci-s3
     
 transpose-test:
-    stage: test
-    image: $CONTAINER_TEST_IMAGE
-    script:
-      - ./ci/ci-transpose
+  stage: test
+  except:
+    refs:
+      - tags
+  image: $CONTAINER_TEST_IMAGE
+  script:
+    - ./ci/ci-transpose
 
 webdav-test:
-    stage: test
-    image: $CONTAINER_TEST_IMAGE
-    script:
-      - ./ci/ci-webdav
+  stage: test
+  except:
+    refs:
+      - tags
+  image: $CONTAINER_TEST_IMAGE
+  script:
+    - ./ci/ci-webdav
 
 encrypted-test:
   stage: test
+  except:
+    refs:
+      - tags
   image: $CONTAINER_TEST_IMAGE
   script:
     - ./ci/ci-encrypted
@@ -151,6 +215,9 @@ encrypted-test:
 dropbox-test-legacy:
   allow_failure: true
   stage: test
+  except:
+    refs:
+      - tags
   image: $CONTAINER_TEST_IMAGE
   script:
     - ./ci/ci-dropbox "$DROPBOX_TEST_ACCESS_TOKEN"
@@ -158,48 +225,72 @@ dropbox-test-legacy:
 dropbox-test:
   allow_failure: true
   stage: test
+  except:
+    refs:
+      - tags
   image: $CONTAINER_TEST_IMAGE
   script:
     - ./ci/ci-dropbox "" "$DROPBOX_TEST_APP_KEY" "$DROPBOX_TEST_REFRESH_TOKEN"
 
 googledrive-test:
   stage: test
+  except:
+    refs:
+      - tags
   image: $CONTAINER_TEST_IMAGE
   script:
     - ./ci/ci-googledrive "$GOOGLEDRIVE_TEST_ACCESS_TOKEN"
 
 howto-quick-start-test:
   stage: test
+  except:
+    refs:
+      - tags
   image: $CONTAINER_TEST_IMAGE
   script:
     - ./ci/howto-quick-start
 
 howto-sharing-test:
   stage: test
+  except:
+    refs:
+      - tags
   image: $CONTAINER_TEST_IMAGE
   script:
     - ./ci/howto-sharing-and-access-control
 
 howto-forest-creation-test:
   stage: test
+  except:
+    refs:
+      - tags
   image: $CONTAINER_TEST_IMAGE
   script:
     - ./ci/howto-forest-creation
 
 howto-group-users-test:
   stage: test
+  except:
+    refs:
+      - tags
   image: $CONTAINER_TEST_IMAGE
   script:
     - ./ci/howto-group-users
 
 howto-encryption-backend-test:
   stage: test
+  except:
+    refs:
+      - tags
   image: $CONTAINER_TEST_IMAGE
   script:
     - ./ci/howto-encryption-backend
 
 howto-cache-test:
   stage: test
+  except:
+    refs:
+      - tags
   image: $CONTAINER_TEST_IMAGE
   script:
     - timeout 15m ./ci/howto-cache
@@ -210,6 +301,9 @@ howto-cache-test:
 
 smoke-test:
   stage: test
+  except:
+    refs:
+      - tags
   image: docker/compose:latest
   services:
     - docker:dind
@@ -220,7 +314,9 @@ pages-test:
   stage: test
   image: $CONTAINER_TEST_IMAGE
   except:
-    - master
+    refs:
+      - tags
+      - master
   script:
     - ./ci/ci-docs
   artifacts:
