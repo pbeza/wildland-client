@@ -40,9 +40,20 @@ def test_container_publish_to_s3(monkeypatch, cli):
         def list_objects_v2(self, **kwargs):
             assert kwargs
             Client.COUNTER += 1
+            prefix = kwargs['Prefix']
+            filtered_files = []
+            filtered_dirs = []
+            for k, v in self.objects.items():
+                if k.startswith(prefix):
+                    if k.endswith('/'):
+                        filtered_dirs.append({**v, 'Prefix': prefix})
+                    else:
+                        filtered_files.append(v)
             return {'IsTruncated': False,
                     'NextContinuationToken': None,
-                    'Contents': list(self.objects.values())}
+                    'Contents': filtered_files,
+                    'CommonPrefixes': filtered_dirs,
+                }
 
         def get_object(self, **kwargs):
             return self.objects[kwargs['Key']]
@@ -76,7 +87,8 @@ def test_container_publish_to_s3(monkeypatch, cli):
             return Client()
 
     monkeypatch.setattr('boto3.Session', Session)
-    monkeypatch.setattr('wildland.storage_backends.cached.CachedStorageMixin.CACHE_TIMEOUT', -1)
+    monkeypatch.setattr(
+        'wildland.storage_backends.cached.CachedStorageMixin.DEFAULT_CACHE_TIMEOUT', -1)
 
     cli('user', 'create', 'User', '--key', '0xaaa')
     cli('container', 'create', 'Container', '--update-user',
@@ -93,4 +105,4 @@ def test_container_publish_to_s3(monkeypatch, cli):
 
     cli('container', 'publish', 'Container')
 
-    assert Client.COUNTER == 3
+    assert Client.COUNTER == 40

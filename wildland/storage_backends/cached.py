@@ -25,11 +25,12 @@
 Cached storage
 """
 
-from typing import Dict, List, Tuple, Iterable, Set, Optional
-import time
-from pathlib import PurePosixPath
+import abc
 import errno
 import threading
+import time
+from pathlib import PurePosixPath
+from typing import Dict, Iterable, Optional, Set, Tuple
 
 from .base import Attr
 from ..log import get_logger
@@ -37,53 +38,32 @@ from ..log import get_logger
 logger = get_logger('storage-cached')
 
 
-class CachedStorageMixin:
+class BaseCachedStorageMixin(metaclass=abc.ABCMeta):
     """
-    A mixin for caching file information.
-
-    You need to implement info_all(), and invalidate cache (by calling
-    clear_cache()) in all operations that might change the result.
+    Base class for caching mixins.
     """
 
-    CACHE_TIMEOUT = 3.
+    DEFAULT_CACHE_TIMEOUT = 3.
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *_args, **kwargs):
         # Silence mypy: https://github.com/python/mypy/issues/5887
-        super().__init__(*args, **kwargs)  # type: ignore
-
-        self.info: List[Tuple[PurePosixPath, Attr]] = []
+        super().__init__(**kwargs)  # type: ignore
         self.getattr_cache: Dict[PurePosixPath, Attr] = {}
         self.readdir_cache: Dict[PurePosixPath, Set[str]] = {}
-        self.expiry = 0.
         self.cache_lock = threading.Lock()
+        self._cache_timeout = self.DEFAULT_CACHE_TIMEOUT
 
-    def info_all(self) -> Iterable[Tuple[PurePosixPath, Attr]]:
+    @property
+    def cache_timeout(self) -> float:
         """
-        Retrieve information about all files in the storage.
+        Cache timeout.
         """
+        return self._cache_timeout
 
-        raise NotImplementedError()
-
-    def refresh(self):
-        """
-        Refresh cache.
-        """
-
-        with self.cache_lock:
-            self._refresh()
-
-    def _refresh(self):
-        logger.info('refresh')
-
-        self.getattr_cache.clear()
-        self.readdir_cache.clear()
-        self.readdir_cache[PurePosixPath('.')] = set()
-
-        self.info = list(self.info_all())
-        for path, attr in self.info:
-            self._update_cache(path, attr)
-
-        self.expiry = time.time() + self.CACHE_TIMEOUT
+    @cache_timeout.setter
+    def cache_timeout(self, value: float) -> None:
+        assert value >= 0.
+        self._cache_timeout = value
 
     def _update_cache(self, path: PurePosixPath, attr: Optional[Attr]) -> None:
         if attr is None:
@@ -96,18 +76,106 @@ class CachedStorageMixin:
         if attr.is_dir():
             self.readdir_cache.setdefault(path, set())
 
-        # Add all intermediate directories, in case info_all()
-        # didn't include them.
+    def update_cache(self, path: PurePosixPath, attr: Optional[Attr]) -> None:
+        """
+        Update item in the cache instead of invalidating cache as a whole. This method does _not_
+        invalidate children of given ``path`` if it refers to a directory, thus you need to call
+        ``update_cache`` on children separately if applicable.
+        """
+
+        with self.cache_lock:
+            self._update_cache(path, attr)
+
+    @abc.abstractmethod
+    def readdir(self, path: PurePosixPath) -> Iterable[str]:
+        """
+        Cached implementation of ``readdir()``.
+        """
+
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def getattr(self, path: PurePosixPath) -> Attr:
+        """
+        Cached implementation of ``getattr()``. If ``path`` is not in ``self.getattr_cache`` but is
+        in ``self.readdir_cache`` then ``Attr.dir()`` should be returned as an directory's attribute
+        (indicates a synthetic directory).
+        """
+
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def clear_cache(self) -> None:
+        """
+        Invalidate the cache.
+        """
+
+        raise NotImplementedError()
+
+
+class CachedStorageMixin(BaseCachedStorageMixin):
+    """
+    A mixin for caching file information.
+
+    You need to implement ``info_all()``, and invalidate cache (by calling ``clear_cache()`` or
+    ``update_cache()``) in all operations that might change the result.
+    """
+
+    def __init__(self, *args, **kwargs):
+        # Silence mypy: https://github.com/python/mypy/issues/5887
+        super().__init__(*args, **kwargs)  # type: ignore
+        self.expiry = 0.
+
+    def info_all(self) -> Iterable[Tuple[PurePosixPath, Attr]]:
+        """
+        Retrieve information about all files in the storage.
+        """
+
+        raise NotImplementedError()
+
+    def refresh(self) -> None:
+        """
+        Refresh cache.
+        """
+
+        with self.cache_lock:
+            self._refresh()
+
+    def _refresh(self) -> None:
+        logger.debug('refresh')
+        self.getattr_cache.clear()
+        self.readdir_cache.clear()
+        self.readdir_cache[PurePosixPath('.')] = set()
+
+        info: Iterable[Tuple[PurePosixPath, Attr]] = self.info_all()
+        for path, attr in info:
+            self._update_cache(path, attr)
+
+        self.expiry = time.time() + self.cache_timeout
+
+    def update_cache(self, path: PurePosixPath, attr: Optional[Attr]) -> None:
+        """
+        Update item in the cache instead of invalidating all of the items.
+        """
+
+        with self.cache_lock:
+            self._update_cache(path, attr)
+
+    def _update_cache(self, path: PurePosixPath, attr: Optional[Attr]) -> None:
+        super()._update_cache(path, attr)
+
+        # Add all intermediate directories, in case ``info_all()`` didn't include them
         for i in range(len(path.parts)):
             self.readdir_cache.setdefault(
-                PurePosixPath(*path.parts[:i]), set()).add(
-                path.parts[i])
+                PurePosixPath(*path.parts[:i]),
+                set()
+            ).add(path.parts[i])
 
-    def _update(self):
+    def _update(self) -> None:
         if self.expiry < time.time():
             self._refresh()
 
-    def clear_cache(self):
+    def clear_cache(self) -> None:
         """
         Invalidate cache.
         """
@@ -119,10 +187,12 @@ class CachedStorageMixin:
 
     def getattr(self, path: PurePosixPath) -> Attr:
         """
-        Cached implementation of getattr().
+        Cached implementation of ``getattr()``.
         """
+
         if isinstance(path, str):
             path = PurePosixPath(path)
+
         with self.cache_lock:
             self._update()
 
@@ -135,61 +205,70 @@ class CachedStorageMixin:
 
             return self.getattr_cache[path]
 
-    def readdir(self, path: PurePosixPath) -> List[str]:
+    def readdir(self, path: PurePosixPath) -> Iterable[str]:
         """
-        Cached implementation of readdir().
+        Cached implementation of ``readdir()``.
         """
+
         if isinstance(path, str):
             path = PurePosixPath(path)
 
         with self.cache_lock:
             self._update()
+
             if path not in self.readdir_cache:
                 raise FileNotFoundError(errno.ENOENT, str(path))
 
             return sorted(self.readdir_cache[path])
 
 
-class DirectoryCachedStorageMixin:
+class DirectoryCachedStorageMixin(BaseCachedStorageMixin):
     """
     A mixin for caching file information about a specific directory.
 
-    You need to implement info_dir(), and invalidate cache (by calling
-    clear_cache()) in all operations that might change the result.
+    You need to implement ``info_dir()``, and invalidate the cache (by calling ``clear_cache()`` or
+    ``update_cache()``) in all operations that might change the result.
     """
-
-    CACHE_TIMEOUT = 3.
 
     def __init__(self, *args, **kwargs):
         # Silence mypy: https://github.com/python/mypy/issues/5887
         super().__init__(*args, **kwargs)  # type: ignore
 
-        self.getattr_cache: Dict[PurePosixPath, Attr] = {}
-        self.readdir_cache: Dict[PurePosixPath, List[str]] = {}
         self.dir_expiry: Dict[PurePosixPath, float] = {}
-        self.cache_lock = threading.Lock()
 
     def info_dir(self, path: PurePosixPath) -> Iterable[Tuple[PurePosixPath, Attr]]:
         """
-        Retrieve information about files in a directory (readdir + getattr).
+        Retrieve information about files in a directory (``readdir`` + ``getattr``).
         """
 
         raise NotImplementedError()
 
-    def _clear_dir(self, path: PurePosixPath):
+    def _update_dir(self, path: PurePosixPath) -> None:
+        if self.dir_expiry.get(path, 0) >= time.time():
+            return
+
+        if path in self.dir_expiry:
+            self._clear_dir(path)
+
+        self._refresh_dir(path)
+
+    def _clear_dir(self, path: PurePosixPath) -> None:
         del self.dir_expiry[path]
+
         if path in self.readdir_cache:
             del self.readdir_cache[path]
+
         for getattr_path in list(self.getattr_cache.keys()):
             if getattr_path.parent == path:
                 del self.getattr_cache[getattr_path]
 
-    def _refresh_dir(self, path: PurePosixPath):
-        names = []
+    def _refresh_dir(self, path: PurePosixPath) -> None:
+        names: Set[str] = set()
         try:
-            for filePath, attr in self.info_dir(path):
-                names.append(filePath.name)
-                self.getattr_cache[filePath] = attr
+            for file_path, attr in self.info_dir(path):
+                name = file_path.name
+                names.add(name)
+                self.getattr_cache[path / name] = attr
         except PermissionError as e:
             raise e
         except OSError as e:
@@ -199,20 +278,11 @@ class DirectoryCachedStorageMixin:
         else:
             self.readdir_cache[path] = names
 
-        self.dir_expiry[path] = time.time() + self.CACHE_TIMEOUT
+        self.dir_expiry[path] = time.time() + self.cache_timeout
 
-    def _update_dir(self, path: PurePosixPath):
-        if self.dir_expiry.get(path, 0) >= time.time():
-            return
-
-        if path in self.dir_expiry:
-            self._clear_dir(path)
-
-        self._refresh_dir(path)
-
-    def clear_cache(self):
+    def clear_cache(self) -> None:
         """
-        Invalidate cache.
+        Invalidate the cache.
         """
 
         with self.cache_lock:
@@ -222,12 +292,13 @@ class DirectoryCachedStorageMixin:
 
     def getattr(self, path: PurePosixPath) -> Attr:
         """
-        Cached implementation of getattr().
+        Cached implementation of ``getattr()``.
         """
+
         if isinstance(path, str):
             path = PurePosixPath(path)
-        # We don't retrieve any information about the root directory's
-        # attributes.
+
+        # We don't retrieve any information about the root directory's attributes
         if path == PurePosixPath('.'):
             return Attr.dir()
 
@@ -239,12 +310,14 @@ class DirectoryCachedStorageMixin:
 
             return self.getattr_cache[path]
 
-    def readdir(self, path: PurePosixPath) -> List[str]:
+    def readdir(self, path: PurePosixPath) -> Iterable[str]:
         """
-        Cached implementation of readdir().
+        Cached implementation of ``readdir()``.
         """
+
         if isinstance(path, str):
             path = PurePosixPath(path)
+
         with self.cache_lock:
             self._update_dir(path)
 
