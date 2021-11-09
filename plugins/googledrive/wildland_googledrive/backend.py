@@ -152,6 +152,7 @@ class DriveStorageBackend(
         self.client = DriveClient(drive_access_credentials, self.cache_tree)
         self.root = PosixPath(self.params.get("location", "/")).resolve()
         self.logger = get_logger("Google Drive Logger")
+        self.mount()
 
     @classmethod
     def cli_options(cls):
@@ -283,7 +284,7 @@ class DriveStorageBackend(
 
     def get_file_token(self, path: PurePosixPath) -> Optional[str]:
         attr: DriveFileAttr = cast(DriveFileAttr, self.getattr(path))
-        return str(int(attr.head_revision_id, 16))
+        return str(attr.head_revision_id)
 
     def add_into_tree(self, metadata):
         """
