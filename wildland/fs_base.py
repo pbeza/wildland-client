@@ -329,8 +329,9 @@ class WildlandFSBase:
 
     @control_command('add-subcontainer-watch')
     def control_add_subcontainer_watch(self, handler: ControlHandler, backend_param: Dict[str, Any],
-                                       with_initial: bool = False, ignore_own: bool = False,
+with_initial: bool = False, ignore_own: bool = False,
                                        params: Optional[dict] = None):
+
         backend = StorageBackend.from_params(backend_param, deduplicate=True)
         for storage_id, storage_backend in self.storages.items():
             if storage_backend == backend:
@@ -340,7 +341,8 @@ class WildlandFSBase:
             raise ValueError  # TODO
         with self.mount_lock:
             return self._add_subcontainer_watch(
-                ident, handler, with_initial=with_initial, ignore_own=ignore_own, params=params)
+ident, handler, with_initial=with_initial, ignore_own=ignore_own, params=params)
+
 
     @control_command('breakpoint')
     def control_breakpoint(self, _handler):
@@ -419,8 +421,9 @@ class WildlandFSBase:
         return watch.id
 
     def _add_subcontainer_watch(self, storage_id: int, handler: ControlHandler,
-                                with_initial: bool = False, ignore_own: bool = False,
+ with_initial: bool = False, ignore_own: bool = False,
                                 params: Optional[dict] = None):
+                                
         assert self.mount_lock.locked()
 
         watch = Watch(
@@ -445,7 +448,7 @@ class WildlandFSBase:
             def watch_handler(events):
                 return self._watch_subcontainer_handler(storage_id, events)
             watcher = self.storages[storage_id].start_subcontainer_watcher(
-                watch_handler, with_initial=with_initial, ignore_own_events=ignore_own,
+ watch_handler, with_initial=with_initial, ignore_own_events=ignore_own,
                 params=params)
 
             if watcher:

@@ -918,7 +918,7 @@ class WildlandFSClient:
         finally:
             client.disconnect()
 
-    def watch_subcontainers(self, wl_client, containers_storages: Dict[Container, Storage],
+ def watch_subcontainers(self, wl_client, containers_storages: Dict[Container, Storage],
                             with_initial=False) -> Iterator[List[WatchSubcontainerEvent]]:
         """
         TODO
@@ -930,7 +930,7 @@ class WildlandFSClient:
             watches = {}
             for container, storage in containers_storages.items():
                 params = storage.params
-                sb = StorageBackend.from_params(params, deduplicate=True)
+sb = StorageBackend.from_params(params, deduplicate=True)
                 watching_params = sb.get_subcontainer_watch_params(wl_client)
                 logger.debug(f'watching for subcontainers: storage {params["backend-id"]}')
                 watch_id = client.run_command(

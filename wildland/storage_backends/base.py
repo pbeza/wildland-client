@@ -389,7 +389,7 @@ class StorageBackend(metaclass=abc.ABCMeta):
         self.watcher_instance = None
         self.ignore_own_events = False
 
-    def start_subcontainer_watcher(self, handler, with_initial=False, ignore_own_events=None,
+def start_subcontainer_watcher(self, handler, with_initial=False, ignore_own_events=None,
                                    params: Optional[dict] = None):
 
         if self.subcontainer_watcher_instance:
