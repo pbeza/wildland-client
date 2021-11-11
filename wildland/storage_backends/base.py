@@ -389,7 +389,7 @@ class StorageBackend(metaclass=abc.ABCMeta):
         self.watcher_instance = None
         self.ignore_own_events = False
 
-    def start_subcontainer_watcher(self, handler, ignore_own_events=None):
+    def start_subcontainer_watcher(self, handler, with_initial=False, ignore_own_events=None):
 
         if self.subcontainer_watcher_instance:
             raise StorageError("Watcher already exists")
@@ -399,7 +399,7 @@ class StorageBackend(metaclass=abc.ABCMeta):
         if not self.subcontainer_watcher_instance:
             return None
 
-        self.subcontainer_watcher_instance.start(handler)
+        self.subcontainer_watcher_instance.start(handler, with_initial)
 
         return self.subcontainer_watcher_instance
 
