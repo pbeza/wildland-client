@@ -177,7 +177,7 @@ def sign(ctx: click.Context, input_file, output_file, in_place):
     else:
         data = sys.stdin.buffer.read()
 
-    manifest = Manifest.from_unsigned_bytes(data, obj.client.session.sig)
+    manifest = Manifest.from_unsigned_bytes(data, obj.client)
     manifest.skip_verification()
 
     path_to_save = path if in_place else output_file
@@ -223,8 +223,7 @@ def _sign_and_save(
         updated_user.add_user_keys(obj.client.session.sig)
 
     try:
-        manifest.encrypt_and_sign(obj.client.session.sig,
-                                  only_use_primary_key=(manifest_type == 'user'))
+        manifest.encrypt_and_sign(obj.client, only_use_primary_key=(manifest_type == 'user'))
     except SigError as se:
         raise CliError(f'Cannot sign manifest: {se}') from se
 
@@ -258,7 +257,7 @@ def verify(ctx: click.Context, input_file):
         data = sys.stdin.buffer.read()
 
     try:
-        manifest = Manifest.from_bytes(data, obj.client.session.sig,
+        manifest = Manifest.from_bytes(data, obj.client,
                                        allow_only_primary_key=(manifest_type == 'user'))
         if manifest_type:
             validate_manifest(manifest, manifest_type, obj.client)
@@ -289,7 +288,7 @@ def dump(ctx: click.Context, input_file, decrypt, **_callback_kwargs):
 
     if decrypt:
         try:
-            manifest = Manifest.from_file(path, obj.client.session.sig)
+            manifest = Manifest.from_file(path, obj.client)
         except ManifestError as me:
             raise CliError(
                 f"Manifest cannot be loaded: {me}\n"
@@ -331,7 +330,7 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
     path = find_manifest_file(obj.client, input_file, manifest_type)
 
     try:
-        manifest = Manifest.from_file(path, obj.client.session.sig)
+        manifest = Manifest.from_file(path, obj.client)
         actual_manifest_type = manifest.fields['object']
         if manifest_type is None:
             manifest_type = actual_manifest_type
@@ -365,7 +364,7 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
             return False
 
         try:
-            manifest = Manifest.from_unsigned_bytes(data, obj.client.session.sig)
+            manifest = Manifest.from_unsigned_bytes(data, obj.client)
             manifest.skip_verification()
         except (ManifestError, WildlandError) as e:
             click.secho(f'Manifest parse error: {e}', fg="red")
@@ -468,7 +467,7 @@ def _get_publishable_object_from_file_or_path(
             raise click.ClickException(f'Manifest not found: {path}. Consider using the command '
                                        'including specific context (eg. wl container <cmd>)')
 
-        manifest = Manifest.from_file(manifest_path, obj.client.session.sig)
+        manifest = Manifest.from_file(manifest_path, obj.client)
         manifest_type = manifest.fields['object']  # In case publish was called via wl publish <f>
         path = str(manifest_path)
 
@@ -522,8 +521,7 @@ def modify_manifest(pass_ctx: click.Context, input_file: str, edit_funcs: List[C
     manifest_type = _get_expected_manifest_type(pass_ctx)
     manifest_path = find_manifest_file(obj.client, input_file, manifest_type)
 
-    sig_ctx = obj.client.session.sig
-    manifest = Manifest.from_file(manifest_path, sig_ctx)
+    manifest = Manifest.from_file(manifest_path, obj.client)
     if manifest_type is not None:
         validate_manifest(manifest, manifest_type, obj.client)
 

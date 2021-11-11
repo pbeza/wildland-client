@@ -482,7 +482,7 @@ class Client:
         content = self.read_from_url(url, owner)
 
         if object_type == WildlandObject.Type.USER:
-            Manifest.verify_and_load_pubkeys(content, self.session.sig)
+            Manifest.verify_and_load_pubkeys(content, self)
 
         local_owners = self.config.get('local-owners')
 

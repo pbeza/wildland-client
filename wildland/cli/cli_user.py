@@ -329,10 +329,10 @@ def _do_import_manifest(obj, path_or_dict, manifest_owner: Optional[str] = None,
             raise CliError(f'File {path} not found')
 
     # load user pubkeys
-    Manifest.verify_and_load_pubkeys(file_data, obj.session.sig)
+    Manifest.verify_and_load_pubkeys(file_data, obj.client)
 
     # determine type
-    manifest = Manifest.from_bytes(file_data, obj.session.sig)
+    manifest = Manifest.from_bytes(file_data, obj.client)
     import_type = WildlandObject.Type(manifest.fields['object'])
 
     if import_type not in [WildlandObject.Type.USER, WildlandObject.Type.BRIDGE]:
@@ -418,7 +418,7 @@ def _do_process_imported_manifest(
     :param paths: list of paths to use in created Bridge manifest
     :param default_user: owner of the manifests to be created
     """
-    manifest = Manifest.from_file(copied_manifest_path, obj.session.sig)
+    manifest = Manifest.from_file(copied_manifest_path, obj.client)
 
     if manifest.fields['object'] == 'user':
         user = WildlandObject.from_manifest(manifest, obj.client, WildlandObject.Type.USER,

@@ -110,9 +110,9 @@ class Manifest:
         return self._fields
 
     @classmethod
-    def encrypt(cls, fields: dict, sig: SigContext, owner: Optional[str] = None) -> dict:
+    def encrypt(cls, fields: dict, client, owner: Optional[str] = None) -> dict:
         """
-        Encrypt provided dict with the SigContext.
+        Encrypt provided dict with the SigContext provided by Client.
         Encrypts to 'owner' keys, unless 'access' field specifies otherwise.
         Inline storages may have their own access fields.
         Returns encrypted dict.
@@ -123,15 +123,16 @@ class Manifest:
                 raise ManifestError('Owner not found')
 
         for key, value in fields.items():
-            fields[key] = cls._encrypt_submanifests(value, sig, owner)
+            fields[key] = cls._encrypt_submanifests(value, client, owner)
 
         if fields.get('object') in ['user', 'bridge']:
             return fields
 
-        return cls._encrypt_dict(fields, sig, owner)
+        return cls._encrypt_dict(fields, client, owner)
 
     @classmethod
-    def _encrypt_dict(cls, fields: dict, sig: SigContext, owner: str) -> dict:
+    def _encrypt_dict(cls, fields: dict, client, owner: str) -> dict:
+        sig = client.session.sig
         keys_to_encrypt = sig.get_all_pubkeys(owner)
         if 'access' in fields.keys():
             for data_dict in fields['access']:
@@ -154,42 +155,42 @@ class Manifest:
         return {'encrypted': {'encrypted-data': encrypted_data, 'encrypted-keys': encrypted_keys}}
 
     @classmethod
-    def _encrypt_submanifests(cls, object_, sig, owner):
+    def _encrypt_submanifests(cls, object_, client, owner):
         """
         Encrypt all encountered submanifests.
         """
         if isinstance(object_, dict):
             for key, value in object_.items():
-                object_[key] = cls._encrypt_submanifests(value, sig, owner)
+                object_[key] = cls._encrypt_submanifests(value, client, owner)
             if 'access' in object_:
-                return cls._encrypt_dict(object_, sig, owner)
+                return cls._encrypt_dict(object_, client, owner)
             return object_
 
         if isinstance(object_, list):
             for idx, obj_ in enumerate(object_):
-                object_[idx] = cls._encrypt_submanifests(obj_, sig, owner)
+                object_[idx] = cls._encrypt_submanifests(obj_, client, owner)
 
         return object_
 
     @classmethod
-    def decrypt(cls, fields: dict, sig: SigContext) -> dict:
+    def decrypt(cls, fields: dict, client) -> dict:
         """
-        Decrypt provided dict within provided SigContext.
+        Decrypt provided dict within SigContext provided by Client.
         Assumes encrypted (sub) dict contains an 'encrypted' fields that contains a dict
         with two fields: 'encrypted-data' and 'encrypted-keys'.
         Returns decrypted dict.
         """
-
-        decrypted_fields = cls._decrypt_dict(fields, sig)
+        decrypted_fields = cls._decrypt_dict(fields, client)
         for key, value in decrypted_fields.items():
-            decrypted_fields[key] = cls._decrypt_submanifests(value, sig)
+            decrypted_fields[key] = cls._decrypt_submanifests(value, client)
         return decrypted_fields
 
     @classmethod
-    def _decrypt_dict(cls, fields: dict, sig: SigContext) -> dict:
+    def _decrypt_dict(cls, fields: dict, client) -> dict:
         """
         Decrypt a dict.
         """
+        sig = client.session.sig
         if list(fields.keys()) == ['encrypted']:
             encrypted_dict = fields['encrypted']
 
@@ -207,25 +208,25 @@ class Manifest:
         return fields
 
     @classmethod
-    def _decrypt_submanifests(cls, object_, sig):
+    def _decrypt_submanifests(cls, object_, client):
         """
         Decrypt and replace as needed all submanifests inside the given dict.
         """
         if isinstance(object_, dict):
             try:
-                object_ = cls._decrypt_dict(object_, sig)
+                object_ = cls._decrypt_dict(object_, client)
             except ManifestError:
                 return object_
             for key, value in object_.items():
                 try:
-                    object_[key] = cls._decrypt_submanifests(value, sig)
+                    object_[key] = cls._decrypt_submanifests(value, client)
                 except ManifestError:
                     continue
 
         if isinstance(object_, list):
             for idx, obj_ in enumerate(object_):
                 try:
-                    object_[idx] = cls._decrypt_submanifests(obj_, sig)
+                    object_[idx] = cls._decrypt_submanifests(obj_, client)
                 except ManifestError:
                     continue
 
@@ -354,7 +355,7 @@ class Manifest:
         return fields
 
     @classmethod
-    def from_fields(cls, fields: dict, sig: SigContext = None,
+    def from_fields(cls, fields: dict, client = None,
                     local_path: Optional[Path] = None) -> 'Manifest':
         """
         Create a manifest based on a dict of fields.
@@ -362,13 +363,13 @@ class Manifest:
         Has to be signed separately, but is assumed to be verified for the purpose of accessing
         data.
         """
-        if sig:
-            fields = cls.decrypt(fields, sig)
+        if client and client.session.sig:
+            fields = cls.decrypt(fields, client)
         fields = cls.update_manifest_version(fields)
         return cls(Header(None), fields, None, local_path=local_path)
 
     @classmethod
-    def from_unsigned_bytes(cls, data: bytes, sig: SigContext = None,
+    def from_unsigned_bytes(cls, data: bytes, client = None,
                             local_path: Optional[Path] = None) -> 'Manifest':
         """
         Create a new Manifest based on existing YAML-serialized
@@ -385,12 +386,12 @@ class Manifest:
             fields = yaml_parser.load(rest_str)
         except YAMLParserError as e:
             raise ManifestError('Manifest parse error: {}'.format(e)) from e
-        if sig:
-            fields = cls.decrypt(fields, sig)
+        if client and client.session.sig:
+            fields = cls.decrypt(fields, client)
         fields = cls.update_manifest_version(fields)
         return cls(None, fields, data, local_path=local_path)
 
-    def encrypt_and_sign(self, sig_context: SigContext, only_use_primary_key: bool = False,
+    def encrypt_and_sign(self, client, only_use_primary_key: bool = False,
                          encrypt: bool = True):
         """
         Sign a manifest. If signed, will replace signature.
@@ -405,12 +406,13 @@ class Manifest:
         data = self.original_data
 
         if encrypt:
-            fields = Manifest.encrypt(fields, sig_context)
+            fields = Manifest.encrypt(fields, client)
             data = yaml_parser.dump(fields, encoding='utf-8', sort_keys=False)
 
         owner = self._fields['owner']
-        signature = sig_context.sign(owner, data,
-                                     only_use_primary_key=only_use_primary_key)
+        if not client.session.sig:
+            raise ManifestError('No SigContext found for provided client')
+        signature = client.session.sig.sign(owner, data, only_use_primary_key=only_use_primary_key)
 
         self._original_data = data
         self._fields = fields
@@ -424,15 +426,14 @@ class Manifest:
         self.header = Header(None)
 
     @classmethod
-    def from_file(cls, path, sig_context: SigContext,
-                  schema: Optional[Schema] = None,
+    def from_file(cls, path, client, schema: Optional[Schema] = None,
                   trusted_owner: Optional[str] = None) -> 'Manifest':
         """
         Load a manifest from YAML file, verifying it.
 
         Args:
             path: path to YAML file
-            sig_context: a SigContext to use for signature verification
+            client: a Client providing a SigContext
             schema: a Schema to validate the fields with
             trusted_owner: accept signature-less manifest from this owner
         """
@@ -440,10 +441,10 @@ class Manifest:
         with open(path, 'rb') as f:
             data = f.read()
         return cls.from_bytes(
-            data, sig_context, schema, trusted_owner, local_path=path)
+            data, client, schema, trusted_owner, local_path=path)
 
     @classmethod
-    def from_bytes(cls, data: bytes, sig_context: SigContext,
+    def from_bytes(cls, data: bytes, client,
                    schema: Optional[Schema] = None,
                    trusted_owner: Optional[str] = None,
                    allow_only_primary_key: bool = False,
@@ -454,7 +455,7 @@ class Manifest:
 
         Args:
             data: existing manifest content
-            sig_context: a SigContext to use for signature verification
+            client: a Client providing a SigContext for signature verification
             schema: a Schema to validate the fields with
             trusted_owner: accept signature-less manifest from this owner
             allow_only_primary_key: can this manifest be signed by any auxiliary keys
@@ -464,13 +465,14 @@ class Manifest:
 
         header_data, rest_data = split_header(data)
         header = Header.from_bytes(header_data)
+        sig_context = client.session.sig
 
         try:
             header_signer = header.verify_rest(rest_data, sig_context, trusted_owner)
         except SigError as e:
             raise ManifestError(
                 'Signature verification failed: {}'.format(e)) from e
-        fields = cls._parse_yaml(rest_data, sig_context, decrypt=decrypt)
+        fields = cls._parse_yaml(rest_data, client, decrypt=decrypt)
 
         if header.signature is None:
             if fields.get('owner') != trusted_owner:
@@ -510,9 +512,7 @@ class Manifest:
         schema.validate(self._fields)
 
     @classmethod
-    def verify_and_load_pubkeys(cls,
-                                data: bytes,
-                                sig_context: SigContext) -> None:
+    def verify_and_load_pubkeys(cls, data: bytes, client) -> None:
         """
         Load pubkeys directly from manifest's message (body) into signature context
         without relying on locally stored users/keys. This might be used in a
@@ -522,7 +522,7 @@ class Manifest:
         header_data, rest_data = split_header(data)
         header = Header.from_bytes(header_data)
 
-        fields = cls._parse_yaml(rest_data, sig_context)
+        fields = cls._parse_yaml(rest_data, client)
         # to be able to import keys from both bridge ('pubkey' field) and user ('pubkeys' field)
         # we have to handle both fields
         pubkeys = fields.get('pubkeys', [])
@@ -535,6 +535,7 @@ class Manifest:
         primary_pubkey = pubkeys[0]
 
         # Now we can verify integrity of the self-signed manifest
+        sig_context = client.session.sig
         owner = header.verify_rest(rest_data, sig_context, trusted_owner=None,
                                    pubkey=primary_pubkey)
 
@@ -545,11 +546,11 @@ class Manifest:
             sig_context.add_pubkey(pubkey, owner)
 
     @classmethod
-    def _parse_yaml(cls, data: bytes, sig: SigContext, decrypt: bool = True):
+    def _parse_yaml(cls, data: bytes, client, decrypt: bool = True):
         try:
             fields = yaml_parser.load(data.decode('utf-8'))
             if decrypt:
-                fields = cls.decrypt(fields, sig)
+                fields = cls.decrypt(fields, client)
             fields = cls.update_manifest_version(fields)
             return fields
         except (ValueError, YAMLParserError) as e:

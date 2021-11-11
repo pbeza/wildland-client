@@ -31,6 +31,7 @@ import pytest
 from ..manifest.manifest import Manifest, Header, ManifestError
 from ..manifest.sig import SodiumSigContext
 from ..utils import yaml_parser, YAMLParserError
+from ..client import Client
 
 
 @pytest.fixture(scope='session')
@@ -51,13 +52,18 @@ def owner(sig):
     return own
 
 
+@pytest.fixture
+def client(base_dir, sig):
+    yield Client(base_dir, sig)
+
+
 def make_header(sig, owner, test_data):
     signature = sig.sign(owner, test_data)
     header = Header(signature.strip())
     return header.to_bytes()
 
 
-def test_parse(sig, owner):
+def test_parse(client, owner):
     test_data = f'''
 object: test
 owner: "{owner}"
@@ -65,16 +71,17 @@ key1: value1
 key2: "value2"
 '''.encode()
 
-    data = make_header(sig, owner, test_data) + b'\n---\n' + test_data
-    manifest = Manifest.from_bytes(data, sig)
+    data = make_header(client.session.sig, owner, test_data) + b'\n---\n' + test_data
+    manifest = Manifest.from_bytes(data, client)
     assert manifest.fields['owner'] == owner
     assert manifest.fields['key1'] == 'value1'
     assert manifest.fields['key2'] == 'value2'
 
 
-def test_parse_key_not_loaded(sig):
+def test_parse_key_not_loaded(client):
     # This should fail because a key that was not explicitly loaded into sig context should not
     # be usable
+    sig = client.session.sig
     owner, pubkey = sig.generate()
     sig_2 = sig.copy()
 
@@ -87,13 +94,14 @@ def test_parse_key_not_loaded(sig):
     key2: "value2"
     '''.encode()
 
-    data = make_header(sig, owner, test_data) + b'\n---\n' + test_data
+    data = make_header(client.session.sig, owner, test_data) + b'\n---\n' + test_data
 
+    client.session.sig = sig_2
     with pytest.raises(ManifestError):
-        Manifest.from_bytes(data, sig_2)
+        Manifest.from_bytes(data, client)
 
 
-def test_parse_deprecated(sig, owner):
+def test_parse_deprecated(client, owner):
     test_data = f'''
 object: test
 signer: "{owner}"
@@ -101,45 +109,45 @@ key1: value1
 key2: "value2"
 '''.encode()
 
-    data = make_header(sig, owner, test_data) + b'\n---\n' + test_data
-    manifest = Manifest.from_bytes(data, sig)
+    data = make_header(client.session.sig, owner, test_data) + b'\n---\n' + test_data
+    manifest = Manifest.from_bytes(data, client)
     assert manifest.fields['owner'] == owner
     assert manifest.fields['key1'] == 'value1'
     assert manifest.fields['key2'] == 'value2'
 
 
-def test_parse_no_signature(sig, owner):
+def test_parse_no_signature(client, owner):
     test_data = f'''
 ---
 object: test
 owner: "{owner}"
 key1: value1
 '''.encode()
-    manifest = Manifest.from_bytes(test_data, sig, trusted_owner=owner)
+    manifest = Manifest.from_bytes(test_data, client, trusted_owner=owner)
     assert manifest.fields['owner'] == owner
     assert manifest.fields['key1'] == 'value1'
 
     with pytest.raises(ManifestError, match='Signature expected'):
-        Manifest.from_bytes(test_data, sig)
+        Manifest.from_bytes(test_data, client)
 
     with pytest.raises(ManifestError, match='Wrong owner for manifest without signature'):
-        Manifest.from_bytes(test_data, sig, trusted_owner='0xcafe')
+        Manifest.from_bytes(test_data, client, trusted_owner='0xcafe')
 
 
-def test_parse_wrong_owner(sig, owner):
+def test_parse_wrong_owner(client, owner):
     test_data = '''
 object: test
 owner: other owner
 key1: value1
 key2: "value2"
 '''.encode()
-    data = make_header(sig, owner, test_data) + b'\n---\n' + test_data
+    data = make_header(client.session.sig, owner, test_data) + b'\n---\n' + test_data
 
     with pytest.raises(ManifestError, match='Manifest owner does not have access to signing key'):
-        Manifest.from_bytes(data, sig)
+        Manifest.from_bytes(data, client)
 
 
-def test_parse_guess_manifest_type_bridge(sig, owner):
+def test_parse_guess_manifest_type_bridge(client, owner):
     test_data = f'''
 owner: "{owner}"
 user: user1
@@ -147,12 +155,12 @@ key1: value1
 key2: "value2"
 '''.encode()
 
-    data = make_header(sig, owner, test_data) + b'\n---\n' + test_data
-    manifest = Manifest.from_bytes(data, sig)
+    data = make_header(client.session.sig, owner, test_data) + b'\n---\n' + test_data
+    manifest = Manifest.from_bytes(data, client)
     assert manifest.fields['object'] == 'bridge'
 
 
-def test_parse_guess_manifest_type_container(sig, owner):
+def test_parse_guess_manifest_type_container(client, owner):
     test_data = f'''
 owner: "{owner}"
 backends: 
@@ -161,12 +169,12 @@ key1: value1
 key2: "value2"
 '''.encode()
 
-    data = make_header(sig, owner, test_data) + b'\n---\n' + test_data
-    manifest = Manifest.from_bytes(data, sig)
+    data = make_header(client.session.sig, owner, test_data) + b'\n---\n' + test_data
+    manifest = Manifest.from_bytes(data, client)
     assert manifest.fields['object'] == 'container'
 
 
-def test_parse_guess_manifest_type_storage(sig, owner):
+def test_parse_guess_manifest_type_storage(client, owner):
     test_data = f'''
 owner: "{owner}"
 type: type1
@@ -174,12 +182,12 @@ key1: value1
 key2: "value2"
 '''.encode()
 
-    data = make_header(sig, owner, test_data) + b'\n---\n' + test_data
-    manifest = Manifest.from_bytes(data, sig)
+    data = make_header(client.session.sig, owner, test_data) + b'\n---\n' + test_data
+    manifest = Manifest.from_bytes(data, client)
     assert manifest.fields['object'] == 'storage'
 
 
-def test_parse_guess_manifest_type_user(sig, owner):
+def test_parse_guess_manifest_type_user(client, owner):
     test_data = f'''
 owner: "{owner}"
 pubkeys: []
@@ -187,12 +195,12 @@ key1: value1
 key2: "value2"
 '''.encode()
 
-    data = make_header(sig, owner, test_data) + b'\n---\n' + test_data
-    manifest = Manifest.from_bytes(data, sig)
+    data = make_header(client.session.sig, owner, test_data) + b'\n---\n' + test_data
+    manifest = Manifest.from_bytes(data, client)
     assert manifest.fields['object'] == 'user'
 
 
-def test_parse_duplicate_keys(sig, owner):
+def test_parse_duplicate_keys(client, owner):
     test_data = f'''
 owner: "{owner}"
 pubkeys: []
@@ -200,12 +208,12 @@ key1: value1
 key1: value2
 '''.encode()
 
-    data = make_header(sig, owner, test_data) + b'\n---\n' + test_data
+    data = make_header(client.session.sig, owner, test_data) + b'\n---\n' + test_data
     with pytest.raises(ManifestError):
-        Manifest.from_bytes(data, sig)
+        Manifest.from_bytes(data, client)
 
 
-def test_parse_update_obsolete(sig, owner):
+def test_parse_update_obsolete(client, owner):
     test_data = f'''
 signer: "{owner}"
 backends: 
@@ -214,14 +222,14 @@ key1: value1
 key2: "value2"
 '''.encode()
 
-    data = make_header(sig, owner, test_data) + b'\n---\n' + test_data
-    manifest = Manifest.from_bytes(data, sig)
+    data = make_header(client.session.sig, owner, test_data) + b'\n---\n' + test_data
+    manifest = Manifest.from_bytes(data, client)
     assert manifest.fields['object'] == 'container'
     assert manifest.fields['owner'] == owner
     assert manifest.fields['version'] == Manifest.CURRENT_VERSION
 
 
-def test_parse_version_1(sig, owner):
+def test_parse_version_1(client, owner):
     test_data = f'''
 signer: "{owner}"
 backends: 
@@ -231,36 +239,37 @@ key2: "value2"
 version: '1'
 '''.encode()
 
-    data = make_header(sig, owner, test_data) + b'\n---\n' + test_data
+    data = make_header(client.session.sig, owner, test_data) + b'\n---\n' + test_data
     with pytest.raises(ManifestError):
-        Manifest.from_bytes(data, sig)
+        Manifest.from_bytes(data, client)
 
 
-def test_encrypt(sig, owner):
+def test_encrypt(client, owner):
     test_data = {
         'owner': owner,
         'key': 'VALUE'
     }
-    encrypted_data = Manifest.encrypt(test_data, sig)
+    encrypted_data = Manifest.encrypt(test_data, client)
     assert list(encrypted_data.keys()) == ['encrypted']
     assert list(encrypted_data['encrypted'].keys()) == ['encrypted-data', 'encrypted-keys']
-    decrypted_data = Manifest.decrypt(encrypted_data, sig)
+    decrypted_data = Manifest.decrypt(encrypted_data, client)
     assert decrypted_data['owner'] == owner
     assert decrypted_data['key'] == 'VALUE'
 
 
-def test_encrypt_fail(sig, owner):
+def test_encrypt_fail(client, owner):
     test_data = {
         'owner': owner,
         'key': 'VALUE'
     }
-    encrypted_data = Manifest.encrypt(test_data, sig)
-    del sig.private_keys[owner]
+    encrypted_data = Manifest.encrypt(test_data, client)
+    del client.session.sig.private_keys[owner]
     with pytest.raises(ManifestError):
-        Manifest.decrypt(encrypted_data, sig)
+        Manifest.decrypt(encrypted_data, client)
 
 
-def test_encrypt_access(sig, owner):
+def test_encrypt_access(client, owner):
+    sig = client.session.sig
     additional_owner, pubkey = sig.generate()
     sig.add_pubkey(pubkey)
 
@@ -269,17 +278,18 @@ def test_encrypt_access(sig, owner):
         'key': 'VALUE',
         'access': [{'user': additional_owner}]
     }
-    encrypted_data = Manifest.encrypt(test_data, sig)
+    encrypted_data = Manifest.encrypt(test_data, client)
 
     del sig.private_keys[owner]
     (sig.key_dir / f'{owner}.sec').unlink()
 
-    decrypted_data = Manifest.decrypt(encrypted_data, sig)
+    decrypted_data = Manifest.decrypt(encrypted_data, client)
     assert decrypted_data['owner'] == owner
     assert decrypted_data['key'] == 'VALUE'
 
 
-def test_encrypt_add_owner(sig, owner):
+def test_encrypt_add_owner(client, owner):
+    sig = client.session.sig
     _, additional_pubkey = sig.generate()
     sig.add_pubkey(additional_pubkey, owner)
 
@@ -287,29 +297,30 @@ def test_encrypt_add_owner(sig, owner):
         'owner': owner,
         'key': 'VALUE',
     }
-    encrypted_data = Manifest.encrypt(test_data, sig)
+    encrypted_data = Manifest.encrypt(test_data, client)
 
     assert len(encrypted_data['encrypted']['encrypted-keys']) == 2
 
     del sig.private_keys[owner]
     (sig.key_dir / f'{owner}.sec').unlink()
 
-    decrypted_data = Manifest.decrypt(encrypted_data, sig)
+    decrypted_data = Manifest.decrypt(encrypted_data, client)
     assert decrypted_data['owner'] == owner
     assert decrypted_data['key'] == 'VALUE'
 
 
-def test_encrypt_no(sig, owner):
+def test_encrypt_no(client, owner):
     test_data = {
         'owner': owner,
         'key': 'VALUE',
         'access': [{'user': '*'}]
     }
-    encrypted_data = Manifest.encrypt(test_data, sig)
+    encrypted_data = Manifest.encrypt(test_data, client)
     assert encrypted_data == test_data
 
 
-def test_encrypt_inline_storage(sig, owner):
+def test_encrypt_inline_storage(client, owner):
+    sig = client.session.sig
     additional_owner, pubkey = sig.generate()
     sig.add_pubkey(pubkey)
 
@@ -325,7 +336,7 @@ def test_encrypt_inline_storage(sig, owner):
             ]
         }
     }
-    encrypted_data = Manifest.encrypt(test_data, sig)
+    encrypted_data = Manifest.encrypt(test_data, client)
     assert 'owner' in encrypted_data
     assert encrypted_data['owner'] == owner
     assert 'backends' in encrypted_data
@@ -334,11 +345,12 @@ def test_encrypt_inline_storage(sig, owner):
     assert 'encrypted' in encrypted_data['backends']['storage'][1]
     assert len(encrypted_data['backends']['storage'][1]['encrypted']['encrypted-keys']) == 2
 
-    decrypted_data = Manifest.decrypt(encrypted_data, sig)
+    decrypted_data = Manifest.decrypt(encrypted_data, client)
     assert test_data == decrypted_data
 
 
-def test_encrypt_catalog(sig, owner):
+def test_encrypt_catalog(client, owner):
+    sig = client.session.sig
     additional_owner, pubkey = sig.generate()
     sig.add_pubkey(pubkey)
 
@@ -352,7 +364,7 @@ def test_encrypt_catalog(sig, owner):
              'access': [{'user': additional_owner}]}
         ]
     }
-    encrypted_data = Manifest.encrypt(test_data, sig)
+    encrypted_data = Manifest.encrypt(test_data, client)
     assert 'owner' in encrypted_data
     assert encrypted_data['owner'] == owner
     assert 'manifests-catalog' in encrypted_data
@@ -360,11 +372,11 @@ def test_encrypt_catalog(sig, owner):
     assert 'encrypted' in encrypted_data['manifests-catalog'][1]
     assert len(encrypted_data['manifests-catalog'][1]['encrypted']['encrypted-keys']) == 2
 
-    decrypted_data = Manifest.decrypt(encrypted_data, sig)
+    decrypted_data = Manifest.decrypt(encrypted_data, client)
     assert test_data == decrypted_data
 
 
-def test_original_bytes(sig, owner):
+def test_original_bytes(client, owner):
     test_data = f'''
 object: test
 owner: "{owner}"
@@ -372,14 +384,14 @@ key1: value1
 key2: "value2"
 '''.encode()
 
-    data = make_header(sig, owner, test_data) + b'\n---\n' + test_data
-    manifest = Manifest.from_bytes(data, sig)
+    data = make_header(client.session.sig, owner, test_data) + b'\n---\n' + test_data
+    manifest = Manifest.from_bytes(data, client)
 
-    (sig.key_dir / f'{owner}.sec').unlink()
+    (client.session.sig.key_dir / f'{owner}.sec').unlink()
 
     data = manifest.to_bytes()
 
-    manifest_2 = Manifest.from_bytes(data, sig)
+    manifest_2 = Manifest.from_bytes(data, client)
 
     assert manifest_2.fields['owner'] == owner
     assert manifest_2.fields['key1'] == 'value1'
