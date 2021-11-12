@@ -37,7 +37,6 @@ from ..utils import format_options_required_first, format_multi_command_options,
     format_command_options
 from ..core.wildland_core import WildlandCore
 
-
 # pylint: disable=no-self-use
 
 
