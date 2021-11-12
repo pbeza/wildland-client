@@ -389,12 +389,13 @@ class StorageBackend(metaclass=abc.ABCMeta):
         self.watcher_instance = None
         self.ignore_own_events = False
 
-    def start_subcontainer_watcher(self, handler, with_initial=False, ignore_own_events=None):
+    def start_subcontainer_watcher(self, handler, with_initial=False, ignore_own_events=None,
+                                   params: Optional[dict] = None):
 
         if self.subcontainer_watcher_instance:
             raise StorageError("Watcher already exists")
 
-        self.subcontainer_watcher_instance = self.subcontainer_watcher()  # pylint: disable=assignment-from-none
+        self.subcontainer_watcher_instance = self.subcontainer_watcher(params)  # pylint: disable=assignment-from-none
 
         if not self.subcontainer_watcher_instance:
             return None
@@ -432,7 +433,7 @@ class StorageBackend(metaclass=abc.ABCMeta):
             return SimpleStorageWatcher(self, interval=int(self.params['watcher-interval']))
         return None
 
-    def subcontainer_watcher(self):
+    def subcontainer_watcher(self, params: Optional[dict] = None):
         """
         TODO
         """
@@ -440,7 +441,8 @@ class StorageBackend(metaclass=abc.ABCMeta):
             # pylint: disable=import-outside-toplevel, cyclic-import
             logger.warning("Using simple subcontainer watcher - it can be very inefficient.")
             from ..storage_backends.watch import SubcontainerWatcher
-            return SubcontainerWatcher(self, interval=int(self.params['watcher-interval']))
+            return SubcontainerWatcher(
+                self, interval=int(self.params['watcher-interval']), params=params)
         return None
 
     def set_config_dir(self, config_dir):
@@ -699,7 +701,7 @@ class StorageBackend(metaclass=abc.ABCMeta):
         raise OptionalError()
 
     def get_children(self, client: wildland.client.Client = None,
-                     query_path: PurePosixPath = PurePosixPath('*')) -> \
+                     query_path: PurePosixPath = PurePosixPath('*'), params=None) -> \
             Iterable[Tuple[PurePosixPath, Union[Link, ContainerStub]]]:
         """
         List all subcontainers provided by this storage.
@@ -713,6 +715,9 @@ class StorageBackend(metaclass=abc.ABCMeta):
         `wildland:@default:@parent-container:`
         """
         raise OptionalError()
+
+    def get_subcontainer_watch_params(self, client):
+        return None
 
     def get_subcontainer_watch_pattern(self, query_path: PurePosixPath):
         """

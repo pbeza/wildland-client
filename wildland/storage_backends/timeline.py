@@ -179,19 +179,22 @@ class TimelineStorageBackend(CachedStorageMixin, StorageBackend):
     def can_have_children(self) -> bool:
         return True
 
-    def get_children(self, client = None, query_path: PurePosixPath = PurePosixPath('*')) -> \
-            Iterable[Tuple[PurePosixPath, ContainerStub]]:
+    def get_children(self, client=None, query_path: PurePosixPath = PurePosixPath('*'),
+                     params=None) -> Iterable[Tuple[PurePosixPath, ContainerStub]]:
         ns = uuid.UUID(self.backend_id)
 
-        #resolving the reference-container to gain access to its categories
+        # resolving the reference-container to gain access to its categories
         if isinstance(self.reference, str):
-            ref_container = client.load_object_from_url(object_type = WildlandObject.Type.CONTAINER,
-                                                        url = self.reference,
-                                                        owner = self.params['owner'])
-            ref_categories = ref_container.categories
+            if client is None:
+                ref_categories = params['ref-categories']
+            else:
+                ref_container = client.load_object_from_url(
+                    object_type=WildlandObject.Type.CONTAINER,
+                    url=self.reference,
+                    owner=self.params['owner'])
+                ref_categories = ref_container.categories
         else:
             ref_categories = self.reference.get('categories', [])
-
 
         for file, _ in self.info_all():
             stub_categories = []
@@ -217,3 +220,11 @@ class TimelineStorageBackend(CachedStorageMixin, StorageBackend):
                         'backend-id': str(uuid.uuid3(ns, name))
                     }]}
                 })
+
+    def get_subcontainer_watch_params(self, client):
+        ref_container = client.load_object_from_url(
+            object_type=WildlandObject.Type.CONTAINER,
+            url=self.reference,
+            owner=self.params['owner'])
+        ref_categories = ref_container.categories
+        return {'ref-categories': ref_categories}

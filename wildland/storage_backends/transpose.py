@@ -190,7 +190,8 @@ class TransposeStorageBackend(StorageBackend):
     def can_have_children(self) -> bool:
         return self.reference.can_have_children
 
-    def get_children(self, client: Client = None, query_path: PurePosixPath = PurePosixPath('*'),):
+    def get_children(self, client: Client = None, query_path: PurePosixPath = PurePosixPath('*'),
+                     params=None):
         subcontainer_list = self.reference.get_children(client)
 
         for element in subcontainer_list:

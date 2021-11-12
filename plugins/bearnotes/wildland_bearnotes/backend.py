@@ -286,7 +286,7 @@ class BearDBStorageBackend(GeneratedStorageMixin, StorageBackend):
     def can_have_children(self) -> bool:
         return True
 
-    def get_children(self, client=None, query_path: PurePosixPath = PurePosixPath('*')) -> \
+    def get_children(self, client=None, query_path: PurePosixPath = PurePosixPath('*'), params=None) -> \
             Iterable[Tuple[PurePosixPath, ContainerStub]]:
         for ident, title, tags, _timestamp in \
                 self.bear_db.get_notes_with_metadata():

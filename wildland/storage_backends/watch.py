@@ -241,13 +241,14 @@ class SubcontainerWatcher(StorageWatcher, metaclass=abc.ABCMeta):
     TODO
     """
 
-    def __init__(self, backend: StorageBackend, interval: int = 10):
+    def __init__(self, backend: StorageBackend, interval: int = 10, params: Optional[dict] = None):
         super().__init__()
         self.backend = backend
         self.token = None
         self.info: Dict[PurePosixPath, Attr] = {}
         self.interval = interval
         self.counter = 0  # for naive implementation of get_token()
+        self.params: Optional[dict] = params
 
     def get_token(self):
         """
@@ -283,7 +284,7 @@ class SubcontainerWatcher(StorageWatcher, metaclass=abc.ABCMeta):
         pass
 
     def _get_info(self) -> dict[PurePosixPath, Union[Link, ContainerStub]]:
-        return dict(self.backend.get_children())
+        return dict(self.backend.get_children(params=self.params))
 
     @staticmethod
     def _compare_info(current_info, new_info):

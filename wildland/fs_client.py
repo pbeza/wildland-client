@@ -45,6 +45,7 @@ from .exc import WildlandError
 from .control_client import ControlClient, ControlClientUnableToConnectError
 from .entity.fileinfo import FileInfo
 from .manifest.manifest import Manifest
+from .storage_backends.base import StorageBackend
 from .storage_backends.pseudomanifest import PseudomanifestStorageBackend
 from .storage_backends.watch import FileEventType
 from .log import get_logger
@@ -917,7 +918,7 @@ class WildlandFSClient:
         finally:
             client.disconnect()
 
-    def watch_subcontainers(self, containers_storages: Dict[Container, Storage],
+    def watch_subcontainers(self, wl_client, containers_storages: Dict[Container, Storage],
                             with_initial=False) -> Iterator[List[WatchSubcontainerEvent]]:
         """
         TODO
@@ -929,9 +930,15 @@ class WildlandFSClient:
             watches = {}
             for container, storage in containers_storages.items():
                 params = storage.params
+                sb = StorageBackend.from_params(params, deduplicate=True)
+                watching_params = sb.get_subcontainer_watch_params(wl_client)
                 logger.debug(f'watching for subcontainers: storage {params["backend-id"]}')
                 watch_id = client.run_command(
-                    'add-subcontainer-watch', backend_param=params, with_initial=with_initial)
+                    'add-subcontainer-watch',
+                    backend_param=params,
+                    with_initial=with_initial,
+                    params=watching_params
+                )
                 watches[watch_id] = (container, storage)
 
             for events in client.iter_events():

@@ -142,7 +142,7 @@ class CategorizationProxyStorageBackend(StorageBackend):
     def can_have_children(self) -> bool:
         return True
 
-    def get_children(self, client=None, query_path: PurePosixPath = PurePosixPath('*')) -> \
+    def get_children(self, client=None, query_path: PurePosixPath = PurePosixPath('*'), params=None) -> \
             Iterable[Tuple[PurePosixPath, ContainerStub]]:
         ns = uuid.UUID(self.backend_id)
         dir_path = PurePosixPath('')

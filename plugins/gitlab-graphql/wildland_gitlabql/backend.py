@@ -127,7 +127,7 @@ class GitlabQLStorageBackend(GeneratedStorageMixin, StorageBackend):
     def can_have_children(self) -> bool:
         return True
 
-    def get_children(self, client=None, query_path: PurePosixPath = PurePosixPath('*')):
+    def get_children(self, client=None, query_path: PurePosixPath = PurePosixPath('*'), params=None):
         """
         Creates a separate container for each of the issues fetched from the server
         """
