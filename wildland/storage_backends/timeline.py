@@ -179,22 +179,19 @@ class TimelineStorageBackend(CachedStorageMixin, StorageBackend):
     def can_have_children(self) -> bool:
         return True
 
-    def get_children(self, client=None, query_path: PurePosixPath = PurePosixPath('*'),
-                     params=None) -> Iterable[Tuple[PurePosixPath, ContainerStub]]:
+    def get_children(self, client = None, query_path: PurePosixPath = PurePosixPath('*'), paths_only: bool = False) -> \
+            Iterable[Tuple[PurePosixPath, ContainerStub]] or Iterable[PurePosixPath]:
         ns = uuid.UUID(self.backend_id)
 
-        # resolving the reference-container to gain access to its categories
-        if isinstance(self.reference, str):
-            if client is None:
-                ref_categories = params['ref-categories']
-            else:
-                ref_container = client.load_object_from_url(
-                    object_type=WildlandObject.Type.CONTAINER,
-                    url=self.reference,
-                    owner=self.params['owner'])
+        #resolving the reference-container to gain access to its categories
+        if not paths_only:
+            if isinstance(self.reference, str):
+                ref_container = client.load_object_from_url(object_type = WildlandObject.Type.CONTAINER,
+                                                            url = self.reference,
+                                                            owner = self.params['owner'])
                 ref_categories = ref_container.categories
-        else:
-            ref_categories = self.reference.get('categories', [])
+            else:
+                ref_categories = self.reference.get('categories', [])
 
         for file, _ in self.info_all():
             stub_categories = []
@@ -202,29 +199,24 @@ class TimelineStorageBackend(CachedStorageMixin, StorageBackend):
             assert file.name is not None
             name = file.name
 
-            for category in ref_categories:
-                stub_categories.append(self.root + '/' + date + str(category))
+            if not paths_only:
+                for category in ref_categories:
+                    stub_categories.append(self.root + '/' + date + str(category))
 
-            yield PurePosixPath(self.root + '/' + date + '/' + name), \
-                ContainerStub({
-                    'paths': [
-                        '/.uuid/{!s}'.format(uuid.uuid3(ns, name)),
-                        self.root + '/' + date,
-                    ],
-                    'title': file.name,
-                    'categories': stub_categories,
-                    'backends': {'storage': [{
-                        'type': 'delegate',
-                        'reference-container': 'wildland:@default:@parent-container:',
-                        'subdirectory': '/' + str(file.parent),
-                        'backend-id': str(uuid.uuid3(ns, name))
-                    }]}
-                })
-
-    def get_subcontainer_watch_params(self, client):
-        ref_container = client.load_object_from_url(
-            object_type=WildlandObject.Type.CONTAINER,
-            url=self.reference,
-            owner=self.params['owner'])
-        ref_categories = ref_container.categories
-        return {'ref-categories': ref_categories}
+                yield PurePosixPath(self.root + '/' + date + '/' + name), \
+                    ContainerStub({
+                        'paths': [
+                            '/.uuid/{!s}'.format(uuid.uuid3(ns, name)),
+                            self.root + '/' + date,
+                        ],
+                        'title': file.name,
+                        'categories': stub_categories,
+                        'backends': {'storage': [{
+                            'type': 'delegate',
+                            'reference-container': 'wildland:@default:@parent-container:',
+                            'subdirectory': '/' + str(file.parent),
+                            'backend-id': str(uuid.uuid3(ns, name))
+                        }]}
+                    })
+            else:
+                yield PurePosixPath(self.root + '/' + date + '/' + name)

@@ -701,8 +701,8 @@ def start_subcontainer_watcher(self, handler, with_initial=False, ignore_own_eve
         raise OptionalError()
 
     def get_children(self, client: wildland.client.Client = None,
-                     query_path: PurePosixPath = PurePosixPath('*'), params=None) -> \
-            Iterable[Tuple[PurePosixPath, Union[Link, ContainerStub]]]:
+                     query_path: PurePosixPath = PurePosixPath('*'), paths_only: bool = False) -> \
+            Iterable[Tuple[PurePosixPath, Union[Link, ContainerStub]]] or Iterable[PurePosixPath]:
         """
         List all subcontainers provided by this storage.
 
