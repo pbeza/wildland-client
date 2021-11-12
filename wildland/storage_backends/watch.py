@@ -282,8 +282,12 @@ class SubcontainerWatcher(StorageWatcher, metaclass=abc.ABCMeta):
     def shutdown(self):
         pass
 
-    def _get_info(self) -> dict[PurePosixPath, Union[Link, ContainerStub]]:
-        return dict(self.backend.get_children())
+    def _get_info(self):
+        to_return = []
+        paths = self.backend.get_children(paths_only = True)
+        for path in paths:
+            to_return.append(path)
+        return to_return
 
     @staticmethod
     def _compare_info(current_info, new_info):
