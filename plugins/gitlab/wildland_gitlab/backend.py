@@ -148,7 +148,7 @@ class GitlabStorageBackend(GeneratedStorageMixin, StorageBackend):
         logger.debug('creating subcontainers for the issues')
         assert self.all_compact_issues is not None
         for issue in self.all_compact_issues:
-            yield self._make_issue_container(issue)
+            yield self._make_issue_container(issue, paths_only)
         logger.debug('subcontainers successfully created')
 
     @classmethod
@@ -199,7 +199,7 @@ class GitlabStorageBackend(GeneratedStorageMixin, StorageBackend):
         """
         return str(uuid.uuid3(uuid.UUID(self.backend_id), str(issue.ident)))
 
-    def _make_issue_container(self, issue: CompactIssue) -> Tuple[PurePosixPath, ContainerStub] or PurePosixPath:
+    def _make_issue_container(self, issue: CompactIssue, paths_only: bool) -> Tuple[PurePosixPath, ContainerStub] or PurePosixPath:
         """
         Creates a separate subcontainer for each of the issues fetched from the server
         """

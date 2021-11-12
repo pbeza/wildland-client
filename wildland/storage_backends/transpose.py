@@ -238,8 +238,8 @@ class TransposeStorageBackend(StorageBackend):
                             'categories': new_categories,
                             'backends': link_manifest.get('backends')
                         })
-                    else:
-                        yield PurePosixPath(path)
+            else:
+                yield PurePosixPath(path)
 
     def modify_categories(self, categories_list: List[Union[str, None]]) -> List[str]:
         """

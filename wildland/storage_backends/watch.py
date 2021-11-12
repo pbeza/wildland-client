@@ -86,13 +86,13 @@ class StorageWatcher(metaclass=abc.ABCMeta):
         if not self.handler:
             return
 
-    def start(self, handler: Callable[[List[FileEvent]], None], with_initial: bool = False):
+    def start(self, handler: Callable[[List[FileEvent]], None]):
         """
         Start the watcher on a separate thread.
         """
 
         self.handler = handler
-        self.init(with_initial)
+        self.init()
         self.thread.start()
 
     def _run(self):
@@ -115,7 +115,7 @@ class StorageWatcher(metaclass=abc.ABCMeta):
         self.shutdown()
 
     @abc.abstractmethod
-    def init(self, with_initial: bool) -> None:
+    def init(self) -> None:
         """
         Initialize the watcher. This will be called synchronously (before
         starting a separate thread).
@@ -160,7 +160,7 @@ class SimpleStorageWatcher(StorageWatcher, metaclass=abc.ABCMeta):
         self.counter += 1
         return self.counter
 
-    def init(self, _with_initial: bool = False):
+    def init(self):
         self.token = self.get_token()
         self.info = self._get_info()
 
@@ -257,10 +257,9 @@ class SubcontainerWatcher(StorageWatcher, metaclass=abc.ABCMeta):
         self.counter += 1
         return self.counter
 
-    def init(self, with_initial: bool = False):
+    def init(self):
         self.token = self.get_token()
-        if not with_initial:
-            self.info = self._get_info()
+        self.info = self._get_info()
 
     def wait(self) -> Optional[List[SubcontainerEvent]]:
         self.stop_event.wait(self.interval)
@@ -283,8 +282,12 @@ class SubcontainerWatcher(StorageWatcher, metaclass=abc.ABCMeta):
     def shutdown(self):
         pass
 
-    def _get_info(self) -> dict[PurePosixPath, Union[Link, ContainerStub]]:
-        return dict(self.backend.get_children(params=self.params))
+    def _get_info(self):
+        to_return = []
+        paths = self.backend.get_children(paths_only = True)
+        for path in paths:
+            to_return.append(path)
+        return to_return
 
     @staticmethod
     def _compare_info(current_info, new_info):
