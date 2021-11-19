@@ -228,10 +228,9 @@ class SubcontainerEvent:
     """
     type: FileEventType
     path: PurePosixPath
-    subcontainer: Union[Link, ContainerStub]
 
     def __repr__(self):
-        return f'{self.type.name} {self.path} {str(self.subcontainer)}'
+        return f'{self.type.name} {self.path}'
 
     def __str__(self):
         return self.__repr__()
@@ -287,7 +286,8 @@ class SubcontainerWatcher(StorageWatcher, metaclass=abc.ABCMeta):
         to_return = []
         paths = self.backend.get_children(paths_only = True)
         for path in paths:
-            to_return.append(path)
+            mtime = os.path.getmtime(path)
+            to_return.append((path, mtime))
         return to_return
 
     @staticmethod
@@ -295,9 +295,10 @@ class SubcontainerWatcher(StorageWatcher, metaclass=abc.ABCMeta):
         current_paths = set(current_info)
         new_paths = set(new_info)
         for path in current_paths - new_paths:
-            yield SubcontainerEvent(FileEventType.DELETE, path, current_info[path])
+            yield SubcontainerEvent(FileEventType.DELETE, path)
         for path in new_paths - current_paths:
-            yield SubcontainerEvent(FileEventType.CREATE, path, new_info[path])
-        for path in current_paths & new_paths:
-            if current_info[path] != new_info[path]:
-                yield SubcontainerEvent(FileEventType.MODIFY, path, new_info[path])
+            yield SubcontainerEvent(FileEventType.CREATE, path)
+        for path, mtime in current_paths:
+            for new_path, new_mtime in current_paths:
+                if path == new_path and mtime != new_mtime:
+                    yield SubcontainerEvent(FileEventType.MODIFY, path, new_info[path])

@@ -963,11 +963,15 @@ class WildlandFSClient:
                     event_type = FileEventType[event['type']]
                     watch_id = event['watch-id']
                     container, storage = watches[watch_id]
+                    params = storage.params
+                    sb = StorageBackend.from_params(params, deduplicate=True)
                     path = PurePosixPath(event['path'])
-                    fields = ast.literal_eval(event['subcontainer'])
-                    subcontainer = ContainerStub(fields)
-                    watch_events.append(WatchSubcontainerEvent(
-                        event_type, container, storage, path, subcontainer))
+                    all_children = sb.get_children(wl_client)
+                    for subcontainer_path, subcontainer in all_children:
+                        if subcontainer_path == path:
+                            watch_events.append(WatchSubcontainerEvent(
+                                event_type, container, storage, path, subcontainer))
+                            break
                 yield watch_events
         except GeneratorExit:
             pass
