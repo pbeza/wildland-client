@@ -518,7 +518,6 @@ ident, handler, with_initial=with_initial, ignore_own=ignore_own, params=params)
         data = [{
             'type': event.type.name,
             'path': str(event.path),
-            'subcontainer': str(event.subcontainer),
             'watch-id': watch.id,
             'storage-id': watch.storage_id,
         } for event in events]
