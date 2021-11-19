@@ -127,7 +127,8 @@ class GitlabQLStorageBackend(GeneratedStorageMixin, StorageBackend):
     def can_have_children(self) -> bool:
         return True
 
-    def get_children(self, client=None, query_path: PurePosixPath = PurePosixPath('*'), paths_only: bool = False):
+    def get_children(self, client=None, query_path: PurePosixPath = PurePosixPath('*'),
+                     paths_only: bool = False):
         """
         Creates a separate container for each of the issues fetched from the server
         """
@@ -186,7 +187,8 @@ class GitlabQLStorageBackend(GeneratedStorageMixin, StorageBackend):
         """
         return str(uuid.uuid3(uuid.UUID(self.backend_id), str(issue.ident)))
 
-    def _make_issue_container(self, issue: CompactIssue, paths_only: bool = False) -> Tuple[PurePosixPath, ContainerStub] or PurePosixPath:
+    def _make_issue_container(self, issue: CompactIssue, paths_only: bool = False) \
+            -> Tuple[PurePosixPath, ContainerStub] or PurePosixPath:
         """
         Creates a separate subcontainer for each of the issues fetched from the server
         """
@@ -205,9 +207,7 @@ class GitlabQLStorageBackend(GeneratedStorageMixin, StorageBackend):
                     'subdirectory': subcontainer_path
                 }]}
             })
-        else:
-            return PurePosixPath(subcontainer_path)
-
+        return PurePosixPath(subcontainer_path)
 
     @classmethod
     def cli_options(cls):
