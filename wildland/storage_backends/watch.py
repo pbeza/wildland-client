@@ -25,7 +25,7 @@
 Watching for changes.
 """
 from enum import Enum
-from typing import Optional, List, Callable, Dict, Union
+from typing import Optional, List, Callable, Dict
 from pathlib import PurePosixPath
 import threading
 from dataclasses import dataclass
@@ -33,8 +33,6 @@ import abc
 import os
 
 from .base import StorageBackend, Attr
-from ..container import ContainerStub
-from ..link import Link
 from ..log import get_logger
 
 logger = get_logger('watch')
