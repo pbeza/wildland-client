@@ -179,13 +179,15 @@ class TimelineStorageBackend(CachedStorageMixin, StorageBackend):
     def can_have_children(self) -> bool:
         return True
 
-    def get_children(self, client = None, query_path: PurePosixPath = PurePosixPath('*'), paths_only: bool = False) -> \
+    def get_children(self, client = None, query_path: PurePosixPath = PurePosixPath('*'),
+                     paths_only: bool = False) -> \
             Iterable[Tuple[PurePosixPath, ContainerStub]] or Iterable[PurePosixPath]:
         ns = uuid.UUID(self.backend_id)
 
         #resolving the reference-container to gain access to its categories
         if not paths_only:
             if isinstance(self.reference, str):
+                #pylint: disable=line-too-long
                 ref_container = client.load_object_from_url(object_type = WildlandObject.Type.CONTAINER,
                                                             url = self.reference,
                                                             owner = self.params['owner'])
@@ -220,7 +222,7 @@ class TimelineStorageBackend(CachedStorageMixin, StorageBackend):
                     })
             else:
                 yield PurePosixPath(self.root + '/' + date + '/' + name)
-                
+
     def get_subcontainer_watch_params(self, client):
         ref_container = client.load_object_from_url(
             object_type=WildlandObject.Type.CONTAINER,

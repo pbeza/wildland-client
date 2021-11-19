@@ -716,7 +716,7 @@ class StorageBackend(metaclass=abc.ABCMeta):
         """
         raise OptionalError()
 
-    def get_subcontainer_watch_params(self, client):
+    def get_subcontainer_watch_params(self):
         return None
 
     def get_subcontainer_watch_pattern(self, query_path: PurePosixPath):
