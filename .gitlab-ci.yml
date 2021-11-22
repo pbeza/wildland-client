@@ -284,4 +284,4 @@ subcontainer-remounter:
   stage: test
   image: $CONTAINER_TEST_IMAGE
   script:
-    - ./ci/si-subcontainer-remounter
+    - ./ci/ci-subcontainer-remounter
