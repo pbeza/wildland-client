@@ -38,10 +38,10 @@ WL='python3 -m coverage run -p ./wl'
 
 # Wildland
 
-$WL user create s3-user
-$WL container create s3-con --path "/$MNT_DIR_1"
-$WL storage create s3 --access-key 'dmr' --secret-key '/.,/.,/.,' --container s3-con --s3-url s3://the-bucket/ --endpoint-url 'http://127.0.0.1:9000' s3-storage
-$WL start --container s3-con
+$WL --debug --verbose user create s3-user
+$WL --debug --verbose container create s3-con --path "/$MNT_DIR_1"
+$WL --debug --verbose storage create s3 --access-key 'dmr' --secret-key '/.,/.,/.,' --container s3-con --s3-url s3://the-bucket/ --endpoint-url 'http://127.0.0.1:9000' s3-storage
+$WL --debug --verbose start --container s3-con
 
 # Test files
 
@@ -69,9 +69,9 @@ time -p chronic /bin/bash -c '[[ ! -f ~/wildland/s3/subdir/abbott ]]'
 
 # Creating a storage by utilizing a template
 
-$WL template create s3 --access-key 'dmr' --secret-key '/.,/.,/.,'  --s3-url s3://the-bucket/ --endpoint-url 'http://127.0.0.1:9000' s3-template
-$WL container create s3-temp-con --path "/$MNT_DIR_2" --template s3-template
-$WL container mount s3-temp-con
+$WL --debug --verbose template create s3 --access-key 'dmr' --secret-key '/.,/.,/.,'  --s3-url s3://the-bucket/ --endpoint-url 'http://127.0.0.1:9000' s3-template
+$WL --debug --verbose container create s3-temp-con --path "/$MNT_DIR_2" --template s3-template
+$WL --debug --verbose container mount s3-temp-con
 
 tree "$ROOT"
 
@@ -99,10 +99,10 @@ time -p test -f "$MNT_PATH_2"/abbott
 time -p test -f "$MNT_PATH_2"/floating
 
 # Checking whether a trailing slash is automatically appended to the url entered by the user
-./wl container rm s3-temp-con
-./wl template create s3 --access-key 'dmr' --secret-key '/.,/.,/.,'  --s3-url s3://the-bucket --endpoint-url 'http://127.0.0.1:9000' s3-template-slash
-./wl container create s3-temp-con2 --path "/$MNT_DIR_2" --template s3-template-slash
-./wl container mount s3-temp-con2
+./wl --debug --verbose container rm s3-temp-con
+./wl --debug --verbose template create s3 --access-key 'dmr' --secret-key '/.,/.,/.,'  --s3-url s3://the-bucket --endpoint-url 'http://127.0.0.1:9000' s3-template-slash
+./wl --debug --verbose container create s3-temp-con2 --path "/$MNT_DIR_2" --template s3-template-slash
+./wl --debug --verbose container mount s3-temp-con2
 
 url=$(./wl container dump s3-temp-con2 | grep 's3_url' | cut -c 13-)
 var="s3://the-bucket/"

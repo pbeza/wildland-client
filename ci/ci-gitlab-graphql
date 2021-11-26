@@ -13,11 +13,11 @@ MNT_DIR_1="gitlab-mnt-1"
 MNT_DIR_2="gitlab-mnt-2"
 
 # Create and mount a gitlab-graphql container with a specified project path
-$WL user create gitlab-user
-$WL container create GitLab --path "/$MNT_DIR_1"
-$WL storage create gitlab-graphql --container GitLab --personal-token $PERSONAL_GITLAB_TOKEN --project-path wildland/ci-example-project
-$WL start
-$WL container mount --with-subcontainers GitLab
+$WL --debug --verbose user create gitlab-user
+$WL --debug --verbose container create GitLab --path "/$MNT_DIR_1"
+$WL --debug --verbose storage create gitlab-graphql --container GitLab --personal-token $PERSONAL_GITLAB_TOKEN --project-path wildland/ci-example-project
+$WL --debug --verbose start
+$WL --debug --verbose container mount --with-subcontainers GitLab
 
 # List full tree
 time -p chronic tree "$ROOT"
@@ -46,12 +46,12 @@ time -p test -f "$ROOT"/labels/welcome/issue\ 2/issue\ 2.md
 time -p chronic grep 'issue' "$ROOT"/projects/ci\ example\ project/issue\ 2/issue\ 2.md
 
 # Unmount the container
-time -p chronic $WL container unmount GitLab
+time -p chronic $WL --debug --verbose container unmount GitLab
 
 # Create and mount a gitlab-graphql container without a specified project path
-$WL container create GitLab-no-path --path "/$MNT_DIR_2"
-$WL storage create gitlab-graphql --container GitLab-no-path --personal-token $PERSONAL_GITLAB_TOKEN
-$WL container mount --with-subcontainers GitLab-no-path
+$WL --debug --verbose container create GitLab-no-path --path "/$MNT_DIR_2"
+$WL --debug --verbose storage create gitlab-graphql --container GitLab-no-path --personal-token $PERSONAL_GITLAB_TOKEN
+$WL --debug --verbose container mount --with-subcontainers GitLab-no-path
 
 # List contents of the project directory
 time -p chronic ls "$ROOT"/projects/ci\ example\ project/
@@ -74,14 +74,14 @@ time -p test -f "$ROOT"/labels/welcome/issue\ 2/issue\ 2.md
 time -p chronic grep 'issue' "$ROOT"/projects/ci\ example\ project/issue\ 2/issue\ 2.md
 
 # Unmount the container
-time -p chronic $WL container unmount GitLab-no-path
+time -p chronic $WL --debug --verbose container unmount GitLab-no-path
 
 # Test storage template creation
-$WL template create gitlab-graphql --personal-token $PERSONAL_GITLAB_TOKEN --project-path wildland/ci-example-project gitlab-temp
-$WL container create gitlab-template --template gitlab-temp
-$WL container mount gitlab-template
+$WL --debug --verbose template create gitlab-graphql --personal-token $PERSONAL_GITLAB_TOKEN --project-path wildland/ci-example-project gitlab-temp
+$WL --debug --verbose container create gitlab-template --template gitlab-temp
+$WL --debug --verbose container mount gitlab-template
 
 # Verify that the template creation works
 time -p chronic tree $ROOT
 
-$WL container unmount gitlab-template
+$WL --debug --verbose container unmount gitlab-template

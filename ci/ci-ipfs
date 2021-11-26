@@ -37,10 +37,10 @@ WL='python3 -m coverage run -p ./wl'
 
 # Wildland
 
-$WL user create ipfs-user
-$WL container create ipfs-con --path "/$MNT_DIR_1"
-$WL storage create ipfs --container ipfs-con --endpoint-addr "/ip4/127.0.0.1/tcp/8888" --ipfs-hash /ipfs/$HASH ipfs-storage
-$WL start --container ipfs-con
+$WL --debug --verbose user create ipfs-user
+$WL --debug --verbose container create ipfs-con --path "/$MNT_DIR_1"
+$WL --debug --verbose storage create ipfs --container ipfs-con --endpoint-addr "/ip4/127.0.0.1/tcp/8888" --ipfs-hash /ipfs/$HASH ipfs-storage
+$WL --debug --verbose start --container ipfs-con
 
 # Testing
 
@@ -48,9 +48,9 @@ time -p chronic /bin/bash -c '[[ $(cat '$MNT_PATH_1'/file) == "foo" ]]'
 time -p chronic /bin/bash -c '[[ $(cat '$MNT_PATH_1'/subdir/file) == "bar" ]]'
 
 # Test storage-template creation
-$WL template create ipfs --endpoint-addr "/ip4/127.0.0.1/tcp/8888" --ipfs-hash /ipfs/$HASH ipfs-template
-$WL container create ipfs-temp --template ipfs-template --path /ipfstem
-$WL container mount ipfs-temp
+$WL --debug --verbose template create ipfs --endpoint-addr "/ip4/127.0.0.1/tcp/8888" --ipfs-hash /ipfs/$HASH ipfs-template
+$WL --debug --verbose container create ipfs-temp --template ipfs-template --path /ipfstem
+$WL --debug --verbose container mount ipfs-temp
 
 # Verify that the template creation works
 time -p chronic /bin/bash -c '[[ $(cat ~/wildland/ipfstem/file) == "foo" ]]'
