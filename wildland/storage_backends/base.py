@@ -389,13 +389,12 @@ class StorageBackend(metaclass=abc.ABCMeta):
         self.watcher_instance = None
         self.ignore_own_events = False
 
-    def start_subcontainer_watcher(self, handler, with_initial=False, ignore_own_events=None,
-                                   params: Optional[dict] = None):
+    def start_subcontainer_watcher(self, handler):
 
         if self.subcontainer_watcher_instance:
             raise StorageError("Watcher already exists")
 
-        self.subcontainer_watcher_instance = self.subcontainer_watcher(params)  # pylint: disable=assignment-from-none
+        self.subcontainer_watcher_instance = self.subcontainer_watcher()  # pylint: disable=assignment-from-none
 
         if not self.subcontainer_watcher_instance:
             return None
@@ -433,7 +432,7 @@ class StorageBackend(metaclass=abc.ABCMeta):
             return SimpleStorageWatcher(self, interval=int(self.params['watcher-interval']))
         return None
 
-    def subcontainer_watcher(self, params: Optional[dict] = None):
+    def subcontainer_watcher(self):
         """
         TODO
         """
@@ -442,7 +441,7 @@ class StorageBackend(metaclass=abc.ABCMeta):
             logger.warning("Using simple subcontainer watcher - it can be very inefficient.")
             from ..storage_backends.watch import SubcontainerWatcher
             return SubcontainerWatcher(
-                self, interval=int(self.params['watcher-interval']), params=params)
+                self, interval=int(self.params['watcher-interval']))
         return None
 
     def set_config_dir(self, config_dir):
@@ -715,9 +714,6 @@ class StorageBackend(metaclass=abc.ABCMeta):
         `wildland:@default:@parent-container:`
         """
         raise OptionalError()
-
-    def get_subcontainer_watch_params(self):
-        return None
 
     def get_subcontainer_watch_pattern(self, query_path: PurePosixPath):
         """

@@ -1,3 +1,29 @@
+# Wildland Project
+#
+# Copyright (C) 2020 Golem Foundation
+#
+# Authors:
+#                   Piotr Bartman <prbartman@invisiblethingslab.com>
+#                   Maja Kostacinska <maja@wildland.io>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""
+SubcontainerRemounter class responsible for mount-watching children of
+a chosen container
+"""
 from pathlib import PurePosixPath
 from typing import List, Tuple, Iterable, Optional, Dict
 
@@ -14,28 +40,31 @@ logger = get_logger('subcontainer_remounter')
 
 class SubcontainerRemounter:
     """
-    TODO
+    Remounter used to keep track of changes in the children containers
+    of a chosen Wildland container.
+    The remounter is meant to automatically mount/unmount/remount containers
+    as changes appear in the filesystem.
     """
-    
+
     def __init__(self, client: Client, fs_client: WildlandFSClient,
                  containers_storage: Dict[Container, Storage]):
         self.containers_storage = containers_storage
         self.client = client
         self.fs_client = fs_client
-        
+
         self.to_mount: List[Tuple[Container,
                             Iterable[Storage],
                             Iterable[Iterable[PurePosixPath]],
                             Optional[Container]]] = []
         self.to_unmount: List[int] = []
-        
+
         self.main_paths: Dict[PurePosixPath, PurePosixPath] = {}
 
     def run(self):
         """
         Run the main loop.
         """
-        
+
         while True:
             for events in self.fs_client.watch_subcontainers(
                     self.client, self.containers_storage, with_initial=True):
@@ -109,7 +138,7 @@ class SubcontainerRemounter:
 
             if storages_to_remount:
                 self.to_mount.append((container, storages_to_remount, user_paths, None))
-    
+
     def unmount_pending(self):
         """
         Unmount queued containers.

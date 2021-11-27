@@ -25,7 +25,7 @@ Wildland storage backend exposing read only IMAP mailbox
 """
 from functools import partial
 from pathlib import PurePosixPath
-from typing import Iterable, List, Set, Tuple, Optional
+from typing import Iterable, List, Set, Tuple
 from datetime import timezone
 
 import uuid
@@ -103,7 +103,7 @@ class ImapStorageBackend(GeneratedStorageMixin, StorageBackend):
     def watcher(self):
         return ImapStorageWatcher(self)
 
-    def subcontainer_watcher(self,  params: Optional[dict] = None):
+    def subcontainer_watcher(self):
         return ImapSubcontainerWatcher(self)
 
     @property

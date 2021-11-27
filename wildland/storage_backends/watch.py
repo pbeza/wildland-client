@@ -303,4 +303,3 @@ class SubcontainerWatcher(StorageWatcher, metaclass=abc.ABCMeta):
         for path in current_paths.intersection(new_paths):
             if current_info[path] != new_info[path]:
                 yield SubcontainerEvent(FileEventType.MODIFY, path)
-
