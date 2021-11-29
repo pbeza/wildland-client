@@ -20,16 +20,16 @@ mkdir -p /tmp/minio-data/the-bucket/
 
 MINIO_ROOT_USER='dmr' MINIO_ROOT_PASSWORD='/.,/.,/.,' /tmp/minio server --console-address :9001 /tmp/minio-data &
 
-WL='python3 -m coverage run -p ./wl'
+WL='python3 -m coverage run -p ./wl --debug --verbose'
 
 # Wildland
 
-$WL --debug --verbose user create s3-user
-$WL --debug --verbose container create s3-con --path /s3
-$WL --debug --verbose storage create s3 --access-key 'dmr' --secret-key '/.,/.,/.,' --container s3-con --s3-url s3://the-bucket/ --endpoint-url 'http://127.0.0.1:9000' s3-storage
-$WL --debug --verbose container create decrypted --path /decrypted
-$WL --debug --verbose storage create encrypted --container decrypted --engine encfs --reference-container-url wildland::/s3:
-$WL --debug --verbose start --container decrypted
+$WL user create s3-user
+$WL container create s3-con --path /s3
+$WL storage create s3 --access-key 'dmr' --secret-key '/.,/.,/.,' --container s3-con --s3-url s3://the-bucket/ --endpoint-url 'http://127.0.0.1:9000' s3-storage
+$WL container create decrypted --path /decrypted
+$WL storage create encrypted --container decrypted --engine encfs --reference-container-url wildland::/s3:
+$WL start --container decrypted
 
 # Test files
 
@@ -43,4 +43,4 @@ time sleep 2
 time -p chronic /bin/bash -c '[[ $(cat ~/wildland/decrypted/file) == "foo" ]]'
 time -p chronic /bin/bash -c '[[ $(cat ~/wildland/decrypted/subdir/file) == "bar" ]]'
 
-$WL --debug --verbose stop
+$WL stop

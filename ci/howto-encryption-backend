@@ -19,11 +19,13 @@ MINIO_ROOT_USER='dmr' MINIO_ROOT_PASSWORD='/.,/.,/.,' /tmp/minio server --consol
 
 # Howto
 
-run wl --debug --verbose user create bob
+WL='python3 -m coverage run -p ./wl --debug --verbose'
+
+$WL user create bob
 bob_userid=$(get_userid bob)
 
 expected="Created: /home/user/.config/wildland/containers/s3-photos.container.yaml"
-run wl --debug --verbose container create s3-photos
+$WL container create s3-photos
 
 expected_pcre="version: '1'
 object: container
@@ -34,17 +36,17 @@ title: null
 categories: \[\]
 backends:
   storage: \[\]"
-run wl --debug --verbose container dump s3-photos
+$WL container dump s3-photos
 s3_photos_uuid=$(get_container_uuid s3-photos)
 
 expected_pcre="Using container: /home/user/.config/wildland/containers/s3-photos.container.yaml \(/.uuid/$UUID_PCRE\)
 Adding storage $UUID_PCRE to container.
 Saved container /home/user/.config/wildland/containers/s3-photos.container.yaml"
-run wl --debug --verbose storage create s3 --access-key 'dmr' --secret-key '/.,/.,/.,' \
+$WL storage create s3 --access-key 'dmr' --secret-key '/.,/.,/.,' \
   --container s3-photos --s3-url s3://the-bucket/ --endpoint-url 'http://127.0.0.1:9000' s3-storage
 
 expected="Created: /home/user/.config/wildland/containers/greece-vacation.container.yaml"
-run wl --debug --verbose container create greece-vacation \
+$WL container create greece-vacation \
   --path /photos \
   --path /persons/tim \
   --path /persons/janet \
@@ -53,10 +55,10 @@ run wl --debug --verbose container create greece-vacation \
 expected_pcre="Using container: /home/user/.config/wildland/containers/greece-vacation.container.yaml \(/.uuid/$UUID_PCRE\)
 Adding storage $UUID_PCRE to container.
 Saved container /home/user/.config/wildland/containers/greece-vacation.container.yaml"
-run wl --debug --verbose storage create encrypted \
+$WL storage create encrypted \
   --container greece-vacation \
   --reference-container-url "wildland::/.uuid/$s3_photos_uuid:" \
   --engine gocryptfs
 
 wl --debug --verbose start
-run wl --debug --verbose container mount greece-vacation
+$WL container mount greece-vacation

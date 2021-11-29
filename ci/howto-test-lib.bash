@@ -42,6 +42,8 @@ export PATH=$PATH:$(dirname "$0")/..
 alias tree='/usr/bin/tree -A'
 export LC_CTYPE=C.UTF-8
 
+WL='python3 ./wl --debug --verbose'
+
 test_script=${BASH_SOURCE[-1]}
 all_steps=$(grep -c '^run ' "$test_script")
 current_step=0
@@ -120,7 +122,7 @@ switch_user() {
         echo "Something went wrong, ~/.config/wildland-$current_user already exists" >&2
         exit 1
     fi
-    wl --debug --verbose stop 2>/dev/null || :
+    $WL stop 2>/dev/null || :
     mv -f ~/.config/wildland ~/.config/wildland-$current_user
     if [ -d ~/.config/wildland-$new_user ]; then
         mv -f ~/.config/wildland-$new_user ~/.config/wildland
@@ -131,13 +133,13 @@ switch_user() {
 }
 
 get_userid() {
-    wl --debug --verbose user dump "$1" | grep owner| cut -f 2 -d :|tr -d " '"
+    $WL user dump "$1" | grep owner| cut -f 2 -d :|tr -d " '"
 }
 
 get_container_uuid() {
-    wl --debug --verbose container dump "$1" | grep -oP "\- \/.uuid/\K$UUID_PCRE"
+    $WL container dump "$1" | grep -oP "\- \/.uuid/\K$UUID_PCRE"
 }
 
 get_storage_uuid() { # $1 = container UUID, $2 = storage type
-    wl --debug --verbose storage ls | grep "type: $2" | grep "$1" | cut -d ' ' -f 4
+    $WL storage ls | grep "type: $2" | grep "$1" | cut -d ' ' -f 4
 }

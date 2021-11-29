@@ -5,10 +5,12 @@ set -ex
 . /home/user/env/bin/activate
 . ci/install-inplace dropbox
 
+WL='python3 -m coverage run -p ./wl --debug --verbose'
+
 function cleanup {
     time -p chronic rm -rf "$1"
-    time -p chronic $WL --debug --verbose container unmount dropbox-test-container
-    time -p chronic $WL --debug --verbose stop
+    time -p chronic $WL container unmount dropbox-test-container
+    time -p chronic $WL stop
 }
 
 ROOT="$HOME/wildland"
@@ -25,16 +27,14 @@ REFRESH_TOKEN="$3"
 
 # Wildland
 
-WL='python3 -m coverage run -p ./wl'
-
-$WL --debug --verbose user create dropbox-user
-$WL --debug --verbose container create --path "/$MNT_DIR_1" --path "/$MNT_DIR_2" dropbox-test-container
+$WL user create dropbox-user
+$WL container create --path "/$MNT_DIR_1" --path "/$MNT_DIR_2" dropbox-test-container
 if [ -n "$ACCESS_TOKEN" ]; then
-    $WL --debug --verbose storage create dropbox --container dropbox-test-container --inline --token "$ACCESS_TOKEN"
+    $WL storage create dropbox --container dropbox-test-container --inline --token "$ACCESS_TOKEN"
 else
-    $WL --debug --verbose storage create dropbox --container dropbox-test-container --inline --app-key "$APP_KEY" --refresh-token "$REFRESH_TOKEN"
+    $WL storage create dropbox --container dropbox-test-container --inline --app-key "$APP_KEY" --refresh-token "$REFRESH_TOKEN"
 fi
-$WL --debug --verbose start --container dropbox-test-container
+$WL start --container dropbox-test-container
 
 # Create temporary timestamped test directory
 
@@ -127,12 +127,12 @@ SRC="$TEST_DIRPATH/456.txt" time -p chronic /bin/bash -c '[[ $(cat "$SRC") == "f
 
 # Test storage template creation
 if [ -n "$ACCESS_TOKEN" ]; then
-    $WL --debug --verbose template create dropbox --token "$ACCESS_TOKEN" mydropbox
+    $WL template create dropbox --token "$ACCESS_TOKEN" mydropbox
 else
-    $WL --debug --verbose template create dropbox --app-key "$APP_KEY" --refresh-token "$REFRESH_TOKEN" mydropbox
+    $WL template create dropbox --app-key "$APP_KEY" --refresh-token "$REFRESH_TOKEN" mydropbox
 fi
-$WL --debug --verbose container create template-container --path "/$MNT_DIR_3" --template mydropbox
-$WL --debug --verbose container mount template-container
+$WL container create template-container --path "/$MNT_DIR_3" --template mydropbox
+$WL container mount template-container
 
 # Test simple directory/file adding
 time -p chronic mkdir -p "$MNT_PATH_3"/dir1
@@ -146,4 +146,4 @@ time -p chronic ls -a "$MNT_PATH_3"
 # Test checking file content
 time -p chronic cat "$MNT_PATH_3"/file1
 
-$WL --debug --verbose c unmount template-container
+$WL c unmount template-container

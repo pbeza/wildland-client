@@ -7,7 +7,7 @@ set -ex
 
 function cleanup {
     time -p chronic rm -rf "$1"
-    time -p chronic $WL --debug --verbose container unmount googledrive-test-container
+    time -p chronic $WL container unmount googledrive-test-container
 }
 
 ROOT="$HOME/wildland"
@@ -20,14 +20,14 @@ MNT_PATH_3="$ROOT/$MNT_DIR_3"
 
 # Wildland
 
-WL='python3 -m coverage run -p ./wl'
+WL='python3 -m coverage run -p ./wl --debug --verbose'
 
-$WL --debug --verbose user create googledrive-user
-$WL --debug --verbose container create --path "/$MNT_DIR_1" --path "/$MNT_DIR_2" googledrive-test-container
+$WL user create googledrive-user
+$WL container create --path "/$MNT_DIR_1" --path "/$MNT_DIR_2" googledrive-test-container
 set +x
-$WL --debug --verbose storage create googledrive --container googledrive-test-container --inline --credentials "$1" --skip-interaction
+$WL storage create googledrive --container googledrive-test-container --inline --credentials "$1" --skip-interaction
 set -x
-$WL --debug --verbose start --container googledrive-test-container
+$WL start --container googledrive-test-container
 
 # Create temporary timestamped test directory
 
@@ -102,9 +102,9 @@ SRC="$TEST_DIRPATH/456.txt" time -p chronic /bin/bash -c '[[ $(cat "$SRC") == "f
 # ((FILE_SIZE==314572800))
 
 # Test template creation
-$WL --debug --verbose template create googledrive --credentials "$1" --skip-interaction googledrive-temp
-$WL --debug --verbose container create googledrive-temp --template googledrive-temp --path "/$MNT_DIR_3"
-$WL --debug --verbose container mount googledrive-temp
+$WL template create googledrive --credentials "$1" --skip-interaction googledrive-temp
+$WL container create googledrive-temp --template googledrive-temp --path "/$MNT_DIR_3"
+$WL container mount googledrive-temp
 
 # Verify that the template creation is working
 tree -a $MNT_PATH_3

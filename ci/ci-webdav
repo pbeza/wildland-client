@@ -21,17 +21,17 @@ mkdir -p "$STORAGE"/foo
 echo foobar > "$STORAGE"/foo/file1.txt
 echo text > "$STORAGE"/file2.txt
 
-WL='python3 -m coverage run -p ./wl'
+WL='python3 -m coverage run -p ./wl --debug --verbose'
 
 # Wildland
-$WL --debug --verbose user create User1
-$WL --debug --verbose container create Container1 --path "/$MNT_DIR_1" \
+$WL user create User1
+$WL container create Container1 --path "/$MNT_DIR_1" \
                                  --category /ci-test
-$WL --debug --verbose storage create webdav --container Container1 \
+$WL storage create webdav --container Container1 \
                            --login 'user' \
                            --password 'password' \
                            --url 'http://localhost:8081/'
-$WL --debug --verbose start
+$WL start
 
 # Test files and directories
 tree $ROOT
@@ -52,13 +52,13 @@ time -p chronic grep 'foobar' "$MNT_PATH_1"/foo/file1.txt
 rm -rf "$STORAGE"
 
 # Test template creation
-$WL --debug --verbose template create webdav --login 'user' \
+$WL template create webdav --login 'user' \
                             --password 'password' \
                             --url 'http://localhost:8081/' webdav-temp
-$WL --debug --verbose container create webdav-temp --template webdav-temp --path "/$MNT_DIR_2"
-$WL --debug --verbose container mount webdav-temp
+$WL container create webdav-temp --template webdav-temp --path "/$MNT_DIR_2"
+$WL container mount webdav-temp
 
 # Verify the template creation works
 tree "$MNT_PATH_2"
 
-$WL --debug --verbose stop
+$WL stop

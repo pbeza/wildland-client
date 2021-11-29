@@ -6,10 +6,12 @@
 
 mkdir -p /home/user/storage
 
-run wl --debug --verbose user create yatima
+WL='python3 -m coverage run -p ./wl --debug --verbose'
+
+$WL user create yatima
 userid=$(get_userid yatima)
 
-run wl --debug --verbose start --skip-forest-mount
+$WL start --skip-forest-mount
 
 # workaround for issue #588
 python -m wildland.storage_sync.daemon &
@@ -20,9 +22,9 @@ python -m wildland.storage_sync.daemon &
 storage_type=local
 mkdir -p ~/storage/local
 
-run wl --debug --verbose template create $storage_type mydropbox --location ~/storage/local
+$WL template create $storage_type mydropbox --location ~/storage/local
 
-run wl --debug --verbose container create --path "/mydropbox" --template mydropbox cache-test
+$WL container create --path "/mydropbox" --template mydropbox cache-test
 
 cont_uuid=$(get_container_uuid cache-test)
 storage_uuid=$(get_storage_uuid $cont_uuid $storage_type)
@@ -43,9 +45,9 @@ backends:
     backend-id: $storage_uuid
 local-path: /home/user/.config/wildland/containers/cache-test.container.yaml"
 
-run wl --debug --verbose container info cache-test
+$WL container info cache-test
 
-run wl --debug --verbose container mount cache-test
+$WL container mount cache-test
 
 run bash -c "echo 'test 1' > ~/wildland/mydropbox/test1.txt"
 
@@ -64,19 +66,19 @@ run tree ~/wildland/mydropbox/
 hash1=$(sha256sum ~/wildland/mydropbox/test1.txt | awk '{print $1}')
 hash2=$(sha256sum ~/wildland/mydropbox/test2.rnd | awk '{print $1}')
 
-run wl --debug --verbose c unmount cache-test
+$WL c unmount cache-test
 
 run mkdir -p ~/storage/cache
 
-run wl --debug --verbose template create local --location ~/storage/cache cache-tpl
+$WL template create local --location ~/storage/cache cache-tpl
 
 expected="Set template cache-tpl as default for container cache storages"
 
-run wl --debug --verbose set-default-cache cache-tpl
+$WL set-default-cache cache-tpl
 
 # mount with cache
 
-run wl --debug --verbose c mount -c cache-test
+$WL c mount -c cache-test
 
 cache_uuid=$(wl s dump ~/.config/wildland/cache/$userid.$cont_uuid.storage.yaml | grep backend-id: | cut -d ' ' -f 2)
 
@@ -92,7 +94,7 @@ expected="Mounted containers:
 Sync jobs:
 :/mydropbox: SYNCED '$storage_type'(backend_id=$storage_uuid) <-> 'local'(backend_id=$cache_uuid)"
 
-run wl --debug --verbose status
+$WL status
 
 expected="Sensitive fields are hidden.
 /home/user/.config/wildland/containers/cache-test.container.yaml
@@ -114,7 +116,7 @@ cache:
   backend_id: $cache_uuid
   location: /home/user/storage/cache/$cont_uuid"
 
-run wl --debug --verbose c info cache-test
+$WL c info cache-test
 
 expected="/home/user/wildland/mydropbox/
 ├── test1.txt
@@ -147,9 +149,9 @@ run cat ~/storage/cache/$cont_uuid/test1.txt
 
 # using cache by default
 
-run wl --debug --verbose c unmount cache-test
+$WL c unmount cache-test
 
-run wl --debug --verbose c mount cache-test
+$WL c mount cache-test
 
 expected="Mounted containers:
 
@@ -163,14 +165,14 @@ expected="Mounted containers:
 Sync jobs:
 :/mydropbox: SYNCED '$storage_type'(backend_id=$storage_uuid) <-> 'local'(backend_id=$cache_uuid)"
 
-run wl --debug --verbose status
+$WL status
 
 # disable cache
 
-run wl --debug --verbose c unmount cache-test
+$WL c unmount cache-test
 
 expected="Deleting cache: /home/user/.config/wildland/cache/$userid.$cont_uuid.storage.yaml"
-run wl --debug --verbose c delete-cache cache-test
+$WL c delete-cache cache-test
 
 expected="Sensitive fields are hidden.
 /home/user/.config/wildland/containers/cache-test.container.yaml
@@ -188,9 +190,9 @@ backends:
     backend-id: $storage_uuid
 local-path: /home/user/.config/wildland/containers/cache-test.container.yaml"
 
-run wl --debug --verbose c info cache-test
+$WL c info cache-test
 
-run wl --debug --verbose c mount cache-test
+$WL c mount cache-test
 
 expected="Mounted containers:
 
@@ -200,7 +202,7 @@ expected="Mounted containers:
     /mydropbox
 
 No sync jobs running"
-run wl --debug --verbose status
+$WL status
 
 expected="/home/user/wildland/mydropbox/
 ├── test1.txt
@@ -221,15 +223,15 @@ run compare $hash2 $hash3b
 
 ## Forest example
 
-run wl --debug --verbose user import --path /mydirs/ariadne https://ariadne.wildland.io
+$WL user import --path /mydirs/ariadne https://ariadne.wildland.io
 
-run wl --debug --verbose c mount ':/mydirs/ariadne:/forests/pandora:*:'
+$WL c mount ':/mydirs/ariadne:/forests/pandora:*:'
 
 tree_list_1=$(tree -J -F -L 2 ~/wildland/mydirs/ariadne:/forests/pandora:/)
 
-run wl --debug --verbose c unmount ':/mydirs/ariadne:/forests/pandora:*:'
+$WL c unmount ':/mydirs/ariadne:/forests/pandora:*:'
 
-run wl --debug --verbose c mount -c ':/mydirs/ariadne:/forests/pandora:*:'
+$WL c mount -c ':/mydirs/ariadne:/forests/pandora:*:'
 
 expected_pcre="Sensitive fields are hidden.
 
@@ -252,21 +254,21 @@ cache:
   backend_id: $UUID_PCRE
   location: /home/user/storage/cache/24b3b45c-57e1-44ec-b66c-33d952c99c6a"
 
-run wl --debug --verbose c info ':/mydirs/ariadne:/forests/pandora:/home/omeg:'
+$WL c info ':/mydirs/ariadne:/forests/pandora:/home/omeg:'
 
 tree_list_2=$(tree -J -F -L 2 ~/wildland/mydirs/ariadne:/forests/pandora:/)
 
 run diff <(echo "$tree_list_1") <(echo "$tree_list_2")
 
 # all non-synced lines from status
-status=$(wl --debug --verbose status | sed -n '/Sync jobs:/,$p' | grep -v "SYNCED")
+status=$(wl status | sed -n '/Sync jobs:/,$p' | grep -v "SYNCED")
 
 # make sure there are no errors
 expected=""
 run echo "$status" | grep "ERROR" || true
 
 unset expected
-run wl --debug --verbose c delete-cache ':/mydirs/ariadne:/forests/pandora:*:'
+$WL c delete-cache ':/mydirs/ariadne:/forests/pandora:*:'
 
 expected=""
 run ls ~/.config/wildland/cache/
