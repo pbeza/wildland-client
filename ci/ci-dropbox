@@ -5,6 +5,8 @@ set -ex
 . /home/user/env/bin/activate
 . ci/install-inplace dropbox
 
+WL='python3 -m coverage run -p ./wl --debug --verbose'
+
 function cleanup {
     time -p chronic rm -rf "$1"
     time -p chronic $WL container unmount dropbox-test-container
@@ -24,8 +26,6 @@ APP_KEY="$2"
 REFRESH_TOKEN="$3"
 
 # Wildland
-
-WL='python3 -m coverage run -p ./wl'
 
 $WL user create dropbox-user
 $WL container create --path "/$MNT_DIR_1" --path "/$MNT_DIR_2" dropbox-test-container

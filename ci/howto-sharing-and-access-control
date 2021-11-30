@@ -7,11 +7,13 @@
 mkdir -p /home/user/storage
 sudo /etc/init.d/apache2 start
 
+WL='python3 -m coverage run -p ./wl --debug --verbose'
+
 ###################
 ### Create bob user
 ###################
 new_user='bob'  # to nicely print cmd prompt before first switch_user
-run wl user create bob
+$WL user create bob
 mkdir -p ~/Downloads/
 cp ~/.config/wildland/users/bob.user.yaml ~/Downloads
 
@@ -32,16 +34,16 @@ Created: /home/user/.config/wildland/users/alice.user.yaml
 Using $USERID_PCRE as @default
 Using $USERID_PCRE as @default-owner
 Adding $USERID_PCRE to local owners"
-run wl user create alice
+$WL user create alice
 
 alice_userid=$(get_userid alice)
 
 expected="Created: /home/user/.config/wildland/users/bob.user.yaml
 Created: /home/user/.config/wildland/bridges/bob.bridge.yaml"
-run wl user im ~/Downloads/bob.user.yaml
+$WL user im ~/Downloads/bob.user.yaml
 
 expected="Created: /home/user/.config/wildland/containers/mycontainer.container.yaml"
-run wl container create mycontainer
+$WL container create mycontainer
 
 mycontainer_uuid=$(wl container dump mycontainer | grep '/.uuid/' | cut -d / -f 3)
 
@@ -54,11 +56,41 @@ title: null
 categories: []
 backends:
   storage: []"
-run wl container dump mycontainer
+$WL container dump mycontainer
 
-expected="Error: Secret key not found: $bob_userid"
+expected="Error: Secret key not found: $bob_userid
+Traceback (most recent call last):
+  File \"/home/user/wildland-client/wildland/cli/cli_base.py\", line 79, in __call__
+    return self.main(*args, **kwargs)
+  File \"/home/user/env/lib/python3.9/site-packages/click/core.py\", line 1053, in main
+    rv = self.invoke(ctx)
+  File \"/home/user/env/lib/python3.9/site-packages/click/core.py\", line 1659, in invoke
+    return _process_result(sub_ctx.command.invoke(sub_ctx))
+  File \"/home/user/env/lib/python3.9/site-packages/click/core.py\", line 1659, in invoke
+    return _process_result(sub_ctx.command.invoke(sub_ctx))
+  File \"/home/user/env/lib/python3.9/site-packages/click/core.py\", line 1395, in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+  File \"/home/user/env/lib/python3.9/site-packages/click/core.py\", line 754, in invoke
+    return __callback(*args, **kwargs)
+  File \"/home/user/env/lib/python3.9/site-packages/click/decorators.py\", line 38, in new_func
+    return f(get_current_context().obj, *args, **kwargs)
+  File \"/home/user/wildland-client/wildland/cli/cli_container.py\", line 202, in create
+    container_path = obj.client.save_new_object(WildlandObject.Type.CONTAINER, container, name)
+  File \"/home/user/wildland-client/wildland/client.py\", line 923, in save_new_object
+    return self.save_object(object_type, object_, path=path)
+  File \"/home/user/wildland-client/wildland/client.py\", line 891, in save_object
+    data = self.session.dump_object(obj, path)
+  File \"/home/user/wildland-client/wildland/session.py\", line 79, in dump_object
+    manifest.encrypt_and_sign(self.sig)
+  File \"/home/user/wildland-client/wildland/manifest/manifest.py\", line 412, in encrypt_and_sign
+    signature = sig_context.sign(owner, data,
+  File \"/home/user/wildland-client/wildland/manifest/sig.py\", line 503, in sign
+    key_id, secret_key = self._get_private_key(
+  File \"/home/user/wildland-client/wildland/manifest/sig.py\", line 493, in _get_private_key
+    raise SigError(f'Secret key not found: {owner}')
+wildland.manifest.sig.SigError: Secret key not found: $bob_userid"
 expected_fail=1
-run wl container create another-container --owner bob
+$WL container create another-container --owner bob
 
 ## Manifests encryption
 
@@ -74,7 +106,7 @@ run cat ~/.config/wildland/containers/mycontainer.container.yaml
 
 expected="Saved: /home/user/.config/wildland/containers/mycontainer.container.yaml
 Re-publishing container: [/.uuid/$mycontainer_uuid]"
-run wl container modify --no-encrypt-manifest mycontainer
+$WL container modify --no-encrypt-manifest mycontainer
 
 expected_pcre="signature: \|
   $alice_userid:.*
@@ -93,7 +125,7 @@ backends:
 run cat ~/.config/wildland/containers/mycontainer.container.yaml
 
 expected="Created: /home/user/.config/wildland/containers/unencrypted-container.container.yaml"
-run wl container create unencrypted-container --no-encrypt-manifest
+$WL container create unencrypted-container --no-encrypt-manifest
 
 expected_pcre="signature: \|
   $alice_userid:.*
@@ -112,14 +144,14 @@ backends:
 run cat ~/.config/wildland/containers/unencrypted-container.container.yaml
 
 expected="Created: /home/user/.config/wildland/containers/alice-and-bob.container.yaml"
-run wl container create alice-and-bob --access bob --path /very/secret
+$WL container create alice-and-bob --access bob --path /very/secret
 
 alice_and_bob_uuid=$(wl container dump alice-and-bob | grep '/.uuid/' | cut -d / -f 3)
 
 expected_pcre="Using container: /home/user/.config/wildland/containers/alice-and-bob.container.yaml \(/.uuid/$alice_and_bob_uuid\)
 Adding storage $UUID_PCRE to container.
 Saved container /home/user/.config/wildland/containers/alice-and-bob.container.yaml"
-run wl storage create dummy --container alice-and-bob
+$WL storage create dummy --container alice-and-bob
 
 expected_pcre="signature: \|
   $alice_userid:.*
@@ -134,12 +166,12 @@ run cat ~/.config/wildland/containers/alice-and-bob.container.yaml
 ## Sharing a container
 ## (forest creating critical part)
 
-run wl template create webdav mywebdav \
+$WL template create webdav mywebdav \
     --login 'user' \
     --password 'password' \
     --url 'http://localhost:8081/'
 
-run wl forest create --access bob --owner alice mywebdav
+$WL forest create --access bob --owner alice mywebdav
 
 ## Container publishing
 
@@ -147,7 +179,7 @@ expected_pcre="(?s)Publishing container: \[/.uuid/$alice_and_bob_uuid\]
 .*
 /home/user/.config/wildland/containers/mycontainer.container.yaml
 .*"
-run wl container publish alice-and-bob
+$WL container publish alice-and-bob
 
 cp ~/.config/wildland/users/alice.user.yaml ~/Downloads
 
@@ -158,15 +190,15 @@ switch_user bob
 
 expected="Created: /home/user/.config/wildland/users/alice.user.yaml
 Created: /home/user/.config/wildland/bridges/alice.bridge.yaml"
-run wl user import --path /forests/alice ~/Downloads/alice.user.yaml
+$WL user import --path /forests/alice ~/Downloads/alice.user.yaml
 
-run wl start
+$WL start
 
 expected_pcre="(?:(Loading containers \(from ':\/forests\/alice:\/very\/secret:'\): [0-9]*)*"\
 "(Checking container references \(from ':\/forests\/alice:\/very\/secret:'\): [0-9]*)*"\
 "(Preparing mount of container references \(from ':\/forests\/alice:\/very\/secret:'\): [0-9]*)*"\
 "(Mounting one storage)*)"
-run wl container mount :/forests/alice:/very/secret:
+$WL container mount :/forests/alice:/very/secret:
 
 
 ## Infrastructure-level control
@@ -179,22 +211,22 @@ Created: /home/user/.config/wildland/users/caroline.user.yaml
 Using $USERID_PCRE as @default
 Using $USERID_PCRE as @default-owner
 Adding $USERID_PCRE to local owners"
-run wl user create caroline
+$WL user create caroline
 
 caroline_userid=$(get_userid caroline)
 
-run wl start
+$WL start
 
 # use webdav instead of s3, as it's easier to test locally
 expected="Storage template [carolines-s3] created in /home/user/.config/wildland/templates/carolines-s3.template.jinja"
-run wl template create webdav carolines-s3 \
+$WL template create webdav carolines-s3 \
     --login 'user' \
     --password 'password' \
     --url 'http://localhost:8081/' \
     --access caroline
 
 expected="Appended to an existing storage template [carolines-s3]"
-run wl template add webdav carolines-s3 \
+$WL template add webdav carolines-s3 \
     --login 'userro' \
     --password 'passwordro' \
     --url 'http://localhost:8081/' \
@@ -208,7 +240,7 @@ Adding storage $UUID_PCRE to container.
 Saved container /home/user/.config/wildland/containers/caroline-forest-catalog.container.yaml
 Saved: /home/user/.config/wildland/users/caroline.user.yaml
 Saved: /home/user/.config/wildland/users/caroline.user.yaml"
-run wl forest create --access '*' --owner caroline carolines-s3
+$WL forest create --access '*' --owner caroline carolines-s3
 
 
 expected_pcre="Created: /home/user/.config/wildland/containers/hello-world.container.yaml
@@ -218,7 +250,7 @@ Saved container /home/user/.config/wildland/containers/hello-world.container.yam
 Adding storage $UUID_PCRE to container.
 Saved container /home/user/.config/wildland/containers/hello-world.container.yaml
 Publishing container: \[/.uuid/$UUID_PCRE\]"
-run wl container create hello-world \
+$WL container create hello-world \
   --no-encrypt-manifest \
   --path /hello/world \
   --template carolines-s3
@@ -227,7 +259,7 @@ expected_pcre="(?:(Loading containers \(from ':\/hello\/world:'\): [0-9]*)*"\
 "(Checking container references \(from ':\/hello\/world:'\): [0-9]*)*"\
 "(Preparing mount of container references \(from ':\/hello\/world:'\): [0-9]*)*"\
 "(Mounting one storage)*)"
-run wl c mount :/hello/world:
+$WL c mount :/hello/world:
 
 run bash -c "echo 'It works!' > ~/wildland/hello/world/Hello-World.md"
 
@@ -273,13 +305,13 @@ cp ~/.config/wildland/users/caroline.user.yaml ~/Downloads/
 
 switch_user daniel
 
-run wl user create daniel
+$WL user create daniel
 
-run wl start
+$WL start
 
 expected="Created: /home/user/.config/wildland/users/caroline.user.yaml
 Created: /home/user/.config/wildland/bridges/caroline.bridge.yaml"
-run wl user import ~/Downloads/caroline.user.yaml \
+$WL user import ~/Downloads/caroline.user.yaml \
   --path /f/caroline
 
 
@@ -288,7 +320,7 @@ expected_pcre="(?:(User $caroline_userid already exists\. Forcing user import\.)
 "(Checking container references \(from ':\/f\/caroline:\*:'\): [0-9]*)*"\
 "(Preparing mount of container references \(from ':\/f\/caroline:\*:'\): [0-9]*)*"\
 "(Mounting storages for containers: 2)*)"
-run wl forest mount :/f/caroline:
+$WL forest mount :/f/caroline:
 
 cd ~/wildland/f/caroline\:/hello/world/
 
