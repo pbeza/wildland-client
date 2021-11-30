@@ -16,16 +16,15 @@ chmod +x /tmp/minio
 mkdir -p /tmp/minio-data/the-bucket/subdir
 
 MINIO_ROOT_USER='dmr' MINIO_ROOT_PASSWORD='/.,/.,/.,' /tmp/minio server --console-address :9001 /tmp/minio-data &
+WL='wl --debug --verbose'
 
 # Howto
 
-WL='python3 -m coverage run -p ./wl --debug --verbose'
-
-$WL user create bob
+run $WL --debug --verbose user create bob
 bob_userid=$(get_userid bob)
 
 expected="Created: /home/user/.config/wildland/containers/s3-photos.container.yaml"
-$WL container create s3-photos
+run $WL --debug --verbose container create s3-photos
 
 expected_pcre="version: '1'
 object: container
@@ -36,17 +35,17 @@ title: null
 categories: \[\]
 backends:
   storage: \[\]"
-$WL container dump s3-photos
+run $WL --debug --verbose container dump s3-photos
 s3_photos_uuid=$(get_container_uuid s3-photos)
 
 expected_pcre="Using container: /home/user/.config/wildland/containers/s3-photos.container.yaml \(/.uuid/$UUID_PCRE\)
 Adding storage $UUID_PCRE to container.
 Saved container /home/user/.config/wildland/containers/s3-photos.container.yaml"
-$WL storage create s3 --access-key 'dmr' --secret-key '/.,/.,/.,' \
+run $WL --debug --verbose storage create s3 --access-key 'dmr' --secret-key '/.,/.,/.,' \
   --container s3-photos --s3-url s3://the-bucket/ --endpoint-url 'http://127.0.0.1:9000' s3-storage
 
 expected="Created: /home/user/.config/wildland/containers/greece-vacation.container.yaml"
-$WL container create greece-vacation \
+run $WL --debug --verbose container create greece-vacation \
   --path /photos \
   --path /persons/tim \
   --path /persons/janet \
@@ -55,10 +54,10 @@ $WL container create greece-vacation \
 expected_pcre="Using container: /home/user/.config/wildland/containers/greece-vacation.container.yaml \(/.uuid/$UUID_PCRE\)
 Adding storage $UUID_PCRE to container.
 Saved container /home/user/.config/wildland/containers/greece-vacation.container.yaml"
-$WL storage create encrypted \
+run $WL --debug --verbose storage create encrypted \
   --container greece-vacation \
   --reference-container-url "wildland::/.uuid/$s3_photos_uuid:" \
   --engine gocryptfs
 
-wl --debug --verbose start
-$WL container mount greece-vacation
+$WL --debug --verbose start
+run $WL --debug --verbose container mount greece-vacation

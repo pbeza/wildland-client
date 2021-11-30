@@ -9,13 +9,13 @@ sudo /etc/init.d/apache2 start
 
 mkdir -p ~/Downloads/
 
-WL='python3 -m coverage run -p ./wl --debug --verbose'
+WL='wl --debug --verbose'
 
 ######################
 ### Create yatima user
 ######################
 new_user='yatima'  # to nicely print cmd prompt before first switch_user
-$WL user create yatima
+run $WL user create yatima
 cp ~/.config/wildland/users/yatima.user.yaml ~/Downloads
 yatima_userid=$(get_userid yatima)
 
@@ -29,7 +29,7 @@ switch_user inoshiro
 ########################
 ### Create inoshiro user
 ########################
-$WL user create inoshiro
+run $WL user create inoshiro
 cp ~/.config/wildland/users/inoshiro.user.yaml ~/Downloads
 inoshiro_userid=$(get_userid inoshiro)
 
@@ -38,19 +38,19 @@ inoshiro_userid=$(get_userid inoshiro)
 ### Switch user to office
 #########################
 switch_user office
-$WL user create office
+run $WL user create office
 cp ~/.config/wildland/users/office.user.yaml ~/Downloads/
 office_userid=$(get_userid office)
 
 
 expected="Created: /home/user/.config/wildland/users/yatima.user.yaml
 Created: /home/user/.config/wildland/bridges/yatima.bridge.yaml"
-$WL user import ~/Downloads/yatima.user.yaml
+run $WL user import ~/Downloads/yatima.user.yaml
 
 
 expected="Created: /home/user/.config/wildland/users/inoshiro.user.yaml
 Created: /home/user/.config/wildland/bridges/inoshiro.bridge.yaml"
-$WL user import ~/Downloads/inoshiro.user.yaml
+run $WL user import ~/Downloads/inoshiro.user.yaml
 
 
 expected_pcre="Pubkeys found in \[yatima\]:
@@ -58,7 +58,7 @@ expected_pcre="Pubkeys found in \[yatima\]:
 Pubkeys found in \[inoshiro\]:
   $PUBKEY_PCRE
 Saved: /home/user/.config/wildland/users/office.user.yaml"
-$WL user modify --add-pubkey-user yatima --add-pubkey-user inoshiro office
+run $WL user modify --add-pubkey-user yatima --add-pubkey-user inoshiro office
 
 
 expected_pcre="version: '1'
@@ -71,7 +71,7 @@ pubkeys:
 - $PUBKEY_PCRE
 - $PUBKEY_PCRE
 - $PUBKEY_PCRE"
-$WL user dump office
+run $WL user dump office
 
 
 $WL c create --access office access-test
@@ -96,7 +96,7 @@ switch_user yatima
 
 expected="Created: /home/user/.config/wildland/users/office.user.yaml
 Created: /home/user/.config/wildland/bridges/office.bridge.yaml"
-$WL user import ~/Downloads/office.user.yaml
+run $WL user import ~/Downloads/office.user.yaml
 
 
 expected_pcre="version: '1'
@@ -110,12 +110,12 @@ access:
 - user: '$USERID_PCRE'
 backends:
   storage: \[\]"
-$WL dump ~/Downloads/access-test.container.yaml
+run $WL dump ~/Downloads/access-test.container.yaml
 
-wl --debug --verbose start
+$WL start
 
 expected="Saved: /home/user/Downloads/access-test.container.yaml"
-$WL sign -i ~/Downloads/access-test.container.yaml
+run $WL sign -i ~/Downloads/access-test.container.yaml
 
 
 expected_pcre="signature: \|

@@ -4,7 +4,7 @@ cd "$(dirname "$0")"
 
 STORAGE="$HOME/storage"
 
-WL='python3 ./wl --debug --verbose'
+WL='wl --debug --verbose'
 
 #
 # Setup 1
