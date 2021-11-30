@@ -33,7 +33,7 @@ import manhelper
 # -- Project information -----------------------------------------------------
 
 project = 'Wildland'
-copyright = '2021, Golem Foundation'
+project_copyright = '2021, Golem Foundation'
 author = 'Golem Foundation'
 
 # The short X.Y version
