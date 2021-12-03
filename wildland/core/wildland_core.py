@@ -295,7 +295,20 @@ class WildlandCore(WildlandCoreApi):
         """
         raise NotImplementedError
 
-    def user_create(self, name: str, keys: List[str], paths: List[str]) -> \
+    def user_get_public_key(self, owner: str) -> Tuple[WildlandResult, Optional[str]]:
+        """
+        Return public key for the provided owner.
+        :param owner: owner fingerprint
+        :return: Tuple of WildlandResult and, if successful, this user's public key
+        """
+        return self.__user_get_pubkey(owner)
+
+    @wildland_result(default_output=None)
+    def __user_get_pubkey(self, owner):
+        _, pubkey = self.client.session.sig.load_key(owner)
+        return pubkey
+
+    def user_create(self, name: Optional[str], keys: List[str], paths: List[str]) -> \
             Tuple[WildlandResult, Optional[WLUser]]:
         """
         Create a user and return information about it
@@ -305,8 +318,8 @@ class WildlandCore(WildlandCoreApi):
         """
         return self.__user_create(name, keys, paths)
 
-    @wildland_result
-    def __user_create(self, name: str, keys: List[str], paths: List[str]):
+    @wildland_result(default_output=None)
+    def __user_create(self, name: Optional[str], keys: List[str], paths: List[str]):
 
         if not keys:
             result = WildlandResult()
