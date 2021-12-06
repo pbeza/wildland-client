@@ -1078,6 +1078,7 @@ class Client:
                     continue
                 with backend:
                     for _, subcontainer in backend.get_children(self):
+                        assert subcontainer is not None
                         yield self.load_subcontainer_object(container, storage, subcontainer)
             except NotImplementedError:
                 continue

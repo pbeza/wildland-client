@@ -95,6 +95,7 @@ class SubcontainerRemounter:
         if event.event_type in [FileEventType.CREATE, FileEventType.MODIFY]:
             container = self.client.load_subcontainer_object(
                 event.container, event.storage, event.subcontainer)
+            assert isinstance(container, Container)
 
             # Start tracking the file
             self.main_paths[event.path] = self.fs_client.get_user_container_path(
