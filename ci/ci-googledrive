@@ -108,3 +108,13 @@ $WL container mount googledrive-temp
 
 # Verify that the template creation is working
 tree -a $MNT_PATH_3
+
+# Check if sync works fine (test against issue #714)
+
+export LOCAL_TEST_DIR="$(mktemp -d)"
+time -p chronic /bin/bash -c 'echo "sync test" > "$LOCAL_TEST_DIR/sync-test-file"'
+$WL storage create local --container googledrive-temp --inline --location "$LOCAL_TEST_DIR"
+$WL container sync --one-shot googledrive-temp
+export REMOTE_TEST_FILE="$MNT_PATH_3/sync-test-file"
+[[ -f "$REMOTE_TEST_FILE" ]]
+time -p chronic /bin/bash -c '[[ $(cat "$REMOTE_TEST_FILE") == "sync test" ]]'
