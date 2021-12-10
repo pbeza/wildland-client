@@ -277,12 +277,20 @@ class FullBufferedFile(File, metaclass=abc.ABCMeta):
             self.attr.size = len(self.buf)
         return self.attr
 
+    # This fix solves this problem:
+    # rm -f ~/wildland/issue607/blah && sleep 2 && date && echo -n AAAAA > ~/wildland/issue607/blah && sleep 5 && date && truncate --size 0 ~/wildland/issue607/blah && sleep 5 && date && cat ~/wildland/issue607/blah
+    # (after the fix prints nothing; before the fix it printed 'AAAAA')
     def ftruncate(self, length: int) -> None:
         with self.buf_lock:
-            if length > 0:
-                self._load()
-            else:
-                self.loaded = True
+            self._load()  # TODO TODO TODO here is the bug!
+            # if length > 0:
+            #     self._load()  # TODO TODO TODO here is the bug!
+            # else:
+            #     self.loaded = True
+            #     # the file may not actually be dirty if it's empty (most of the time it's not)
+            #     self.dirty = True
+
+            logger.error('ftruncate(length=%d), self.buf=%s, len=%d', length, str(self.buf), len(self.buf))
 
             if length < len(self.buf):
                 self.buf = self.buf[:length]
