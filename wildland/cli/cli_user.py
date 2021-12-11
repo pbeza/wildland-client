@@ -30,6 +30,8 @@ from pathlib import PurePosixPath, Path
 import binascii
 import click
 
+import wildland.cli.cli_common as cli_common
+
 from wildland.wildland_object.wildland_object import WildlandObject
 from wildland.bridge import Bridge
 from ..user import User
@@ -625,10 +627,21 @@ def refresh_users(obj: ContextObj, user_list: Optional[List[User]] = None):
 user_.add_command(sign)
 user_.add_command(verify)
 user_.add_command(edit)
-user_.add_command(dump)
 user_.add_command(publish)
 user_.add_command(unpublish)
 
+@user_.command(short_help='verify and dump contents of a user manifest')
+@click.option('--decrypt/--no-decrypt', '-d/-n', default=True, help='decrypt manifest')
+@click.argument('path', metavar='FILE or WLPATH (explicit owner needed)')
+@click.pass_context
+def dump(ctx: click.Context, path: str, decrypt: bool):
+    """
+    Verify and dump contents of a user manifest.
+    """
+    cli_common.resolve_object(
+        ctx, path, WildlandObject.Type.USER, cli_common.dump,
+        decrypt=decrypt, save_manifest=False
+    )
 
 @user_.command(short_help='modify user manifest')
 @click.option('--add-path', metavar='PATH', multiple=True, help='path to add')

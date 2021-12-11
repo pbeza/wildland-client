@@ -29,6 +29,7 @@ from pathlib import PurePosixPath, Path
 from typing import List, Optional
 
 import click
+import wildland.cli.cli_common as cli_common
 
 from wildland.wildland_object.wildland_object import WildlandObject
 from wildland.bridge import Bridge
@@ -187,6 +188,18 @@ def bridge_import(obj: ContextObj, path_or_url, paths, bridge_owner, only_first)
 bridge_.add_command(sign)
 bridge_.add_command(verify)
 bridge_.add_command(edit)
-bridge_.add_command(dump)
 bridge_.add_command(publish)
 bridge_.add_command(unpublish)
+
+@bridge_.command(short_help='verify and dump contents of a bridge')
+@click.option('--decrypt/--no-decrypt', '-d/-n', default=True, help='decrypt manifest')
+@click.argument('path', metavar='FILE or WLPATH')
+@click.pass_context
+def dump(ctx: click.Context, path: str, decrypt: bool):
+    """
+    Verify and dump contents of a bridge manifest.
+    """
+    cli_common.resolve_object(
+        ctx, path, WildlandObject.Type.BRIDGE, cli_common.dump,
+        decrypt=decrypt, save_manifest=False
+    )

@@ -32,6 +32,8 @@ import functools
 import uuid
 import click
 
+import wildland.cli.cli_common as cli_common
+
 from wildland.wildland_object.wildland_object import WildlandObject
 from .cli_base import aliased_group, ContextObj
 from .cli_exc import CliError
@@ -452,12 +454,23 @@ def create_from_template(obj: ContextObj, cont, storage_template: str, local_dir
 storage_.add_command(sign)
 storage_.add_command(verify)
 storage_.add_command(edit)
-storage_.add_command(dump)
 storage_.add_command(publish)
 storage_.add_command(unpublish)
 
 _add_create_commands(create)
 
+@storage_.command(short_help='verify and dump contents of a storage manifest')
+@click.option('--decrypt/--no-decrypt', '-d/-n', default=True, help='decrypt manifest')
+@click.argument('path', metavar='FILE or WLPATH')
+@click.pass_context
+def dump(ctx: click.Context, path: str, decrypt: bool):
+    """
+    Verify and dump contents of a storage manifest.
+    """
+    cli_common.resolve_object(
+        ctx, path, WildlandObject.Type.STORAGE, cli_common.dump,
+        decrypt=decrypt, save_manifest=False
+    )
 
 @storage_.command(short_help='modify storage manifest')
 @click.option('--location', metavar='PATH', help='location to set')
