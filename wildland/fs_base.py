@@ -328,10 +328,11 @@ class WildlandFSBase:
             return self._add_watch(storage_id, pattern, handler, ignore_own=ignore_own)
 
     @control_command('add-subcontainer-watch')
-    def control_add_subcontainer_watch(self, handler: ControlHandler, backend_param: Dict[str, Any],
-with_initial: bool = False, ignore_own: bool = False,
-                                       params: Optional[dict] = None):
-
+    def control_add_subcontainer_watch(
+            self,
+            handler: ControlHandler,
+            backend_param: Dict[str, Any]
+    ):
         backend = StorageBackend.from_params(backend_param, deduplicate=True)
         for storage_id, storage_backend in self.storages.items():
             if storage_backend == backend:
@@ -340,9 +341,7 @@ with_initial: bool = False, ignore_own: bool = False,
         else:
             raise ValueError  # TODO
         with self.mount_lock:
-            return self._add_subcontainer_watch(
-ident, handler, with_initial=with_initial, ignore_own=ignore_own, params=params)
-
+            return self._add_subcontainer_watch(ident, handler)
 
     @control_command('breakpoint')
     def control_breakpoint(self, _handler):
@@ -411,6 +410,7 @@ ident, handler, with_initial=with_initial, ignore_own=ignore_own, params=params)
 
             def watch_handler(events):
                 return self._watch_handler(storage_id, events)
+
             watcher = self.storages[storage_id].start_watcher(
                 watch_handler, ignore_own_events=ignore_own)
 
@@ -420,9 +420,7 @@ ident, handler, with_initial=with_initial, ignore_own=ignore_own, params=params)
 
         return watch.id
 
-    def _add_subcontainer_watch(self, storage_id: int, handler: ControlHandler,
-                                with_initial: bool = False, ignore_own: bool = False,
-                                params: Optional[dict] = None):
+    def _add_subcontainer_watch(self, storage_id: int, handler: ControlHandler):
 
         assert self.mount_lock.locked()
 
@@ -447,8 +445,8 @@ ident, handler, with_initial=with_initial, ignore_own=ignore_own, params=params)
 
             def watch_handler(events):
                 return self._watch_subcontainer_handler(storage_id, events)
-            watcher = self.storages[storage_id].start_subcontainer_watcher(
-                    watch_handler)
+
+            watcher = self.storages[storage_id].start_subcontainer_watcher(watch_handler)
 
             if watcher:
                 logger.info('starting watcher for storage %d', storage_id)
@@ -527,7 +525,6 @@ ident, handler, with_initial=with_initial, ignore_own=ignore_own, params=params)
 
         if (len(self.storage_watches[watch.storage_id]) == 1 and
                 watch.storage_id in self.watchers):
-
             logger.info('stopping watcher for storage: %s', watch.storage_id)
             self.storages[watch.storage_id].stop_watcher()
             del self.watchers[watch.storage_id]
@@ -570,7 +567,6 @@ ident, handler, with_initial=with_initial, ignore_own=ignore_own, params=params)
 
         if (len(self.storage_watches[watch.storage_id]) == 1 and
                 watch.storage_id in self.watchers):
-
             logger.info('stopping watcher for storage: %s', watch.storage_id)
             self.storages[watch.storage_id].stop_subcontainer_watcher()
             del self.watchers[watch.storage_id]

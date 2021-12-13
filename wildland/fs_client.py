@@ -96,7 +96,7 @@ class WatchSubcontainerEvent:
     container: Container
     storage: Storage
     path: PurePosixPath
-    subcontainer: Union[Link, ContainerStub]
+    subcontainer: Optional[Union[Link, ContainerStub]]
 
 
 class WildlandFSError(WildlandError):
@@ -957,9 +957,14 @@ class WildlandFSClient:
         for container, storage in containers_storages.items():
             params = storage.params
             logger.debug('watching for subcontainers: storage %s', str({params["backend-id"]}))
-            watch_id = control_client.run_command(
-                'add-subcontainer-watch', backend_param=params, with_initial=with_initial)
+            watch_id = control_client.run_command('add-subcontainer-watch', backend_param=params)
             watches[watch_id] = (container, storage)
+
+        if with_initial:
+            initial = WildlandFSClient._iterate_initial_subcontainer_events(
+                wl_client, containers_storages)
+            if initial:
+                yield initial
 
         for events in control_client.iter_events():
             watch_events = []
@@ -967,6 +972,19 @@ class WildlandFSClient:
                 watch_events.append(
                     WildlandFSClient._handle_subcontainer_event(wl_client, event, watches))
             yield watch_events
+
+    @staticmethod
+    def _iterate_initial_subcontainer_events(
+            wl_client, containers_storages: Dict[Container, Storage]):
+        initial = []
+        for container, storage in containers_storages.items():
+            params = storage.params
+            sb = StorageBackend.from_params(params, deduplicate=True)
+            all_children = list(sb.get_children(wl_client))
+            for sub_path, sub in all_children:
+                initial.append(WatchSubcontainerEvent(
+                    FileEventType.CREATE, container, storage, sub_path, sub))
+        return initial
 
     @staticmethod
     def _handle_subcontainer_event(wl_client, event, watches):
@@ -977,8 +995,10 @@ class WildlandFSClient:
         sb = StorageBackend.from_params(params, deduplicate=True)
         path = PurePosixPath(event['path'])
         all_children = list(sb.get_children(wl_client))
-        for sub_path, subcontainer in all_children:
+        subcontainer = None
+        for sub_path, sub in all_children:
             if sub_path == path:
-                assert subcontainer is not None
-                return WatchSubcontainerEvent(event_type, container, storage, path, subcontainer)
-        raise WildlandFSError(f"Unknown subcontainer path {path}")
+                assert sub is not None
+                subcontainer = sub
+                break
+        return WatchSubcontainerEvent(event_type, container, storage, path, subcontainer)
