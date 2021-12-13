@@ -454,40 +454,6 @@ class WildlandFSBase:
 
         return watch.id
 
-    def _add_subcontainer_watch(self, storage_id: int, handler: ControlHandler,
-                                with_initial: bool = False, ignore_own: bool = False):
-        assert self.mount_lock.locked()
-
-        watch = Watch(
-            id=self.watch_counter,
-            storage_id=storage_id,
-            pattern="",
-            handler=handler,
-        )
-        logger.info('adding watch: %s', watch)
-        self.watches[watch.id] = watch
-        if storage_id not in self.storage_watches:
-            self.storage_watches[storage_id] = set()
-
-        self.storage_watches[storage_id].add(watch.id)
-        self.watch_counter += 1
-
-        handler.on_close(lambda: self._cleanup_watch(watch.id))
-
-        # Start a watch thread, but only if the storage provides watcher() method
-        if len(self.storage_watches[storage_id]) == 1:
-
-            def watch_handler(events):
-                return self._watch_subcontainer_handler(storage_id, events)
-            watcher = self.storages[storage_id].start_subcontainer_watcher(
-                watch_handler, with_initial=with_initial, ignore_own_events=ignore_own)
-
-            if watcher:
-                logger.info('starting watcher for storage %d', storage_id)
-                self.watchers[storage_id] = watcher
-
-        return watch.id
-
     def _watch_handler(self, storage_id: int, events: List[FileEvent]):
         logger.debug('events from %d: %s', storage_id, events)
         watches = [self.watches[watch_id]

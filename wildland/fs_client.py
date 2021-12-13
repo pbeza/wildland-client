@@ -83,19 +83,6 @@ class WatchSubcontainerEvent:
     container: Container
     storage: Storage
     path: PurePosixPath
-    subcontainer: Union[Link, ContainerStub]
-
-
-@dataclasses.dataclass
-class WatchSubcontainerEvent:
-    """
-    A file change event.
-    """
-
-    event_type: FileEventType
-    container: Container
-    storage: Storage
-    path: PurePosixPath
     subcontainer: Optional[Union[Link, ContainerStub]]
 
 
