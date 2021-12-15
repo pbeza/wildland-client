@@ -666,16 +666,14 @@ class WildlandCore(WildlandCoreApi):
 
     @wildland_result(default_output=())
     def __container_delete(self, container_id: str):
-        found = False
-        for container in self.client.load_all(WildlandObject.Type.CONTAINER):
-            if self._container_to_wlcontainer(container).id == container_id:
-                if not container.local_path:
-                    raise FileNotFoundError('Can only delete a local manifest')
-                container.local_path.unlink()
-                found = True
-                break
-        if not found:
+        container = self.container_find_by_id(container_id)
+        if container is None:
             raise FileNotFoundError(f'Cannot find container {container_id}')
+
+        if not container.local_path:
+            raise FileNotFoundError('Can only delete a local manifest')
+
+        container.local_path.unlink()
 
     def container_duplicate(self, container_id: str, name: Optional[str] = None) -> \
             Tuple[WildlandResult, Optional[WLContainer]]:
@@ -765,6 +763,27 @@ class WildlandCore(WildlandCoreApi):
         the provided path
         """
         raise NotImplementedError
+
+    def container_find_by_path(self, path: str) -> \
+            Tuple[WildlandResult, List[Tuple[WLContainer, WLStorage]]]:
+        """
+        Find container by path relative to Wildland mount root.
+        :param path: path to file (relative to Wildland mount root)
+        :return: tuple of WildlandResult and list of tuples of WLContainer, WLStorage that contain
+        the provided path
+        """
+        raise NotImplementedError
+
+    def container_find_by_id(self, container_id: str) -> Optional[Container]:
+        """
+        Find container by id.
+        :param container_id: id of the container to be found (user_id:/.uuid/container_uuid)
+        :return: tuple of WildlandResult and, if successful, the WLContainer
+        """
+        for container in self.client.load_all(WildlandObject.Type.CONTAINER):
+            if self._container_to_wlcontainer(container).id == container_id:
+                return container
+        return None
 
     # STORAGES
 
