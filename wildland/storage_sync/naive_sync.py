@@ -111,6 +111,7 @@ class NaiveSyncer(BaseSyncer):
         """
         storage_dirs: Dict[StorageBackend, List[PurePosixPath]] = {}
 
+        self.target_storage.request_mount()
         self.state = SyncState.ONE_SHOT
         for storage in [self.source_storage, self.target_storage]:
             self.storage_hashes[storage] = {}
