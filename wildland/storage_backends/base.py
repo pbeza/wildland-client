@@ -409,7 +409,6 @@ class StorageBackend(metaclass=abc.ABCMeta):
         self.subcontainer_watcher_instance.stop()
 
         self.subcontainer_watcher_instance = None
-        # self.ignore_own_events = False
 
     def watcher(self):
         """
