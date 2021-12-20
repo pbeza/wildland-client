@@ -271,7 +271,7 @@ class DirectoryCachedStorageMixin(BaseCachedStorageMixin):
                 self.getattr_cache[path / name] = attr
         except PermissionError as e:
             raise e
-        except OSError as e:
+        except (OSError, FileNotFoundError) as e:
             # Don't store anything in readdir_cache, we will assume that the
             # directory does not exist.
             logger.exception(e)

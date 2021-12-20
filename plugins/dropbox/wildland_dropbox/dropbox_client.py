@@ -108,6 +108,12 @@ class DropboxClient:
         except (AuthError, BadInputError) as e:
             raise PermissionError(errno.EACCES,
                                   f'No permissions to list directory [{path_str}]') from e
+        except ApiError as apiError:
+            # TODO: try to extract directly "not_found" error code, without searching for a substring in an error object
+            if type(apiError.error).__name__ == "ListFolderError" and "not_found" in str(apiError.error._value):
+                raise FileNotFoundError() from apiError
+            raise apiError
+
 
     def get_file_content(self, path: PurePosixPath) -> bytes:
         """
