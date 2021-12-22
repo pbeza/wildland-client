@@ -5832,6 +5832,42 @@ def test_import_forest_user_with_undecryptable_bridge_link_object(tmpdir):
     ]
 
 
+def test_forest_create_with_user_path_access(cli_sodium, sig_sodium, tmp_path,
+                                             dir_userid, alice_userid):
+    owner, pubkey = sig_sodium.generate()
+    additional_owner, additional_pubkey = sig_sodium.generate()
+
+    cli_sodium('user', 'create', 'Toto', '--key', owner)
+    cli_sodium('user', 'create', 'Titi', '--key', additional_owner)
+
+    cli_sodium('template', 'create', 'local', '--location', f'/{tmp_path}/wl-forest',
+               '--manifest-pattern', '/{path}.{object-type}.yaml', 'forest-tpl')
+    cli_sodium('template', 'add', 'local', '--location', f'/{tmp_path}/wl-forest',
+               '--read-only', '--manifest-pattern', '/{path}.{object-type}.yaml', 'forest-tpl')
+
+    user_path = \
+        f'{dir_userid}@https{{wildland.local/public/forest-owner.user.yaml}}:/forests/alice:'
+    cli_sodium('bridge', 'import', user_path)
+    cli_sodium('forest', 'create', '--owner', owner, '--access',
+               user_path, '--access', additional_owner, 'forest-tpl')
+
+    catalog_path = Path(f'/{tmp_path}/wl-forest/.manifests/')
+    assert catalog_path.exists()
+
+    catalog_dirs = list(catalog_path.glob('*'))
+
+    assert len(catalog_dirs) == 1
+    first_catalog = catalog_dirs[0]
+    uuid_dir = str(first_catalog)
+
+    assert Path(f'{uuid_dir}/forest-owner.user.yaml').exists()
+    assert Path(f'{uuid_dir}/.manifests.container.yaml').exists()
+    with open(Path(first_catalog / 'forest-owner.user.yaml')) as f:
+        stringified_file = ''.join(f.readlines())
+        assert f"access: - user-path: 'wildland:{user_path}'- user: '{additional_owner}'" \
+               in stringified_file
+
+
 ## Storage params sanity test
 
 
