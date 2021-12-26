@@ -32,6 +32,7 @@ expected="Sensitive fields are hidden.
 version: '1'
 object: container
 owner: '$userid'
+primary-path: /.uuid/$cont_uuid
 paths:
 - /.uuid/$cont_uuid
 - /mydropbox
@@ -99,6 +100,7 @@ expected="Sensitive fields are hidden.
 version: '1'
 object: container
 owner: '$userid'
+primary-path: /.uuid/$cont_uuid
 paths:
 - /.uuid/$cont_uuid
 - /mydropbox
@@ -177,6 +179,7 @@ expected="Sensitive fields are hidden.
 version: '1'
 object: container
 owner: '$userid'
+primary-path: /.uuid/$cont_uuid
 paths:
 - /.uuid/$cont_uuid
 - /mydropbox
@@ -236,6 +239,7 @@ expected_pcre="Sensitive fields are hidden.
 version: '1'
 object: container
 owner: '0x1ea3909882be658d0ab69a822f7c923d12454ec024f4d8dd8f7113465167fcbe'
+primary-path: /.uuid/24b3b45c-57e1-44ec-b66c-33d952c99c6a
 paths:
 - /.uuid/24b3b45c-57e1-44ec-b66c-33d952c99c6a
 - /home/omeg

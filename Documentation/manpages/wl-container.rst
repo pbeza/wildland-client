@@ -75,8 +75,8 @@ Delete a container from local filesystem and unpublish it, if published.
 .. program:: wl-container-create
 .. _wl-container-create:
 
-:command:`wl container create [--owner <user>] [--path <path>] [--path <path2> ...] [--storage-template <storage-template>] [--encrypt-manifest/--no-encrypt-manifest] [--access <user>] [--no-publish]`
---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+:command:`wl container create [--owner <user>] [--path <path>] [--path <path2> ...] [--storage-template <storage-template>] [--encrypt-manifest/--no-encrypt-manifest] [--access <user>] [--no-publish] [--primary-path <path>]`
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 Create a |~| new container manifest.
 
@@ -131,6 +131,11 @@ Create a |~| new container manifest.
 
    Do not publish the container after creation. By default, if the container owner has proper
    infrastructure defined in the user manifest, the container is published.
+   
+.. option:: --primary-path
+
+   The chosen primary path under which the container can be accessed. If not provided, defaults
+   to the container's uuid path.
 
 
 .. program:: wl-container-create-cache

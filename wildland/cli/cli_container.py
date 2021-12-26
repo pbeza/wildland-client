@@ -149,12 +149,14 @@ class OptionRequires(click.Option):
 @click.option('--encrypt-manifest/--no-encrypt-manifest', default=True, required=False,
               help='if --no-encrypt, this manifest will not be encrypted and '
               '--access cannot be used.')
+@click.option('--primary-path', required=False, multiple=False,
+              help='primary path under which the container can be accessed')
 @click.argument('name', metavar='CONTAINER', required=False)
 @click.pass_obj
 def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Optional[str],
            update_user: bool, access: Sequence[str], no_publish: bool, title: Optional[str],
            category: Sequence[str], storage_template: Optional[str], local_dir: Optional[str],
-           encrypt_manifest: bool):
+           encrypt_manifest: bool, primary_path: Optional[str]):
     """
     Create a new container manifest.
     """
@@ -205,7 +207,8 @@ def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Opt
         client=obj.client,
         title=title,
         categories=[PurePosixPath(c) for c in category],
-        access=access_list
+        access=access_list,
+        primary_path=primary_path
     )
 
     container_path = obj.client.save_new_object(WildlandObject.Type.CONTAINER, container, name)

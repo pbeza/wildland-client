@@ -146,7 +146,7 @@ run cat Hello-World.md
 
 run wl user import --path /forests/directory https://wildland.local/public/forest-owner.user.yaml
 
-run wl container create mycontainer2
+run wl container create mycontainer2 --primary-path /primary
 run wl container modify mycontainer2 \
   --add-access "$dir_userid" \
   --add-access "$dir_userid@https{wildland.local/public/forest-owner.user.yaml}:/users/charlie:"
@@ -154,8 +154,10 @@ run wl container modify mycontainer2 \
 expected_pcre="version: '1'
 object: container
 owner: '$USERID_PCRE'
+primary-path: /primary
 paths:
 - /.uuid/$UUID_PCRE
+- /primary
 title: null
 categories: \[\]
 access:
@@ -171,8 +173,10 @@ run wl container modify mycontainer2 --del-access \
 expected_pcre="version: '1'
 object: container
 owner: '$USERID_PCRE'
+primary-path: /primary
 paths:
 - /.uuid/$UUID_PCRE
+- /primary
 title: null
 categories: \[\]
 access:
@@ -190,6 +194,7 @@ run wl forest create \
 expected_pcre="version: '1'
 object: container
 owner: '$USERID_PCRE'
+primary-path: /.uuid/$UUID_PCRE
 paths:
 - /.uuid/$UUID_PCRE
 - /.manifests

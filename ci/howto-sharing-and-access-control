@@ -41,15 +41,17 @@ Created: /home/user/.config/wildland/bridges/bob.bridge.yaml"
 run wl user im ~/Downloads/bob.user.yaml
 
 expected="Created: /home/user/.config/wildland/containers/mycontainer.container.yaml"
-run wl container create mycontainer
+run wl container create mycontainer --primary-path /primary1
 
 mycontainer_uuid=$(wl container dump mycontainer | grep '/.uuid/' | cut -d / -f 3)
 
 expected="version: '1'
 object: container
 owner: '$alice_userid'
+primary-path: /primary1
 paths:
 - /.uuid/$mycontainer_uuid
+- /primary1
 title: null
 categories: []
 backends:
@@ -58,7 +60,7 @@ run wl container dump mycontainer
 
 expected="Error: Secret key not found: $bob_userid"
 expected_fail=1
-run wl container create another-container --owner bob
+run wl container create another-container --owner bob --primary-path /primary2
 
 ## Manifests encryption
 
@@ -82,8 +84,10 @@ expected_pcre="signature: \|
 version: '1'
 object: container
 owner: '$alice_userid'
+primary-path: /primary1
 paths:
 - /.uuid/$mycontainer_uuid
+- /primary1
 title: null
 categories: \[\]
 access:
@@ -93,7 +97,7 @@ backends:
 run cat ~/.config/wildland/containers/mycontainer.container.yaml
 
 expected="Created: /home/user/.config/wildland/containers/unencrypted-container.container.yaml"
-run wl container create unencrypted-container --no-encrypt-manifest
+run wl container create unencrypted-container --no-encrypt-manifest --primary-path /primary3
 
 expected_pcre="signature: \|
   $alice_userid:.*
@@ -101,8 +105,10 @@ expected_pcre="signature: \|
 version: '1'
 object: container
 owner: '$alice_userid'
+primary-path: /primary3
 paths:
 - /.uuid/$UUID_PCRE
+- /primary3
 title: null
 categories: \[\]
 access:
@@ -112,7 +118,7 @@ backends:
 run cat ~/.config/wildland/containers/unencrypted-container.container.yaml
 
 expected="Created: /home/user/.config/wildland/containers/alice-and-bob.container.yaml"
-run wl container create alice-and-bob --access bob --path /very/secret
+run wl container create alice-and-bob --access bob --path /very/secret --primary-path /primary4
 
 alice_and_bob_uuid=$(wl container dump alice-and-bob | grep '/.uuid/' | cut -d / -f 3)
 

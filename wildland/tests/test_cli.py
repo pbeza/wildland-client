@@ -4721,6 +4721,7 @@ def test_delegated_template(cli, base_dir):
     assert delegated_container_manifest[1] == {
         'object': 'container',
         'owner': '0xaaa',
+        'primary-path': mock.ANY,
         'paths': [
             mock.ANY
         ],
@@ -4782,6 +4783,7 @@ def test_proxy_storage_template(cli, base_dir):
     assert dateproxy_container_manifest[1] == {
         'object': 'container',
         'owner': '0xaaa',
+        'primary-path': mock.ANY,
         'paths': [
             mock.ANY
         ],
