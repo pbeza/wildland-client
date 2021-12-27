@@ -495,7 +495,7 @@ def _do_process_imported_manifest(
 
 def import_manifest(obj: ContextObj, path_or_url: str, paths: Iterable[str],
                     wl_obj_type: WildlandObject.Type, bridge_owner: Optional[str],
-                    only_first: bool):
+                    only_first: bool, force: bool):
     """
     Import a provided user or bridge manifest.
     Accepts a local path, an url or a Wildland path to manifest or to bridge.
@@ -514,7 +514,7 @@ def import_manifest(obj: ContextObj, path_or_url: str, paths: Iterable[str],
     posix_paths = [PurePosixPath(p) for p in paths]
 
     if wl_obj_type == WildlandObject.Type.USER:
-        copied_manifest_path, manifest_url = _do_import_manifest(obj, path_or_url)
+        copied_manifest_path, manifest_url = _do_import_manifest(obj, path_or_url, None, force)
         if not copied_manifest_path or not manifest_url:
             return
         try:
@@ -584,9 +584,10 @@ def import_manifest(obj: ContextObj, path_or_url: str, paths: Iterable[str],
 @click.option('--only-first', is_flag=True, default=False,
               help="import only first encountered bridge "
                    "(ignored in all cases except WL container paths)")
+@click.option('--force-reimport', 'force', is_flag=True, default=False, help="import user again if already exist")
 @click.argument('path-or-url')
 def user_import(obj: ContextObj, path_or_url: str, paths: Tuple[str], bridge_owner: Optional[str],
-                only_first: bool):
+                only_first: bool, force: bool):
     """
     Import a provided user or bridge manifest.
     Accepts a local path, an url or a Wildland path to manifest or to bridge.
@@ -596,7 +597,7 @@ def user_import(obj: ContextObj, path_or_url: str, paths: Tuple[str], bridge_own
     # TODO: remove imported keys and manifests on failure: requires some thought about how to
     # collect information on (potentially) multiple objects created
 
-    import_manifest(obj, path_or_url, paths, WildlandObject.Type.USER, bridge_owner, only_first)
+    import_manifest(obj, path_or_url, paths, WildlandObject.Type.USER, bridge_owner, only_first, force)
 
 
 @user_.command('refresh', short_help='Iterate over bridges and pull latest user manifests',
