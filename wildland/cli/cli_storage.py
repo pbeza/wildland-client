@@ -37,7 +37,7 @@ from .cli_base import aliased_group, ContextObj
 from .cli_exc import CliError
 from ..client import Client
 from .cli_common import sign, verify, edit, modify_manifest, set_fields, add_fields, del_fields, \
-    dump, check_if_any_options, check_options_conflict, publish, unpublish
+    dump, check_if_any_options, check_options_conflict, publish, unpublish, remount_container
 from ..container import Container
 from ..storage import Storage, _get_storage_by_id_or_type
 from ..manifest.template import TemplateManager, StorageTemplate
@@ -185,6 +185,9 @@ def _do_create(
     click.echo(f'Adding storage {storage.backend_id} to container.')
     obj.client.add_storage_to_container(container_obj, storage, inline, name)
     click.echo(f'Saved container {container_obj.local_path}')
+
+    if obj.fs_client.is_running():
+        remount_container(obj, container_obj.local_path)
 
     if no_publish:
         return
