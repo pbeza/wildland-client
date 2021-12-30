@@ -50,6 +50,7 @@ def get_container_uuid_from_uuid_path(uuid_path: str):
 @pytest.fixture
 def setup(base_dir, cli, control_client):
     control_client.expect('status', {})
+    control_client.expect('paths', {})
     os.mkdir(base_dir / 'manifests')
     os.mkdir(base_dir / 'storage1')
     os.mkdir(base_dir / 'storage2')
@@ -375,6 +376,7 @@ def test_add_remove_storage(cli, client, control_client, base_dir):
                                  [str(base_dir / ('wildland' + pattern))],
                                  control_client=control_client)
     control_client.expect('add-watch', 1)
+    control_client.expect('mount', {})
     control_client.queue_event([
         {'watch-id': 1, 'type': 'MODIFY', 'path': 'Container1.container.yaml'}])
     control_client.queue_event([
@@ -429,6 +431,7 @@ def test_modify_storage(cli, client, control_client, base_dir):
                                  [str(base_dir / ('wildland' + pattern))],
                                  control_client=control_client)
     control_client.expect('add-watch', 1)
+    control_client.expect('mount', {})
     control_client.queue_event([
         {'watch-id': 1, 'type': 'MODIFY', 'path': 'Container1.container.yaml'}])
     control_client.queue_event([

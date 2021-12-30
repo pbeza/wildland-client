@@ -882,6 +882,7 @@ def two_users_catalog(base_dir, cli, control_client):
                 - test2.txt: 42
     """
     control_client.expect('status', {})
+    control_client.expect('paths', {})
     keys = {
         'KnownUser': '0xaaa',
         'Dummy2': '0xbbb',
