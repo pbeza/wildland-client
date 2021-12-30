@@ -5474,6 +5474,44 @@ def test_forest_bridge_to(cli, tmp_path, base_dir):
     assert 'forest-owner.user.yaml' in bridge_data
 
 
+def test_mount_bridge_after_user_import(cli, tmp_path, base_dir):
+    cli('user', 'create', 'Alice', '--key', '0xaaa')
+    cli('start')
+
+    cli('template', 'create', 'local', '--location', f'{tmp_path}/wl-forest',
+        'forest-template')
+
+    cli('forest', 'create', '--access', '*', '--owner', 'Alice', 'forest-template')
+
+    cli('container', 'create', '--owner', 'Alice', 'mycapsule', '--title',
+        'my_awesome_capsule', "--category", "/testing", "--template",
+        "forest-template", '--no-encrypt-manifest')
+
+    cli('container', 'mount', 'mycapsule')
+    cli('stop')
+
+    shutil.copy(Path(f'{base_dir}/users/Alice.user.yaml'), Path(f'{tmp_path}/Alice.yaml'))
+
+    cli('user', 'del', 'Alice', '--cascade')
+    cli('user', 'create', 'Bob', '--key', '0xbbb')
+    cli('start')
+
+    modify_file(base_dir / 'config.yaml', "local-owners:\n- '0xbbb'",
+                "local-owners:\n- '0xbbb'\n- '0xaaa'")
+
+    assert len(list((base_dir / 'wildland' / 'f').glob("*"))) == 0
+
+    cli('user', 'import', f'{tmp_path}/Alice.yaml', '--path', '/f/alice')
+
+    # Bridge should be mounted but not forest
+    assert len(list((base_dir / 'wildland' / 'f').glob("*"))) == 1
+    assert len(list((base_dir / 'wildland' / 'f' / 'alice:').glob("*testing"))) == 0
+
+    # Only after mounting forest, dir with container should be visible
+    cli('forest', 'mount', ':/f/alice:')
+    assert len(list((base_dir / 'wildland' / 'f' / 'alice:').glob("*testing"))) == 1
+
+
 def _setup_forest_and_mount(cli, tmp_path, base_dir, control_client):
     control_client.expect('status', {})
 

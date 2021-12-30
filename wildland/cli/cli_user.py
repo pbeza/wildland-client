@@ -39,6 +39,7 @@ from .cli_exc import CliError
 from ..wlpath import WILDLAND_URL_PREFIX
 from .cli_common import sign, verify, edit, modify_manifest, add_fields, del_fields, dump, \
     check_if_any_options, check_options_conflict, publish, unpublish
+from .cli_container import _mount as mount_container
 from ..exc import WildlandError
 from ..manifest.schema import SchemaError
 from ..manifest.sig import SigError
@@ -479,6 +480,10 @@ def _do_process_imported_manifest(
         name = _remove_suffix(copied_manifest_path.stem, ".user")
         bridge_path = obj.client.save_new_object(WildlandObject.Type.BRIDGE, bridge, name)
         click.echo(f'Created: {bridge_path}')
+
+        if obj.fs_client.is_running():
+            mount_container(obj, [f':{bridge.paths[0]}:'], save=False, list_all=False)
+
     else:
         bridge = WildlandObject.from_manifest(
             manifest, obj.client, WildlandObject.Type.BRIDGE)
