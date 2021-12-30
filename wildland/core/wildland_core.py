@@ -93,6 +93,19 @@ class WildlandCore(WildlandCoreApi):
         )
         return wl_container
 
+    def wl_container_to_container(self, wl_container: WLContainer) -> Container:
+        # TODO: remove when functions will be ready to accept WLContainer
+        container = Container(
+            client=self.client,
+            owner=wl_container.owner,
+            paths=[PurePosixPath(p) for p in wl_container.paths],
+            title=wl_container.title,
+            categories=[PurePosixPath(c) for c in wl_container.categories],
+            access=[],
+            backends=[]
+        )
+        return container
+
     def _bridge_to_wl_bridge(self, bridge: Bridge) -> WLBridge:
         wl_bridge = WLBridge(
             owner=bridge.owner,
@@ -655,7 +668,14 @@ class WildlandCore(WildlandCoreApi):
         List all known containers.
         :return: WildlandResult, List of WLContainers
         """
-        raise NotImplementedError
+        result = WildlandResult()
+        result_list = []
+        try:
+            for container in self.client.load_all(WildlandObject.Type.CONTAINER):
+                result_list.append(self._container_to_wlcontainer(container))
+        except Exception as ex:
+            result.errors.append(WLError.from_exception(ex))
+        return result, result_list
 
     def container_delete(self, container_id: str) -> WildlandResult:
         """
@@ -751,16 +771,6 @@ class WildlandCore(WildlandCoreApi):
         Unpublish the given container.
         :param container_id: id of the container to be unpublished (user_id:/.uuid/container_uuid)
         :return: WildlandResult
-        """
-        raise NotImplementedError
-
-    def container_find(self, path: str) -> \
-            Tuple[WildlandResult, List[Tuple[WLContainer, WLStorage]]]:
-        """
-        Find container by path relative to Wildland mount root.
-        :param path: path to file (relative to Wildland mount root)
-        :return: tuple of WildlandResult and list of tuples of WLContainer, WLStorage that contain
-        the provided path
         """
         raise NotImplementedError
 

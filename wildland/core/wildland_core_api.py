@@ -544,8 +544,7 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         """
 
     @abc.abstractmethod
-    def container_find_by_id(self, container_id: str) -> \
-            Tuple[WildlandResult, List[Tuple[WLContainer, WLStorage]]]:
+    def container_find_by_id(self, container_id: str) -> Optional[WLContainer]:
         """
         Find container by id.
         :param container_id: id of the container to be found (user_id:/.uuid/container_uuid)

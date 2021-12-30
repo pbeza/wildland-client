@@ -27,7 +27,7 @@ Manage containers
 """
 from itertools import combinations
 from pathlib import PurePosixPath, Path
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Iterable, List, Optional, Sequence, Tuple, Dict
 import os
 import sys
 import re
@@ -294,13 +294,38 @@ def list_(obj: ContextObj):
     """
     Display known containers.
     """
+    default_user = obj.wlcore.client.config.get('@default')
     users_and_bridge_paths = {}
-    for user, bridge_paths in obj.client.load_users_with_bridge_paths(only_default_user=True):
+
+    result_users, users = obj.wlcore.user_list()
+    result_bridges, bridges = obj.wlcore.bridge_list()
+    result_containers, containers = obj.wlcore.container_list()
+
+    if not result_bridges.success or not result_users.success or not result_containers.success:
+        click.echo('Failed to list containers:')
+        for e in result_users.errors + result_bridges.errors + result_containers.errors:
+            click.echo(f'Error {e.error_code}: {e.error_description}')
+
+    # TODO: this used to use a client method called load_users_with_bridge_paths; perhaps this
+    # will be obsolete soon? repeated code from cli_user.py::list_
+    bridges_from_default_user: Dict[str, List[str]] = dict()
+    for bridge in bridges:
+        if bridge.owner != default_user:
+            continue
+        if bridge.user_id not in bridges_from_default_user:
+            bridges_from_default_user[bridge.user_id] = []
+        bridges_from_default_user[bridge.user_id].extend(bridge.paths)
+
+    for user in users:
+        bridge_paths = bridges_from_default_user.get(user.owner)
         if bridge_paths:
             users_and_bridge_paths[user.owner] = bridge_paths
 
-    for container in obj.client.load_all(WildlandObject.Type.CONTAINER):
-        _container_info(obj.client, container, users_and_bridge_paths)
+    for container in containers:
+        # TODO: that's an ugly workaround which only partially works
+        # to be replaced when _container_info will be ready to accept WLContainer
+        _container = obj.wlcore.wl_container_to_container(container)
+        _container_info(obj.client, _container, users_and_bridge_paths)
 
 
 @container_.command(short_help='show container summary')
