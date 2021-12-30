@@ -252,7 +252,12 @@ class WildlandCore(WildlandCoreApi):
     def __object_get(self, object_type: WLObjectType, object_name: str):
         obj_type = self._wl_obj_to_wildland_object(object_type)
         assert obj_type
-        wildland_object = self.client.load_object_from_name(obj_type, object_name)
+        try:
+            wildland_object = self.client.load_object_from_name(obj_type, object_name)
+        except Exception as we:
+            result = WildlandResult()
+            result.errors.append(WLError.from_exception(we))
+            return result, None
         if object_type == WLObjectType.USER:
             return self._user_to_wluser(wildland_object)
         if object_type == WLObjectType.CONTAINER:
