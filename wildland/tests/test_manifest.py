@@ -219,6 +219,7 @@ key2: "value2"
     assert manifest.fields['object'] == 'container'
     assert manifest.fields['owner'] == owner
     assert manifest.fields['version'] == Manifest.CURRENT_VERSION
+    assert PurePosixPath(manifest.fields['container-id']).parent == PurePosixPath('/.uuid/')
 
 
 def test_parse_version_1(sig, owner):

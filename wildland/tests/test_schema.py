@@ -121,11 +121,6 @@ def test_validate_errors():
         schema.validate(c)
 
     c = container()
-    c['paths'].clear()
-    with pytest.raises(SchemaError, match=r"paths: \[\] is too short"):
-        schema.validate(c)
-
-    c = container()
     del c['version']
     with pytest.raises(SchemaError, match=r"'version' is a required property"):
         schema.validate(c)
