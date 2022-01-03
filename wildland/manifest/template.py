@@ -110,7 +110,7 @@ class StorageTemplate:
 
         data = yaml_parser.load(raw_data)
         data['owner'] = cont.owner
-        data['container-path'] = str(cont.paths[0])
+        data['container-path'] = str(cont.container_id)
         data['backend-id'] = str(uuid.uuid4())
         return cont.fill_storage_fields(data)
 

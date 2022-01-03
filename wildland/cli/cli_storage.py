@@ -134,7 +134,7 @@ def _do_create(
     if not container_obj.local_path:
         raise WildlandError('Need a local container')
 
-    container_mount_path = container_obj.paths[0]
+    container_mount_path = container_obj.container_id
     click.echo(f'Using container: {container_obj.local_path} ({container_mount_path})')
 
     params = backend.cli_create(data)

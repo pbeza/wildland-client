@@ -73,14 +73,15 @@ class Container(PublishableWildlandObject, obj_type=WildlandObject.Type.CONTAINE
                  paths: List[PurePosixPath],
                  backends: List[Union[str, dict]],
                  client,
+                 container_id: Optional[PurePosixPath] = None,
                  title: Optional[str] = None,
                  categories: Optional[List[PurePosixPath]] = None,
                  manifest: Manifest = None,
                  access: Optional[List[dict]] = None):
         super().__init__()
         self.owner = owner
-        # make sure uuid path is first
-        self.paths = sorted(paths, key=lambda p: p.parent != PurePosixPath('/.uuid/'))
+        self.container_id = self._ensure_uuid(container_id)
+        self.paths = paths
         self.title = title
         self.categories = deepcopy(categories) if categories else []
         self.client = client
@@ -93,7 +94,7 @@ class Container(PublishableWildlandObject, obj_type=WildlandObject.Type.CONTAINE
         #: Search class, when loading a container by iterating a manifest catalog
         self.is_manifests_catalog = False
 
-        self._uuid_path = self._ensure_uuid()
+        self._uuid_path = self.container_id
         self._storage_cache = [_StorageCache(self.fill_storage_fields(b), self)
                                for b in deepcopy(backends)]
 
@@ -114,15 +115,13 @@ class Container(PublishableWildlandObject, obj_type=WildlandObject.Type.CONTAINE
         """
         return self.owner + '|' + self.uuid
 
-    def _ensure_uuid(self) -> PurePosixPath:
+    def _ensure_uuid(self, container_id) -> PurePosixPath:
         """
         Find or create an UUID path for this container.
         """
-        for path in self.paths:
-            if path.parent == PurePosixPath('/.uuid/'):
-                return path
+        if container_id and PurePosixPath(container_id).parent == PurePosixPath('/.uuid/'):
+                return PurePosixPath(container_id)
         path = PurePosixPath('/.uuid/') / str(uuid.uuid4())
-        self.paths.insert(0, path)
         return path
 
     def get_unique_publish_id(self) -> str:
@@ -162,7 +161,7 @@ class Container(PublishableWildlandObject, obj_type=WildlandObject.Type.CONTAINE
         """
         fields = self.to_repr_fields(include_sensitive=include_sensitive)
         array_repr: List[str] = []
-        for field in ['owner', 'paths', 'local-path', 'backends', 'title', 'categories', 'access']:
+        for field in ['owner', 'paths', 'local-path', 'backends', 'title', 'categories', 'access', 'container-id']:
             if fields.get(field, None):
                 if field == 'paths':
                     array_repr += [f"paths={[str(p) for p in fields['paths']]}"]
@@ -179,6 +178,7 @@ class Container(PublishableWildlandObject, obj_type=WildlandObject.Type.CONTAINE
     def parse_fields(cls, fields: dict, client, manifest: Optional[Manifest] = None, **kwargs):
         return cls(
             owner=fields['owner'],
+            container_id=PurePosixPath(fields['container-id']),
             paths=[PurePosixPath(p) for p in fields['paths']],
             backends=fields['backends']['storage'],
             client=client,
@@ -211,6 +211,7 @@ class Container(PublishableWildlandObject, obj_type=WildlandObject.Type.CONTAINE
             "version": Manifest.CURRENT_VERSION,
             "object": WildlandObject.Type.CONTAINER.value,
             "owner": self.owner,
+            "container-id": str(self.container_id),
             "paths": [str(p) for p in self.paths],
             "title": self.title,
             "categories": [str(cat) for cat in self.categories],
@@ -276,6 +277,7 @@ class Container(PublishableWildlandObject, obj_type=WildlandObject.Type.CONTAINE
             for p1, p2 in itertools.permutations(self.categories, 2):
                 subpath = PurePosixPath('@' + str(p2.relative_to(p2.anchor)))
                 paths.append(p1 / subpath / self.title)
+        paths.insert(0, self.container_id)
         self._expanded_paths = paths
         return self._expanded_paths
 

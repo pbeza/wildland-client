@@ -203,7 +203,7 @@ class PseudomanifestStorageBackend(StorageBackend):
         manifest = Manifest.from_unsigned_bytes(bytes(self.data))
         manifest.skip_verification()
 
-        self.uuid_path = manifest.fields['paths'][0]
+        self.uuid_path = manifest.fields['container-id']
         self.container_wl_path = f"wildland:{manifest.fields['owner']}:{self.uuid_path}:"
         self.pseudomanifest_content = self.data.copy()
         self.error_message = bytearray(b"")

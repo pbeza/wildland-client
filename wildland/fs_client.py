@@ -326,6 +326,7 @@ class WildlandFSClient:
             'version': Manifest.CURRENT_VERSION,
             'object': 'container',
             'owner': storage.owner,
+            'container-id': str(container.container_id),
             'paths': [str(p) for p in container.paths],
             'title': container.title or 'null',
             'categories': [str(p) for p in container.categories],
@@ -342,7 +343,7 @@ class WildlandFSClient:
             'primary': storage.is_primary,  # determines how many mountpoints are generated
             'backend-id': storage.backend_id,
             'owner': storage.owner,
-            'container-path': str(container.paths[0]),
+            'container-path': str(container.container_id),
         }
         return Storage(storage.owner, PseudomanifestStorageBackend.TYPE, container=container,
                        trusted=True, params=params, client=container.client)
@@ -362,7 +363,7 @@ class WildlandFSClient:
         under /.backends/...
         """
 
-        mount_path = self.get_user_container_path(container.owner, container.paths[0])
+        mount_path = self.get_user_container_path(container.owner, container.container_id)
         return self.find_storage_id_by_path(mount_path)
 
     def find_storage_id_by_path(self, path: PurePosixPath) -> Optional[int]:
@@ -489,11 +490,21 @@ class WildlandFSClient:
                     *users_path.parts[1:]))
             except ValueError:
                 continue
+        # in order to recreate the container, we need the container-id
+        for path in reversed(info[storage_id].paths):
+            # find the last path with '/.uuid' in it - the pure uuid path
+            if '/.uuid' in str(path):
+                uuid_path=path
+                break
+                
         if owner is None:
             raise ValueError('cannot determine owner of the container')
+        if not uuid_path:
+            raise ValueError('cannot determine container-id')
         return Container(
             owner=owner,
             paths=container_paths,
+            container_id=uuid_path,
             backends=[],
             client=None
         )
@@ -504,7 +515,7 @@ class WildlandFSClient:
         Find storage ID for a given mount path.
         """
 
-        container_id = f'{container.owner}:{container.paths[0]}'
+        container_id = f'{container.owner}:{container.container_id}'
         info = self.get_info()
         for storage_id in info:
             if info[storage_id].subcontainer_of == container_id:
@@ -719,14 +730,14 @@ class WildlandFSClient:
 
         if storage_id is None:
             logger.debug('Storage %s is new. Remounting it inside %s container.',
-                         storage.backend_id, container.paths[0])
+                         storage.backend_id, container.container_id)
             return True
 
         tag = self.get_storage_tag(mount_paths, storage.params)
 
         if info[storage_id].tag != tag:
             logger.debug('Storage %s has changed. Remounting it inside %s container.',
-                         storage.backend_id, container.paths[0])
+                         storage.backend_id, container.container_id)
             return True
 
         return False
@@ -775,7 +786,7 @@ class WildlandFSClient:
                 'tag': self.get_storage_tag(mount_paths, storage.params),
                 'primary': storage.is_primary,
                 'trusted_owner': trusted_owner,
-                'subcontainer_of': (f'{subcontainer_of.owner}:{subcontainer_of.paths[0]}'
+                'subcontainer_of': (f'{subcontainer_of.owner}:{subcontainer_of.container_id}'
                                     if subcontainer_of else None),
                 'title': container.title,
                 'categories': [str(p) for p in container.categories],

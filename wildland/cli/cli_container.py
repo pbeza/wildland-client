@@ -614,11 +614,12 @@ def wl_path_for_container(client: Client, container: Container,
     if ret == client.bridge_separator and container.owner != client.config.get('@default-owner'):
         ret = container.owner + client.bridge_separator
 
-    # UUID path is always first, we want a more friendly one if possible
-    # reverse sort puts paths like '/.uuid/' or '/.backends/' last
-    paths = container.paths
-    paths.sort(reverse=True)
-    ret += str(paths[0]) + client.bridge_separator
+    # we want a more friendly path if possible, thus checking container.paths
+    # before the default container-id (the container's /.uuid path)
+    if container.paths:
+        ret += str(container.paths[0]) + client.bridge_separator
+    else:
+        ret += str(container.container_id) + client.bridge_separator
 
     return ret
 

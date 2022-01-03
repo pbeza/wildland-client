@@ -183,7 +183,8 @@ class Storage(PublishableWildlandObject, obj_type=WildlandObject.Type.STORAGE):
         # Create a dummy container that contains only information known to the Storage
         container = Container(
             owner=params['owner'],
-            paths=[PurePosixPath(params['container-path'])],
+            container_id=PurePosixPath(params['container-path']),
+            paths=[],
             backends=[fields],
             client=client
         )

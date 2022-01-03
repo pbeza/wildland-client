@@ -8,6 +8,7 @@
         "version": {"$ref": "/schemas/types.json#version"},
         "owner": { "$ref": "/schemas/types.json#fingerprint" },
         "object": {},
+        "container-id": {},
         "paths": {},
         "title": {},
         "categories": {},
@@ -24,11 +25,16 @@
             },
             "properties": {
                 "object": { "const": "container"},
+                "container-id": {
+                    "type": "string",
+                    "$ref": "/schemas/types.json#abs-path",
+                    "description": "the UUID path of the container, serving as an unique container id."
+                },
                 "paths": {
                     "type": "array",
                     "items": { "$ref": "/schemas/types.json#abs-path" },
-                    "minItems": 1,
-                    "description": "list of paths for this container, should start with a unique /.uuid/UUID path"
+                    "minItems": 0,
+                    "description": "list of paths for this container"
                 },
                 "title": {
                     "type": ["string", "null"],
@@ -68,6 +74,7 @@
             "allOf": [{"$ref": "#/definitions/container-basic-fields"}],
             "properties": {
                 "object": {},
+                "container-id": {},
                 "paths": {},
                 "title": {},
                 "categories": {},

@@ -27,7 +27,7 @@ Classes for handling signed Wildland manifests
 
 from typing import Tuple, Optional, Dict
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from .schema import Schema
 from .sig import SigContext, SigError
@@ -287,6 +287,12 @@ class Manifest:
                 'paths': fields['subcontainers']
             }
             del fields['subcontainers']
+            
+        for path in fields.get('paths', []):
+            if PurePosixPath(path).parent == PurePosixPath('/.uuid/'):
+                fields['container-id'] = path
+                new_paths = fields.get('paths').remove(path)
+                fields['paths'] = new_paths if new_paths else []
 
         if 'infrastructures' in fields:
             fields['manifests-catalog'] = fields['infrastructures']
