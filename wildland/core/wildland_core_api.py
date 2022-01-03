@@ -20,7 +20,7 @@
 API for Wildland Core
 """
 import abc
-from typing import List, Tuple, Optional, Callable, Dict
+from typing import List, Tuple, Optional, Callable, Dict, Container
 from enum import Enum
 from .wildland_result import WildlandResult
 from .wildland_objects_api import WLObject, WLTemplateFile, WLBridge, WLObjectType, WLUser, \
@@ -544,7 +544,7 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         """
 
     @abc.abstractmethod
-    def container_find_by_id(self, container_id: str) -> Optional[WLContainer]:
+    def container_find_by_id(self, container_id: str) -> Tuple[WildlandResult, Optional[Container]]:
         """
         Find container by id.
         :param container_id: id of the container to be found (user_id:/.uuid/container_uuid)

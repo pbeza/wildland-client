@@ -20,21 +20,22 @@
 """
 Wildland core implementation
 """
-from typing import List, Tuple, Optional, Callable, Dict
 from copy import deepcopy
 from pathlib import PurePosixPath
+from typing import List, Tuple, Optional, Callable, Dict
 
-from ..client import Client
-from ..user import User
-from ..container import Container
-from ..bridge import Bridge
-from ..storage import Storage
-from ..wildland_object.wildland_object import WildlandObject
-from .wildland_result import WildlandResult, WLError, wildland_result
 from .wildland_core_api import WildlandCoreApi, ModifyMethod
 from .wildland_objects_api import WLUser, WLBridge, \
     WLStorageBackend, WLStorage, WLContainer, WLObject, WLTemplateFile, WLObjectType
+from .wildland_result import WildlandResult, WLError, wildland_result
+from ..bridge import Bridge
+from ..client import Client
+from ..container import Container
+from ..storage import Storage
+from ..user import User
+from ..wildland_object.wildland_object import WildlandObject
 from ..wlenv import WLEnv
+
 
 # Style goal: All methods must be <15 functional lines of code; if more, refactor
 
@@ -44,6 +45,7 @@ from ..wlenv import WLEnv
 
 class WildlandCore(WildlandCoreApi):
     """Wildland Core implementation"""
+
     # All user-facing methods should be wrapped in wildland_result or otherwise assure
     # they wrap all exceptions in WildlandResult
     def __init__(self, client: Client):
@@ -691,9 +693,9 @@ class WildlandCore(WildlandCoreApi):
 
     @wildland_result(default_output=())
     def __container_delete(self, container_id: str):
-        container = self.container_find_by_id(container_id)
-        if container is None:
-            raise FileNotFoundError(f'Cannot find container {container_id}')
+        container_result, container = self.container_find_by_id(container_id)
+        if not container_result.success:
+            return container_result
 
         if not container.local_path:
             raise FileNotFoundError('Can only delete a local manifest')
@@ -789,16 +791,22 @@ class WildlandCore(WildlandCoreApi):
         """
         raise NotImplementedError
 
-    def container_find_by_id(self, container_id: str) -> Optional[Container]:
+    def container_find_by_id(self, container_id: str) -> Tuple[WildlandResult, Optional[Container]]:
         """
         Find container by id.
         :param container_id: id of the container to be found (user_id:/.uuid/container_uuid)
         :return: tuple of WildlandResult and, if successful, the WLContainer
         """
+        # TODO: return WLContainer instead of Container
+        result = WildlandResult()
+
         for container in self.client.load_all(WildlandObject.Type.CONTAINER):
             if self._container_to_wlcontainer(container).id == container_id:
-                return container
-        return None
+                return result, container
+
+        result.errors.append(
+            WLError.from_exception(FileNotFoundError(f'Cannot find container {container_id}')))
+        return result, None
 
     # STORAGES
 
@@ -999,7 +1007,7 @@ class WildlandCore(WildlandCoreApi):
     def mount(self, paths_or_names: List[str], include_children: bool = True,
               include_parents: bool = True, remount: bool = True,
               import_users: bool = True, manifests_catalog: bool = False,
-              callback: Callable[[WLContainer], None] = None) ->\
+              callback: Callable[[WLContainer], None] = None) -> \
             Tuple[WildlandResult, List[WLContainer]]:
         """
         Mount containers given by name or path to their manifests or WL path to containers to
