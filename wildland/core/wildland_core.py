@@ -31,10 +31,16 @@ from .wildland_result import WildlandResult, WLError, wildland_result
 from ..bridge import Bridge
 from ..client import Client
 from ..container import Container
+from ..control_client import ControlClientUnableToConnectError
+from ..exc import WildlandError
+from ..log import get_logger
+from ..publish import Publisher
 from ..storage import Storage
 from ..user import User
 from ..wildland_object.wildland_object import WildlandObject
 from ..wlenv import WLEnv
+
+logger = get_logger('WLCore')
 
 
 # Style goal: All methods must be <15 functional lines of code; if more, refactor
@@ -684,23 +690,123 @@ class WildlandCore(WildlandCoreApi):
             result.errors.append(WLError.from_exception(ex))
         return result, result_list
 
-    def container_delete(self, container_id: str) -> WildlandResult:
+    def container_delete(self, container_id: str, cascade: bool = False,
+                         force: bool = False, no_unpublish: bool = False) -> WildlandResult:
         """
         Delete provided container.
         :param container_id: container ID (in the form of user_id:/.uuid/container_uuid)
+        :param cascade: also delete local storage manifests
+        :param force: delete even when using local storage manifests; ignore errors on parse
+        :param no_unpublish: do not attempt to unpublish the container before deleting it
+        :return: WildlandResult
         """
-        return self.__container_delete(container_id)
+        # TODO: also consider detecting user-container link (i.e. user's main container).
+        return self.__container_delete(container_id, cascade, force, no_unpublish)
+
+    @wildland_result()
+    def __unmount_container_storages(self, container: Container):
+        """
+        Unmount container's storages if they are mounted
+        """
+        try:
+            for mount_path in self.client.fs_client.get_unique_storage_paths(container):
+                storage_id = self.client.fs_client.find_storage_id_by_path(mount_path)
+
+                if storage_id:
+                    self.client.fs_client.unmount_storage(storage_id)
+
+                for storage_id in self.client.fs_client.find_all_subcontainers_storage_ids(
+                        container):
+                    self.client.fs_client.unmount_storage(storage_id)
+        except ControlClientUnableToConnectError:
+            pass
+
+    @wildland_result()
+    def __delete_container_storages(self, container: Container, cascade: bool, force: bool):
+        has_local = False
+
+        for backend in container.load_raw_backends(include_inline=False):
+            path = self.client.parse_file_url(backend, container.owner)
+            if path and path.exists():
+                if cascade:
+                    # TODO: replace logger.info with a more universal logging solution
+                    logger.info('Deleting storage: {}'.format(path))
+                    path.unlink()
+                else:
+                    # TODO: replace logger.info with a more universal logging solution
+                    logger.info('Container refers to a local manifest: {}'.format(path))
+                    has_local = True
+
+        if has_local and not force:
+            raise FileExistsError('Container refers to local manifests, not deleting. (use force='
+                                  'True or cascade=True)')
 
     @wildland_result(default_output=())
-    def __container_delete(self, container_id: str):
+    def __container_delete(self, container_id: str, cascade: bool = False,
+                           force: bool = False, no_unpublish: bool = False):
         container_result, container = self.container_find_by_id(container_id)
         if not container_result.success:
             return container_result
 
         if not container.local_path:
-            raise FileNotFoundError('Can only delete a local manifest')
+            raise FileNotFoundError('Can only delete a local manifest.')
 
+        user_result, user = self.object_get(WLObjectType.USER, container.owner)
+        if not user_result.success:
+            return user_result
+
+        # TODO: has_catalog_entry is a method of WildlandUser but not WLUser.
+        #  to be replaced with self.object_get(WLObjectType.USER, container.owner)
+        _user = self.client.load_object_from_name(WildlandObject.Type.USER, container.owner)
+        has_catalog_entry = _user.has_catalog_entry(self.client.local_url(container.local_path))
+
+        if has_catalog_entry and not cascade and not force:
+            logger.info('Use cascade=True to delete all content associated with this container or '
+                        'force=True to force deletion')
+            raise FileExistsError('User has catalog entry associated with this container.')
+
+        result = self.__unmount_container_storages(container)
+        if not result.success:
+            return result
+
+        result = self.__delete_container_storages(container, cascade, force)
+        if not result.success:
+            return result
+
+        # TODO: replace with self.container_unpublish()
+        if not no_unpublish:
+            try:
+                logger.info('Unpublishing container: [{}]'.format(
+                    container.get_primary_publish_path()))
+                Publisher(self.client, _user).unpublish(container)
+            except WildlandError:
+                # not published
+                pass
+
+        # TODO: replace with self.container_delete_cache (I think)
+        try:
+            Publisher(self.client, _user).remove_from_cache(container)
+        except WildlandError as e:
+            logger.warning('Failed to remove container from cache: %s', e)
+            if not force:
+                logger.info('Cannot remove container. Set force=True to force deletion.')
+            raise e
+
+        if cascade:
+            try:
+                if container.local_path:
+                    _user.remove_catalog_entry(self.client.local_url(container.local_path))
+                    self.client.save_object(WildlandObject.Type.USER, _user)
+            except WildlandError as e:
+                logger.warning('Failed to remove catalog entry: %s', e)
+                if not force:
+                    logger.info('Cannot remove container. ')
+                raise e
+
+        logger.info('Deleting: {}'.format(container.local_path))
         container.local_path.unlink()
+
+        return WildlandResult()
 
     def container_duplicate(self, container_id: str, name: Optional[str] = None) -> \
             Tuple[WildlandResult, Optional[WLContainer]]:

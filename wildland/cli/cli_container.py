@@ -25,26 +25,24 @@
 """
 Manage containers
 """
+import os
+import re
+import signal
+import sys
 from itertools import combinations
 from pathlib import PurePosixPath, Path
 from typing import Iterable, List, Optional, Sequence, Tuple, Dict
-import os
-import sys
-import re
-import signal
+
 import click
 import daemon
 import progressbar
-
-from progressbar.widgets import FormatWidgetMixin, TimeSensitiveWidgetBase
 from click import ClickException
 from daemon import pidfile
+from progressbar.widgets import FormatWidgetMixin, TimeSensitiveWidgetBase
 from xdg import BaseDirectory
 
 import wildland.cli.cli_common as cli_common
-
 from wildland.client import Client
-from wildland.control_client import ControlClientUnableToConnectError
 from wildland.wildland_object.wildland_object import WildlandObject
 from .cli_base import aliased_group, ContextObj
 from .cli_exc import CliError
@@ -52,15 +50,15 @@ from .cli_storage import do_create_storage_from_templates
 from ..container import Container
 from ..core.wildland_objects_api import WLObjectType
 from ..exc import WildlandError
+from ..log import init_logging, get_logger
 from ..manifest.manifest import ManifestError
 from ..manifest.template import TemplateManager
 from ..publish import Publisher
-from ..utils import yaml_parser
 from ..remounter import Remounter
 from ..storage import Storage, StorageBackend
-from ..log import init_logging, get_logger
 from ..storage_sync.base import BaseSyncer, SyncConflict
 from ..tests.profiling.profilers import profile
+from ..utils import yaml_parser
 
 try:
     RUNTIME_DIR = Path(BaseDirectory.get_runtime_dir())
@@ -148,7 +146,7 @@ class OptionRequires(click.Option):
               help='do not publish the container after creation')
 @click.option('--encrypt-manifest/--no-encrypt-manifest', default=True, required=False,
               help='if --no-encrypt, this manifest will not be encrypted and '
-              '--access cannot be used.')
+                   '--access cannot be used.')
 @click.argument('name', metavar='CONTAINER', required=False)
 @click.pass_obj
 def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Optional[str],
@@ -325,8 +323,9 @@ def list_(obj: ContextObj):
     for container in containers:
         # TODO: that's an ugly workaround which only partially works
         # to be replaced when _container_info will be ready to accept WLContainer
-        _container = obj.wlcore.wl_container_to_container(container)
-        _container_info(obj.client, _container, users_and_bridge_paths)
+        _container_result, _container = obj.wlcore.container_find_by_id(container.id)
+        if _container_result.success:
+            _container_info(obj.client, _container, users_and_bridge_paths)
 
 
 @container_.command(short_help='show container summary')
@@ -364,7 +363,7 @@ def info(obj: ContextObj, name):
 
     container_result, container = obj.wlcore.object_get(WLObjectType.CONTAINER, name)
     if not container_result.success:
-        raise CliError(container_result)
+        raise CliError(f'{container_result}')
     # TODO: that's an ugly workaround which only partially works
     # to be replaced when _container_info will be ready to accept WLContainer
     _container = obj.wlcore.wl_container_to_container(container)
@@ -397,13 +396,10 @@ def delete(obj: ContextObj, names, force: bool, cascade: bool, no_unpublish: boo
 
 
 def _delete(obj: ContextObj, name: str, force: bool, cascade: bool, no_unpublish: bool):
-    # TODO: also consider detecting user-container link (i.e. user's main container).
-
-    try:
-        container = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, name)
-    except ManifestError as ex:
+    container_result, container = obj.wlcore.object_get(WLObjectType.CONTAINER, name)
+    if not container_result.success:
         if force:
-            logger.warning('Failed to load manifest: %s', ex)
+            logger.warning('Failed to load manifest: %s', container_result)
             try:
                 path = obj.client.find_local_manifest(WildlandObject.Type.CONTAINER, name)
                 if path:
@@ -415,87 +411,27 @@ def _delete(obj: ContextObj, name: str, force: bool, cascade: bool, no_unpublish
             if cascade:
                 logger.warning('Unable to cascade remove: manifest failed to load.')
             return
-        logger.warning('Failed to load manifest, cannot delete: %s', ex)
+        logger.warning('Failed to load manifest, cannot delete: %s', container_result)
         click.echo('Use --force to force deletion.')
         return
 
-    if not container.local_path:
-        raise CliError('Can only delete a local manifest')
+    delete_result = obj.wlcore.container_delete(container.id, cascade, force, no_unpublish)
 
-    user = obj.client.load_object_from_name(WildlandObject.Type.USER, container.owner)
-    has_catalog_entry = user.has_catalog_entry(obj.client.local_url(container.local_path))
+    usage_cascade = '' if cascade else '--cascade to delete all content associated with this ' \
+                                       'container'
+    usage_force = '' if force else '--force to force deletion'
+    usage = ' or '.join(filter(None, [usage_cascade, usage_force]))
+    usage = f'\nUse {usage}' if len(usage) else usage
 
-    if has_catalog_entry and not cascade and not force:
-        logger.warning('User has catalog entry associated with this container.')
-        click.echo('Use --cascade to delete all content associated with this container or --force '
-                   'to force deletion')
-        return
-
-    # unmount if mounted
-    try:
-        for mount_path in obj.fs_client.get_unique_storage_paths(container):
-            storage_id = obj.fs_client.find_storage_id_by_path(mount_path)
-
-            if storage_id:
-                obj.fs_client.unmount_storage(storage_id)
-
-            for storage_id in obj.fs_client.find_all_subcontainers_storage_ids(container):
-                obj.fs_client.unmount_storage(storage_id)
-    except ControlClientUnableToConnectError:
-        pass
-
-    has_local = False
-
-    for backend in container.load_raw_backends(include_inline=False):
-        path = obj.client.parse_file_url(backend, container.owner)
-        if path and path.exists():
-            if cascade:
-                click.echo('Deleting storage: {}'.format(path))
-                path.unlink()
-            else:
-                click.echo('Container refers to a local manifest: {}'.format(path))
-                has_local = True
-
-    if has_local and not force:
-        raise CliError('Container refers to local manifests, not deleting '
-                       '(use --force or --cascade)')
-
-    # unpublish
-    if not no_unpublish:
-        try:
-            click.echo(f'Unpublishing container: [{container.get_primary_publish_path()}]')
-            Publisher(obj.client, user).unpublish(container)
-        except WildlandError:
-            # not published
-            pass
-
-    try:
-        Publisher(obj.client, user).remove_from_cache(container)
-    except WildlandError as e:
-        logger.warning('Failed to remove container from cache: %s', e)
-        if not force:
-            click.echo('Cannot remove container. Use --force to force deletion.')
-            return
-
-    if cascade:
-        try:
-            if container.local_path:
-                user.remove_catalog_entry(obj.client.local_url(container.local_path))
-                obj.client.save_object(WildlandObject.Type.USER, user)
-        except WildlandError as e:
-            logger.warning('Failed to remove catalog entry: %s', e)
-            if not force:
-                click.echo('Cannot remove container. Use --force to force deletion.')
-                return
-
-    click.echo(f'Deleting: {container.local_path}')
-    container.local_path.unlink()
+    if not delete_result.success:
+        raise CliError(f'{delete_result}{usage}')
 
 
 container_.add_command(cli_common.sign)
 container_.add_command(cli_common.verify)
 container_.add_command(cli_common.publish)
 container_.add_command(cli_common.unpublish)
+
 
 @container_.command(short_help='modify container manifest')
 @click.option('--add-path', metavar='PATH', multiple=True, help='path to add')
@@ -532,7 +468,7 @@ def modify(ctx: click.Context,
     def get_user_owners(user_name):
         result, user = ctx.obj.wlcore.object_get(WLObjectType.USER, user_name)
         if not result.success or not user:
-            raise CliError(result)
+            raise CliError(f'{result}')
         return user.owner
 
     add_access_owners = [{'user': get_user_owners(user)} for user in add_access]
@@ -731,7 +667,7 @@ def prepare_mount(obj: ContextObj,
         with StorageBackend.from_params(storage.params, deduplicate=True):
             for subcontainer in subcontainers:
                 # TODO: use MR !240 to pass a container set to prepare mount
-                if isinstance(subcontainer, Container) and\
+                if isinstance(subcontainer, Container) and \
                         subcontainer.uuid == container.uuid:
                     continue
                 if isinstance(subcontainer, Container):
