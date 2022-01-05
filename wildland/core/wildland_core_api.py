@@ -20,11 +20,12 @@
 API for Wildland Core
 """
 import abc
-from typing import List, Tuple, Optional, Callable, Dict, Container
+from typing import List, Tuple, Optional, Callable, Dict
 from enum import Enum
 from .wildland_result import WildlandResult
 from .wildland_objects_api import WLObject, WLTemplateFile, WLBridge, WLObjectType, WLUser, \
     WLStorageBackend, WLStorage, WLContainer
+from ..container import Container
 
 
 class ModifyMethod(Enum):
@@ -437,10 +438,15 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         """
 
     @abc.abstractmethod
-    def container_delete(self, container_id: str) -> WildlandResult:
+    def container_delete(self, container_id: str, cascade: bool = False,
+                         force: bool = False, no_unpublish: bool = False) -> WildlandResult:
         """
         Delete provided container.
         :param container_id: container ID (in the form of user_id:/.uuid/container_uuid)
+        :param cascade: also delete local storage manifests
+        :param force: delete even when using local storage manifests; ignore errors on parse
+        :param no_unpublish: do not attempt to unpublish the container before deleting it
+        :return: WildlandResult
         """
 
     @abc.abstractmethod

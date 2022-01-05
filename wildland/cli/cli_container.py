@@ -339,11 +339,10 @@ def info(obj: ContextObj, name):
     users_and_bridge_paths = {}
     result_users, users = obj.wlcore.user_list()
     result_bridges, bridges = obj.wlcore.bridge_list()
-    result_containers, containers = obj.wlcore.container_list()
 
-    if not result_bridges.success or not result_users.success or not result_containers.success:
+    if not result_bridges.success or not result_users.success:
         click.echo('Failed to list containers:')
-        for e in result_users.errors + result_bridges.errors + result_containers.errors:
+        for e in result_users.errors + result_bridges.errors:
             click.echo(f'Error {e.error_code}: {e.error_description}')
 
     # TODO: this used to use a client method called load_users_with_bridge_paths; perhaps this
@@ -362,11 +361,13 @@ def info(obj: ContextObj, name):
             users_and_bridge_paths[user.owner] = bridge_paths
 
     container_result, container = obj.wlcore.object_get(WLObjectType.CONTAINER, name)
-    if not container_result.success:
+    if not container_result.success or not container:
         raise CliError(f'{container_result}')
     # TODO: that's an ugly workaround which only partially works
     # to be replaced when _container_info will be ready to accept WLContainer
-    _container = obj.wlcore.wl_container_to_container(container)
+    result, _container = obj.wlcore.container_find_by_id(container.id)
+    if not result.success:
+        raise CliError(f'{result}')
     _container_info(obj.client, _container, users_and_bridge_paths)
 
 
@@ -397,7 +398,7 @@ def delete(obj: ContextObj, names, force: bool, cascade: bool, no_unpublish: boo
 
 def _delete(obj: ContextObj, name: str, force: bool, cascade: bool, no_unpublish: bool):
     container_result, container = obj.wlcore.object_get(WLObjectType.CONTAINER, name)
-    if not container_result.success:
+    if not container_result.success or not container:
         if force:
             logger.warning('Failed to load manifest: %s', container_result)
             try:
@@ -421,7 +422,7 @@ def _delete(obj: ContextObj, name: str, force: bool, cascade: bool, no_unpublish
                                        'container'
     usage_force = '' if force else '--force to force deletion'
     usage = ' or '.join(filter(None, [usage_cascade, usage_force]))
-    usage = f'\nUse {usage}' if len(usage) else usage
+    usage = f'\nUse {usage}' if usage != '' else usage
 
     if not delete_result.success:
         raise CliError(f'{delete_result}{usage}')
@@ -526,7 +527,7 @@ def _option_check(ctx, add_path, del_path, add_category, del_category, title, ad
 
 
 def _get_storages_idx_to_del(ctx, del_storage, input_file):
-    to_del_nested = {}
+    to_del_nested: Dict[tuple, list] = {}
     if not del_storage:
         return to_del_nested
 

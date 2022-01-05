@@ -101,19 +101,6 @@ class WildlandCore(WildlandCoreApi):
         )
         return wl_container
 
-    def wl_container_to_container(self, wl_container: WLContainer) -> Container:
-        # TODO: remove when functions will be ready to accept WLContainer
-        container = Container(
-            client=self.client,
-            owner=wl_container.owner,
-            paths=[PurePosixPath(p) for p in wl_container.paths],
-            title=wl_container.title,
-            categories=[PurePosixPath(c) for c in wl_container.categories],
-            access=[],
-            backends=[]
-        )
-        return container
-
     def _bridge_to_wl_bridge(self, bridge: Bridge) -> WLBridge:
         wl_bridge = WLBridge(
             owner=bridge.owner,
@@ -730,11 +717,11 @@ class WildlandCore(WildlandCoreApi):
             if path and path.exists():
                 if cascade:
                     # TODO: replace logger.info with a more universal logging solution
-                    logger.info('Deleting storage: {}'.format(path))
+                    logger.info('Deleting storage: %s', path)
                     path.unlink()
                 else:
                     # TODO: replace logger.info with a more universal logging solution
-                    logger.info('Container refers to a local manifest: {}'.format(path))
+                    logger.info('Container refers to a local manifest: %s', path)
                     has_local = True
 
         if has_local and not force:
@@ -745,13 +732,13 @@ class WildlandCore(WildlandCoreApi):
     def __container_delete(self, container_id: str, cascade: bool = False,
                            force: bool = False, no_unpublish: bool = False):
         container_result, container = self.container_find_by_id(container_id)
-        if not container_result.success:
+        if not container_result.success or not container:
             return container_result
 
         if not container.local_path:
             raise FileNotFoundError('Can only delete a local manifest.')
 
-        user_result, user = self.object_get(WLObjectType.USER, container.owner)
+        user_result, _ = self.object_get(WLObjectType.USER, container.owner)
         if not user_result.success:
             return user_result
 
@@ -776,8 +763,7 @@ class WildlandCore(WildlandCoreApi):
         # TODO: replace with self.container_unpublish()
         if not no_unpublish:
             try:
-                logger.info('Unpublishing container: [{}]'.format(
-                    container.get_primary_publish_path()))
+                logger.info('Unpublishing container: [%s]', container.get_primary_publish_path())
                 Publisher(self.client, _user).unpublish(container)
             except WildlandError:
                 # not published
@@ -803,7 +789,7 @@ class WildlandCore(WildlandCoreApi):
                     logger.info('Cannot remove container. ')
                 raise e
 
-        logger.info('Deleting: {}'.format(container.local_path))
+        logger.info('Deleting: %s', container.local_path)
         container.local_path.unlink()
 
         return WildlandResult()
