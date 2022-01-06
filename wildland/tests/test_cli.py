@@ -5992,7 +5992,7 @@ def test_import_forest_user_with_undecryptable_bridge_link_object(tmpdir):
     lines = output.decode().splitlines()
     assert lines[0] == f'Created: {base_config_dir}/users/Alice.user.yaml'
     assert re.match(
-        fr'^[\x1b0-9;:, a-zA-Z\[\]/]+User {alice_key}: failed to load all 2 of the manifests '
+        fr'^User {alice_key}: failed to load all 2 of the manifests '
         fr'catalog containers. 1 due to lack of decryption key and 1 due to unknown errors\)\x1b\['
         fr'0m$',
         lines[1])

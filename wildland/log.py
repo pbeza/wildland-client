@@ -26,6 +26,7 @@ Logging
 """
 
 import os
+import sys
 import logging
 import logging.config
 
@@ -59,7 +60,7 @@ class ConsoleFormatter(logging.Formatter):
     }
 
     def __init__(self, fmt, *args, **kwargs):
-        if fmt is None:
+        if fmt is None and sys.stdout.isatty():
             fmt = ('{grey}%(asctime)s '
                    '{green}[%(process)d/%(threadName)s] '
                    '{cyan}[%(name)s] '
@@ -100,9 +101,12 @@ class BriefConsoleFormatter(ConsoleFormatter):
     }
 
     def __init__(self, fmt, *args, **kwargs):
-        fmt = ('$COLOR$LEVEL: %(message)s'
-               '{reset}')
-        fmt = fmt.format(**self.colors)
+        if sys.stdout.isatty():
+            fmt = ('$COLOR$LEVEL: %(message)s'
+                   '{reset}')
+            fmt = fmt.format(**self.colors)
+        else:
+            fmt = '$LEVEL: %(message)s'
         super().__init__(fmt, *args, **kwargs)
 
     def format(self, record):
