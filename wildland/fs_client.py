@@ -141,7 +141,7 @@ class WildlandFSClient:
         if options:
             cmd += ['-o', ','.join(options)]
 
-        logger.info('running start command: %s', cmd)
+        logger.debug('running start command: %s', cmd)
 
         # Start a new session in order to not propagate SIGINT.
         # pylint: disable=consider-using-with

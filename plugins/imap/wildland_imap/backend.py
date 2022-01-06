@@ -104,7 +104,7 @@ class ImapStorageBackend(GeneratedStorageMixin, StorageBackend):
         return FuncDirEntry('.', self._root)
 
     def _root(self):
-        logger.info("_root() requested for %s", self.backend_id)
+        logger.debug("_root() requested for %s", self.backend_id)
         for envelope in self.client.all_messages_env():
             yield FuncDirEntry(self._id_for_message(envelope),
                                partial(self._msg_contents, envelope),
