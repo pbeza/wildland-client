@@ -5782,13 +5782,13 @@ def test_import_forest_user_with_undecryptable_bridge_link_object(tmpdir):
                             stderr=subprocess.STDOUT)
 
     lines = output.decode().splitlines()
-    assert lines == [
-        f'Created: {base_config_dir}/users/Alice.user.yaml',
-        f'\x1b[33mWarning: User {alice_key}: '
-        f'failed to load all 2 of the manifests catalog containers. '
-         '1 due to lack of decryption key and 1 due to unknown errors)\x1b[0m',
-        f'Created: {base_config_dir}/bridges/Alice.bridge.yaml'
-    ]
+    assert f'Created: {base_config_dir}/users/Alice.user.yaml' in lines[0]
+    assert f'User {alice_key}: ' \
+           f'failed to load all 2 of the manifests catalog containers. ' \
+           f'1 due to lack of decryption key and 1 due to unknown errors)' in lines[1]
+    assert f'Created: {base_config_dir}/bridges/Alice.bridge.yaml' in lines[2]
+
+    assert len(lines) == 3
 
 
 ## Storage params sanity test
