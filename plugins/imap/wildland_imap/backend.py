@@ -161,13 +161,13 @@ class ImapStorageBackend(GeneratedStorageMixin, StorageBackend):
         Create a container manifest for a single mail message.
         """
         ident = self._id_for_message(env)
-        paths = [f'/.uuid/{ident}']
         logger.debug('making msg container for msg %d as %s', env.msg_uid, ident)
         categories = self._get_message_categories(env)
         subcontainer_path = '/' + ident
 
         return PurePosixPath(subcontainer_path), ContainerStub({
-            'paths': paths,
+            'paths': [],
+            'container-id': f'/.uuid/{ident}',
             'title': f'{env.subject} - {ident}',
             'categories': categories,
             'backends': {'storage': [{

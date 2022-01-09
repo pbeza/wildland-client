@@ -707,7 +707,7 @@ def prepare_mount(obj: ContextObj,
                     continue
                 if isinstance(subcontainer, Container):
                     yield from prepare_mount(obj, subcontainer,
-                                             f'{container_name}:{subcontainer.paths[0]}',
+                                             f'{container_name}:{subcontainer.container_id}',
                                              user_paths, remount, with_subcontainers, container,
                                              verbose, only_subcontainers)
 

@@ -202,6 +202,7 @@ class TransposeStorageBackend(StorageBackend):
 
                 yield PurePosixPath(path), \
                 ContainerStub({
+                'container-id': container.fields['container-id'],
                 'paths': container.fields['paths'],
                 'title': container.fields['title'],
                 'categories': new_categories,
@@ -219,7 +220,7 @@ class TransposeStorageBackend(StorageBackend):
 
                 if isinstance(link_container, Container) and  \
                         PurePosixPath(self.reference.params['container-path']) \
-                        not in link_container.paths:
+                        != link_container.container_id:
                     paths = []
                     categories: List[Union[str, None]] = []
                     for path in link_container.paths:
@@ -233,6 +234,7 @@ class TransposeStorageBackend(StorageBackend):
                     yield PurePosixPath(path), \
                     ContainerStub({
                         'paths': link_manifest.get('paths'),
+                        'container-id': str(link_manifest['container-id']),
                         'title': link_manifest.get('title'),
                         'categories': new_categories,
                         'backends': link_manifest.get('backends')

@@ -524,12 +524,12 @@ class ContainerStub:
             sub_storage['object'] = 'storage'
             sub_storage['owner'] = parent_container.owner
             self.fields['version'] = Manifest.CURRENT_VERSION
-            sub_storage['container-path'] = self.fields['paths'][0]
+            sub_storage['container-path'] = self.fields['container-id']
             if isinstance(sub_storage.get('reference-container'), str) and \
                     WildlandPath.match(sub_storage['reference-container']):
                 sub_storage['reference-container'] = \
                     sub_storage['reference-container'].replace(
-                        ':@parent-container:', f':{parent_container.paths[0]}:')
+                        ':@parent-container:', f':{parent_container.container_id}:')
 
         return Container.from_fields(self.fields, parent_container.client,
                                      WildlandObject.Type.CONTAINER)

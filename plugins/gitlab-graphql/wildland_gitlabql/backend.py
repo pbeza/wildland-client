@@ -191,11 +191,11 @@ class GitlabQLStorageBackend(GeneratedStorageMixin, StorageBackend):
         Creates a separate subcontainer for each of the issues fetched from the server
         """
         issue_uuid = self._id_issue(issue)
-        paths = [f'/.uuid/{issue_uuid}']
         categories = self._get_issue_categories(issue)
         subcontainer_path = '/' + issue_uuid
         return PurePosixPath(subcontainer_path), ContainerStub({
-            'paths': paths,
+            'container-id': f'/.uuid/{issue_uuid}',
+            'paths': [],
             'title': issue.title,
             'categories': categories,
             'backends': {'storage': [{

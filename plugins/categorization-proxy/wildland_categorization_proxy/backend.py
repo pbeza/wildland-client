@@ -157,7 +157,8 @@ class CategorizationProxyStorageBackend(StorageBackend):
             ident = str(uuid.uuid3(ns, dirpath))
             subcontainer_path = '/' + dirpath
             container_stub = ContainerStub(fields={
-                'paths': [f'/.uuid/{ident}'],
+                'paths': [],
+                'container-id': f'/.uuid/{ident}',
                 'title': title,
                 'categories': categories,
                 'backends': {'storage': [{

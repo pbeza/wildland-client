@@ -265,14 +265,14 @@ class BearDBStorageBackend(GeneratedStorageMixin, StorageBackend):
         be derived from note tags.
         """
 
-        paths = [f'/.uuid/{ident}']
         categories = get_note_categories(tags)
         if len(title) == 0:
             title = f"{ident}"
         return ContainerStub({
             'object': 'container',
             'title': '"' + title.replace('/', '_') + '"',
-            'paths': paths,
+            'container-id': f'/.uuid/{ident}',
+            'paths': [],
             'categories': categories,
             'backends': {'storage': [{
                 'type': 'delegate',
