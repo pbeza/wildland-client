@@ -22,7 +22,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 # pylint: disable=missing-docstring,redefined-outer-name,too-many-lines
-
+import logging
 from copy import deepcopy
 from pathlib import Path
 import itertools
@@ -85,10 +85,11 @@ def strip_yaml(line):
 
     return line.strip('\n -')
 
+
 # Test the CLI tools directly (cannot easily use above-mentioned methods because of demonization)
 
 def wl_call(base_config_dir, *args, **kwargs):
-    subprocess.check_call(['wl', '--base-dir', base_config_dir, *args], **kwargs)
+    subprocess.check_call(['wl', '-v', '--base-dir', base_config_dir, *args], **kwargs)
 
 
 def wl_call_output(base_config_dir, *args, **kwargs):
@@ -171,6 +172,45 @@ def test_user_create_additional_keys(cli, base_dir):
     assert 'pubkeys:\n- key.0x111\n- key.0xbbb' in data
 
 
+def test_user_create_additional_keys_user_path(cli_sodium, base_dir_sodium, dir_userid):
+    # pylint: disable=line-too-long
+    user_path = f'{dir_userid}@https{{wildland.local/public/forest-owner.user.yaml}}:/forests/alice:'
+    cli_sodium('user', 'create', 'User', '--add-pubkey', user_path)
+    with open(base_dir_sodium / 'users/User.user.yaml') as f:
+        data = f.read()
+    assert f"members:\n- user-path: 'wildland:{user_path}'\n  pubkeys:" in data
+
+
+def test_user_create_additional_keys_fingerprint_and_user_path(cli_sodium, base_dir_sodium,
+                                                               dir_userid, sig_sodium):
+    # pylint: disable=line-too-long
+    user_path = f'{dir_userid}@https{{wildland.local/public/forest-owner.user.yaml}}:/forests/alice:'
+    owner, pubkey = sig_sodium.generate()
+    _, additional_pubkey = sig_sodium.generate()
+    cli_sodium('user', 'create', 'User', '--key', owner,
+               '--add-pubkey', user_path, '--add-pubkey', additional_pubkey)
+    with open(base_dir_sodium / 'users/User.user.yaml') as f:
+        data = f.read()
+    assert f"members:\n- user-path: 'wildland:{user_path}'\n  pubkeys:" in data
+    assert f"pubkeys:\n- {pubkey}\n- {additional_pubkey}" in data
+
+
+def test_user_add_del_pubkey_user_path(cli_sodium, base_dir_sodium, dir_userid):
+    cli_sodium('user', 'create', 'User')
+
+    user_path = \
+        f'{dir_userid}@https{{wildland.local/public/forest-owner.user.yaml}}:/forests/alice:'
+    cli_sodium('user', 'modify', 'User', '--add-pubkey', user_path)
+    with open(base_dir_sodium / 'users/User.user.yaml') as f:
+        data = f.read()
+    assert f"members:\n- user-path: 'wildland:{user_path}'\n  pubkeys:" in data
+
+    cli_sodium('user', 'modify', 'User', '--del-pubkey', user_path)
+    with open(base_dir_sodium / 'users/User.user.yaml') as f:
+        data = f.read()
+    assert "members: []" in data
+
+
 def test_user_list(cli, base_dir):
     cli('user', 'create', 'User1', '--key', '0xaaa',
         '--path', '/users/Foo', '--path', '/users/Bar')
@@ -200,6 +240,7 @@ def test_user_list(cli, base_dir):
     result = cli('users', 'list', capture=True)
     assert result.splitlines() == ok
 
+
 def test_user_list_verbose(cli, base_dir):
     #pylint: disable=line-too-long
     cli('user', 'create', 'User1', '--key', '0xaaa',
@@ -223,6 +264,7 @@ def test_user_list_verbose(cli, base_dir):
     for index, value in enumerate(verbose):
         assert re.match(value, verbose_result1.splitlines()[index])
         assert re.match(value, verbose_result2.splitlines()[index])
+
 
 def test_user_list_secret_keys(tmpdir):
     base_config_dir = tmpdir / '.wildland'
@@ -974,6 +1016,19 @@ def test_multiple_storage_mount(cli, base_dir, control_client):
     ]
 
 
+def generate_pseudomanifest_paths(paths):
+    pm_dir = ['', '-pseudomanifest/.manifest.wildland.yaml']
+    pm_file = ['', '/.manifest.wildland.yaml']
+    expected_paths = {}
+    for j in range(2):
+        for i, ps in enumerate(paths):
+            expected_paths[ps[0] + pm_dir[j]] = [i + 1]
+            for p in ps[1:]:
+                expected_paths[p + pm_file[j]] = [i + 1]
+
+    return expected_paths
+
+
 def test_storage_mount_remove_primary_and_remount(cli, base_dir, control_client):
     control_client.expect('status', {})
 
@@ -994,7 +1049,8 @@ def test_storage_mount_remove_primary_and_remount(cli, base_dir, control_client)
     backend_id1 = documents[1]['backends']['storage'][0]['backend-id']
     backend_id2 = documents[1]['backends']['storage'][1]['backend-id']
 
-    paths_1 = [
+    paths = [[], []]
+    paths[0] = [
         f'/.backends/{uuid}/{backend_id1}',
         f'/.users/0xaaa:/.backends/{uuid}/{backend_id1}',
         f'/.users/0xaaa:/.uuid/{uuid}',
@@ -1003,7 +1059,7 @@ def test_storage_mount_remove_primary_and_remount(cli, base_dir, control_client)
         '/PATH',
     ]
 
-    paths_2 = [
+    paths[1] = [
         f'/.backends/{uuid}/{backend_id2}',
         f'/.users/0xaaa:/.backends/{uuid}/{backend_id2}',
     ]
@@ -1017,20 +1073,12 @@ def test_storage_mount_remove_primary_and_remount(cli, base_dir, control_client)
 
     cli('container', 'modify', 'Container', '--del-storage', backend_id1)
 
-    control_client.expect('paths', {
-        f'/.backends/{uuid}/{backend_id1}': [1],
-        f'/.users/0xaaa:/.backends/{uuid}/{backend_id1}': [1],
-        f'/.users/0xaaa:/.uuid/{uuid}': [1],
-        '/.users/0xaaa:/PATH': [1],
-        f'/.uuid/{uuid}': [1],
-        '/PATH': [1],
-        f'/.backends/{uuid}/{backend_id2}': [2],
-        f'/.users/0xaaa:/.backends/{uuid}/{backend_id2}': [2],
-    })
+    expected_paths = generate_pseudomanifest_paths(paths)
+    control_client.expect('paths', expected_paths)
 
     control_client.expect('info', {
         '1': {
-            'paths': paths_1,
+            'paths': paths[0],
             'type': 'local',
             'extra': {
                 'tag': command[0]['extra']['tag'],
@@ -1038,7 +1086,7 @@ def test_storage_mount_remove_primary_and_remount(cli, base_dir, control_client)
             },
         },
         '2': {
-            'paths': paths_2,
+            'paths': paths[1],
             'type': 'local',
             'extra': {
                 'tag': command[1]['extra']['tag'],
@@ -1095,7 +1143,8 @@ def test_storage_mount_remove_secondary_and_remount(cli, base_dir, control_clien
     backend_id1 = documents[1]['backends']['storage'][0]['backend-id']
     backend_id2 = documents[1]['backends']['storage'][1]['backend-id']
 
-    paths_1 = [
+    paths = [[], []]
+    paths[0] = [
         f'/.backends/{uuid}/{backend_id1}',
         f'/.users/0xaaa:/.backends/{uuid}/{backend_id1}',
         f'/.users/0xaaa:/.uuid/{uuid}',
@@ -1104,7 +1153,7 @@ def test_storage_mount_remove_secondary_and_remount(cli, base_dir, control_clien
         '/PATH',
     ]
 
-    paths_2 = [
+    paths[1] = [
         f'/.backends/{uuid}/{backend_id2}',
         f'/.users/0xaaa:/.backends/{uuid}/{backend_id2}',
     ]
@@ -1118,20 +1167,12 @@ def test_storage_mount_remove_secondary_and_remount(cli, base_dir, control_clien
 
     cli('container', 'modify', 'Container', '--del-storage', backend_id2)
 
-    control_client.expect('paths', {
-        f'/.backends/{uuid}/{backend_id1}': [1],
-        f'/.users/0xaaa:/.backends/{uuid}/{backend_id1}': [1],
-        f'/.users/0xaaa:/.uuid/{uuid}': [1],
-        '/.users/0xaaa:/PATH': [1],
-        f'/.uuid/{uuid}': [1],
-        '/PATH': [1],
-        f'/.backends/{uuid}/{backend_id2}': [2],
-        f'/.users/0xaaa:/.backends/{uuid}/{backend_id2}': [2],
-    })
+    expected_paths = generate_pseudomanifest_paths(paths)
+    control_client.expect('paths', expected_paths)
 
     control_client.expect('info', {
         '1': {
-            'paths': paths_1,
+            'paths': paths[0],
             'type': 'local',
             'extra': {
                 'tag': command[0]['extra']['tag'],
@@ -1139,7 +1180,7 @@ def test_storage_mount_remove_secondary_and_remount(cli, base_dir, control_clien
             },
         },
         '2': {
-            'paths': paths_2,
+            'paths': paths[1],
             'type': 'local',
             'extra': {
                 'tag': command[1]['extra']['tag'],
@@ -1151,9 +1192,6 @@ def test_storage_mount_remove_secondary_and_remount(cli, base_dir, control_clien
     control_client.expect('mount')
 
     cli('container', 'mount', 'Container')
-
-    command = control_client.calls['mount']['items']
-    assert command == []
 
 
 # Container
@@ -1311,6 +1349,91 @@ def test_container_edit(cli, base_dir):
     assert original == data
 
 
+def test_container_publish_after_edit_with_publish_flag(cli, tmp_path, base_dir):
+    cli('user', 'create', 'User', '--key', '0xaaa')
+    cli('container', 'create', 'Container', '--path', '/PATH', '--update-user')
+    cli('storage', 'create', 'local', 'Inlined', '--location', os.fspath(tmp_path),
+        '--container', 'Container', '--inline',
+        '--manifest-pattern', '/*.{object-type}.yaml')
+
+    assert not tuple(tmp_path.glob('*.container.yaml'))
+
+    editor = r'sed -i s,PATH,HTAP,g'
+    result = cli('container', 'edit', 'Container', '--editor', editor, '--publish', capture=True)
+    out_lines = result.splitlines()
+    assert len(out_lines) == 2
+    assert re.match('Saved: .*/Container.container.yaml', out_lines[0])
+    assert 'Publishing a container' in out_lines[1]
+
+    assert len(tuple(tmp_path.glob('*.container.yaml'))) == 1
+
+    manifest = base_dir / 'containers/Container.container.yaml'
+
+    with open(manifest) as f:
+        data = f.read()
+    assert "/HTAP" in data
+
+
+def test_container_republish_after_edit_if_published(cli, tmp_path, base_dir):
+    cli('user', 'create', 'User', '--key', '0xaaa')
+    cli('container', 'create', 'Container', '--path', '/PATH', '--update-user')
+    cli('storage', 'create', 'local', 'Inlined', '--location', os.fspath(tmp_path),
+        '--container', 'Container', '--inline',
+        '--manifest-pattern', '/*.{object-type}.yaml')
+
+    assert not tuple(tmp_path.glob('*.container.yaml'))
+
+    cli('container', 'publish', 'Container')
+
+    assert len(tuple(tmp_path.glob('*.container.yaml'))) == 1
+
+    editor = r'sed -i s,PATH,REPUBLISH,g'
+
+    result = cli('container', 'edit', 'Container', '--editor', editor, capture=True)
+    out_lines = result.splitlines()
+    assert len(out_lines) == 2
+    assert re.match('Saved: .*/Container.container.yaml', out_lines[0])
+    assert 'Re-publishing container: [/.uuid/' in out_lines[1]
+
+    assert len(tuple(tmp_path.glob('*.container.yaml'))) == 1
+
+    manifest = base_dir / 'containers/Container.container.yaml'
+
+    with open(manifest) as f:
+        data = f.read()
+    assert "/REPUBLISH" in data
+
+    editor = r'sed -i s,REPUBLISH,REPUBLISH,g'
+    result = cli('container', 'edit', 'Container', '--editor', editor, capture=True)
+    out_lines = result.splitlines()
+    assert len(out_lines) == 1
+    assert out_lines[0] == 'No changes detected, not saving.'
+
+
+def test_container_not_republish_after_edit_if_not_published(cli, tmp_path, base_dir):
+    cli('user', 'create', 'User', '--key', '0xaaa')
+    cli('container', 'create', 'Container', '--path', '/PATH', '--update-user')
+    cli('storage', 'create', 'local', 'Inlined', '--location', os.fspath(tmp_path),
+        '--container', 'Container', '--inline',
+        '--manifest-pattern', '/*.{object-type}.yaml')
+
+    assert not tuple(tmp_path.glob('*.container.yaml'))
+
+    editor = r'sed -i s,PATH,REPUBLISH,g'
+    result = cli('container', 'edit', 'Container', '--editor', editor, capture=True)
+    out_lines = result.splitlines()
+    assert len(out_lines) == 1
+    assert re.match('Saved: .*/Container.container.yaml', out_lines[0])
+
+    assert not tuple(tmp_path.glob('*.container.yaml'))
+
+    manifest = base_dir / 'containers/Container.container.yaml'
+
+    with open(manifest) as f:
+        data = f.read()
+    assert "/REPUBLISH" in data
+
+
 def test_container_edit_encryption(cli, base_dir):
     cli('user', 'create', 'User', '--key', '0xaaa')
     cli('container', 'create', '--path', '/PATH', 'Container')
@@ -1345,31 +1468,6 @@ def test_container_edit_duplicate_backend_ids(cli, base_dir):
             m.assert_called()
         assert "Invalid manifest: Duplicate backend-id found! Aborting..." in \
                exception_info.value.stdout.decode()
-
-
-def test_container_modify_remount(cli, base_dir):
-    cli('user', 'create', 'User', '--key', '0xaaa')
-    cli('container', 'create', 'Container', '--path', '/PATH')
-    cli('storage', 'create', 'local', 'Storage', '--location', '/PATH', '--container', 'Container')
-    cli('start')
-    cli('container', 'mount', 'Container')
-    mount_path = base_dir / 'wildland'
-    assert (mount_path / 'PATH').exists()
-
-    cli('container', 'modify', '--add-path', '/AUTO_REMOUNTING', 'Container')
-    assert (mount_path / 'AUTO_REMOUNTING').exists()
-
-    cli('container', 'modify', '--no-remount', '--add-path', '/NEED_REMOUNTING', 'Container')
-    assert not (mount_path / 'NEED_REMOUNTING').exists()
-
-    cli('container', 'modify', '--add-category', '/remounted_cat', '--title', 'TITLE', 'Container')
-    assert (mount_path / 'remounted_cat' / 'TITLE').exists()
-
-    cli('container', 'modify', '--no-remount', '--add-category', '/not_remounted_cat', 'Container')
-    assert not (mount_path / 'not_remounted_cat').exists()
-
-    cli('container', 'modify', '--title', 'NEW', 'Container')
-    assert (mount_path / 'not_remounted_cat' / '@remounted_cat' / 'NEW').exists()
 
 
 def test_container_pointed_container_modify_remount(cli, base_dir):
@@ -1407,6 +1505,132 @@ def test_container_pointed_container_modify_remount(cli, base_dir):
     assert len(list((mount_path / 'POINT').glob('*'))) == 2
     assert not (mount_path / 'POINT' / 'file_1.txt').exists()
     assert (mount_path / 'POINT' / 'file_2.txt').exists()
+
+
+def test_edit_unmounts_removed_storage(base_dir, cli):
+    cli('user', 'create', 'User', '--key', '0xaaa')
+    cli('container', 'create', 'Container', '--path', '/PATH', '--no-encrypt-manifest')
+    cli('storage', 'create', 'local', 'Storage1', '--location', '/p1', '--container', 'Container')
+    cli('storage', 'create', 'local', 'Storage2', '--location', '/p2', '--container', 'Container')
+    cli('start', '--skip-forest-mount')
+    cli('container', 'mount', 'Container')
+
+    pseudo = 'storage: pseudomanifest'
+    local = 'storage: local'
+
+    result = cli('status', '-p', capture=True)
+    assert result.count(pseudo) == 2
+    assert result.count(local) == 2
+
+    editor = r"sed -i '/  - object: storage/{:a;N;/    - user: '*'/!ba};/    location: \/p2/d'"
+    cli('container', 'edit', 'Container', '--editor', editor)
+    result = cli('status', '-p', capture=True)
+    assert result.count(local) == 1
+    assert result.count(pseudo) == 1
+
+
+def test_container_edit_remount(cli, base_dir, control_client):
+    control_client.expect('status', {})
+
+    cli('user', 'create', 'User', '--key', '0xaaa')
+    cli('user', 'create', 'UserB', '--key', '0xbbb')
+    cli('container', 'create', 'Container', '--path', '/PATH', '--update-user',
+        '--no-encrypt-manifest')
+    cli('storage', 'create', 'local', 'Storage', '--location', '/PATH', '--container', 'Container')
+
+    control_client.expect('paths', {})
+    control_client.expect('mount')
+
+    cli('container', 'mount', 'Container')
+
+    command = control_client.calls['mount']['items']
+    assert command[0]['storage']['owner'] == '0xaaa'
+
+    with open(base_dir / 'containers/Container.container.yaml') as f:
+        documents = list(yaml_parser.load_all(f))
+
+    uuid_path = documents[1]['paths'][0]
+    uuid = get_container_uuid_from_uuid_path(uuid_path)
+    backend_id = documents[1]['backends']['storage'][0]['backend-id']
+
+    control_client.expect('paths', {
+        f'/.users/0xaaa:/.uuid/{uuid}': [101],
+        f'/.users/0xaaa:/.uuid/{uuid}/.manifest.wildland.yaml': [102],
+        f'/.users/0xaaa:/.backends/{uuid}/{backend_id}': [101],
+        f'/.users/0xaaa:/.backends/{uuid}/{backend_id}-pseudomanifest/.manifest.wildland.yaml':
+            [102],
+        f'/.uuid/{uuid}': [101],
+        f'/.uuid/{uuid}/.manifest.wildland.yaml': [102],
+        f'/.backends/{uuid}/{backend_id}': [101],
+        f'/.backends/{uuid}/{backend_id}/.manifest.wildland.yaml': [102],
+        '/PATH': [101],
+        '/PATH/.manifest.wildland.yaml': [102],
+    })
+    control_client.expect('unmount')
+    control_client.expect('unmount')
+    control_client.expect('mount')
+
+    manifest = base_dir / 'containers/Container.container.yaml'
+
+    editor = r'sed -i s,0xaaa,0xbbb,g'
+    cli('container', 'edit', 'Container', '--editor', editor)
+    with open(manifest) as f:
+        data = f.read()
+    assert "0xbbb" in data
+
+    command = control_client.all_calls['unmount'][0]['storage_id']
+    assert command == 101
+    command = control_client.all_calls['unmount'][1]['storage_id']
+    assert command == 102
+    command = control_client.calls['mount']['items']
+    assert command[0]['storage']['owner'] == '0xbbb'
+
+
+def test_container_modify_remount(cli, base_dir):
+    cli('user', 'create', 'User', '--key', '0xaaa')
+    cli('container', 'create', 'Container', '--path', '/PATH')
+    cli('storage', 'create', 'local', 'Storage', '--location', '/PATH', '--container', 'Container')
+    cli('start')
+    cli('container', 'mount', 'Container')
+    mount_path = base_dir / 'wildland'
+    assert (mount_path / 'PATH').exists()
+
+    cli('container', 'modify', '--add-path', '/AUTO_REMOUNTING', 'Container')
+    assert (mount_path / 'AUTO_REMOUNTING').exists()
+
+    cli('container', 'modify', '--no-remount', '--add-path', '/NEED_REMOUNTING', 'Container')
+    assert not (mount_path / 'NEED_REMOUNTING').exists()
+
+    cli('container', 'modify', '--add-category', '/remounted_cat', '--title', 'TITLE', 'Container')
+    assert (mount_path / 'remounted_cat' / 'TITLE').exists()
+
+    cli('container', 'modify', '--no-remount', '--add-category', '/not_remounted_cat', 'Container')
+    assert not (mount_path / 'not_remounted_cat').exists()
+
+    cli('container', 'modify', '--title', 'NEW', 'Container')
+    assert (mount_path / 'not_remounted_cat' / '@remounted_cat' / 'NEW').exists()
+
+
+def test_modify_unmounts_removed_storage(base_dir, cli):
+    cli('user', 'create', 'User', '--key', '0xaaa')
+    cli('container', 'create', 'Container', '--path', '/PATH')
+    cli('storage', 'create', 'local', 'Storage1', '--location', '/PATH', '--container', 'Container')
+    cli('storage', 'create', 'local', 'Storage2', '--location', '/PATH', '--container', 'Container')
+    cli('start', '--skip-forest-mount')
+    cli('container', 'mount', 'Container')
+
+    pseudo = 'storage: pseudomanifest'
+    local = 'storage: local'
+
+    result = cli('status', '-p', capture=True)
+    assert result.count(pseudo) == 2
+    assert result.count(local) == 2
+
+    cm_path = str(base_dir / 'containers/Container.container.yaml')
+    cli('container', 'modify', '--del-storage', '1', cm_path)
+    result = cli('status', '-p', capture=True)
+    assert result.count(local) == 1
+    assert result.count(pseudo) == 1
 
 
 def test_container_add_path(cli, cli_fail, base_dir):
@@ -3228,6 +3452,11 @@ def test_container_umount_undo_save_by_container_name(cli, base_dir, control_cli
             'paths': ['/PATH'],
             'type': 'local',
             'extra': {},
+        },
+        '102': {
+            'paths': ['/PATH'],
+            'type': 'local',
+            'extra': {},
         }
     })
 
@@ -3285,6 +3514,12 @@ def test_container_umount_undo_save_by_container_names(cli, base_dir, control_cl
         }
         info_dict |= {
             str(storage_id + 4): {
+                'paths': [f'/PATH{i}'],
+                'type': 'local',
+                'extra': {},
+            },
+
+            str(storage_id + 1): {
                 'paths': [f'/PATH{i}'],
                 'type': 'local',
                 'extra': {},
@@ -3749,7 +3984,6 @@ backends:
     assert sorted(command[1]['paths']) == pseudomanifest_backend_paths
 
 
-
 def test_container_mount_container_without_storage(cli, control_client):
     control_client.expect('status', {})
     cli('user', 'create', 'User', '--key', '0xaaa')
@@ -3781,10 +4015,40 @@ def test_container_unmount(cli, base_dir, control_client):
         '/PATH': [105],
     })
     control_client.expect('unmount')
+    control_client.expect('info', {
+        '102': {
+            'paths': ['/PATH'],
+            'type': 'local',
+            'extra': {},
+        }
+    })
     cli('container', 'unmount', 'Container', '--without-subcontainers')
 
     # /.users/{owner}:/.backends/{cont_uuid}/{backend_uuid} is always the primary path
     assert control_client.calls['unmount']['storage_id'] == 102
+
+
+def test_remount_unmounts_removed_storage(base_dir, cli):
+    cli('user', 'create', 'User', '--key', '0xaaa')
+    cli('container', 'create', 'Container', '--path', '/PATH', '--no-encrypt-manifest')
+    cli('storage', 'create', 'local', 'Storage1', '--location', '/p1', '--container', 'Container')
+    cli('storage', 'create', 'local', 'Storage2', '--location', '/p2', '--container', 'Container')
+    cli('start', '--skip-forest-mount')
+    cli('container', 'mount', 'Container')
+
+    pseudo = 'storage: pseudomanifest'
+    local = 'storage: local'
+
+    result = cli('status', '-p', capture=True)
+    assert result.count(pseudo) == 2
+    assert result.count(local) == 2
+
+    editor = r"sed -i '/  - object: storage/{:a;N;/    - user: '*'/!ba};/    location: \/p2/d'"
+    cli('container', 'edit', 'Container', '--no-remount', '--editor', editor)
+    cli('container', 'mount', 'Container')
+    result = cli('status', '-p', capture=True)
+    assert result.count(local) == 1
+    assert result.count(pseudo) == 1
 
 
 def test_container_other_signer(cli, base_dir):
@@ -5505,6 +5769,20 @@ def test_forest_unmount(cli, tmp_path, base_dir, control_client):
             'type': 'local',
             'extra': {},
         },
+        '101': {
+            'paths': [
+                '/PATH'
+            ],
+            'type': 'local',
+            'extra': {},
+        },
+        '104': {
+            'paths': [
+                '/PATH'
+            ],
+            'type': 'local',
+            'extra': {},
+        },
     })
     control_client.expect('unmount')
     cli('forest', 'unmount', ':/forests/Alice:')
@@ -5532,7 +5810,6 @@ def test_pseudomanifest_unmount_when_forest_unmount(cli, tmp_path, base_dir):
     cli('forest', 'unmount', ':/forests/Bob:')
     wildland_dir_content = list(base_dir.glob("wildland/*"))
     assert len(wildland_dir_content) == 0
-
 
 def test_forest_create_check_for_published_catalog(cli, tmp_path):
     cli('user', 'create', 'Alice', '--key', '0xaaa')
@@ -5782,13 +6059,43 @@ def test_import_forest_user_with_undecryptable_bridge_link_object(tmpdir):
                             stderr=subprocess.STDOUT)
 
     lines = output.decode().splitlines()
-    assert lines == [
-        f'Created: {base_config_dir}/users/Alice.user.yaml',
-        f'\x1b[33mWarning: User {alice_key}: '
-        f'failed to load all 2 of the manifests catalog containers. '
-         '1 due to lack of decryption key and 1 due to unknown errors)\x1b[0m',
-        f'Created: {base_config_dir}/bridges/Alice.bridge.yaml'
-    ]
+    assert f'Created: {base_config_dir}/users/Alice.user.yaml' in lines[0]
+    assert f'User {alice_key}: ' \
+           f'failed to load all 2 of the manifests catalog containers. ' \
+           f'1 due to lack of decryption key and 1 due to unknown errors)' in lines[1]
+    assert f'Created: {base_config_dir}/bridges/Alice.bridge.yaml' in lines[2]
+
+    assert len(lines) == 3
+
+
+def test_forest_create_with_user_path_access(base_dir_sodium, cli_sodium, sig_sodium, tmp_path,
+                                             dir_userid, alice_userid):
+    owner, _ = sig_sodium.generate()
+    additional_owner, _ = sig_sodium.generate()
+
+    cli_sodium('user', 'create', 'Toto', '--key', owner)
+    cli_sodium('user', 'create', 'Titi', '--key', additional_owner)
+
+    cli_sodium('template', 'create', 'local', '--location', f'/{tmp_path}/wl-forest',
+               '--manifest-pattern', '/{path}.{object-type}.yaml', 'forest-tpl')
+    cli_sodium('template', 'add', 'local', '--location', f'/{tmp_path}/wl-forest',
+               '--read-only', '--manifest-pattern', '/{path}.{object-type}.yaml', 'forest-tpl')
+
+    user_path = \
+        f'{dir_userid}@https{{wildland.local/public/forest-owner.user.yaml}}:/forests/alice:'
+    cli_sodium('bridge', 'import', user_path)
+    cli_sodium('forest', 'create', '--access', user_path, '--access', additional_owner,
+               'forest-tpl')
+    output = wl_call_output(base_dir_sodium, 'user', 'dump', alice_userid)
+    alice_user = yaml_parser.safe_load(output)
+    output = wl_call_output(
+        base_dir_sodium, 'container', 'dump', 'Toto-forest-catalog').decode().strip('\n')
+    logging.critical(output)
+    assert f"access:\n" \
+           f"- user-path: 'wildland:{user_path}'\n" \
+           f"  pubkeys:\n" \
+           f"  - {alice_user['pubkeys'][0]}\n" \
+           f"- user: '{additional_owner}'" in output
 
 
 ## Storage params sanity test

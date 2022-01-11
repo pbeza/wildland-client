@@ -297,6 +297,13 @@ def test_unmount_traverse(cli, client, base_dir, control_client):
     })
     control_client.expect('unmount')
     control_client.expect('status', {})
+    control_client.expect('info', {
+        '102': {
+            'paths': ['/PATH'],
+            'type': 'local',
+            'extra': {},
+        }
+    })
     cli('container', 'unmount', ':/path:/other/path:', '--without-subcontainers')
 
 
@@ -698,7 +705,7 @@ paths:
         with pytest.raises(FileNotFoundError):
             data = search.read_file()
         logs = capsys.readouterr().err
-        assert "Warning: cannot load bridge to [/path]" in logs
+        assert "cannot load bridge to [/path]" in logs
 
 
 @pytest.mark.parametrize('owner', ['0xfff', '0xbbb'])
@@ -1234,7 +1241,7 @@ backends:
         if owner == '0xddd':
             data = search.read_file()
             assert data == b'Hello world'
-            mock_read.assert_called_with('https://mock.url', owner)
+            mock_read.assert_called_with('https://mock.url', owner, True)
 
         else:
             with pytest.raises(WildlandError):

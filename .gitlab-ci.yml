@@ -167,6 +167,11 @@ s3-test:
   script:
     - ./ci/ci-s3
 
+redis-test:
+  extends: .plugin_test
+  script:
+    - ./ci/ci-redis
+
 webdav-test:
     extends: .plugin_test
     script:
@@ -191,6 +196,8 @@ dropbox-test:
 
 googledrive-test:
   extends: .plugin_test
+  # until https://gitlab.com/wildland/wildland-client/-/issues/730 is fixed
+  allow_failure: true
   script:
     - ./ci/ci-googledrive "$GOOGLEDRIVE_TEST_ACCESS_TOKEN"
 
@@ -243,7 +250,13 @@ user-directory-test:
   stage: test
   image: $CONTAINER_TEST_IMAGE
   script:
-    - ./ci/user-directory
+    - ./ci/howto-user-directory
+
+group-users-test:
+  stage: test
+  image: $CONTAINER_TEST_IMAGE
+  script:
+    - ./ci/howto-group-users-with-user-path
 
 smoke-test:
   stage: test

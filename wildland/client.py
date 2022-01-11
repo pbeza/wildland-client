@@ -33,6 +33,7 @@ import glob
 import os
 import sys
 import time
+from copy import deepcopy
 from graphlib import TopologicalSorter
 from pathlib import Path, PurePosixPath
 from subprocess import Popen
@@ -111,11 +112,12 @@ class Client:
 
         self.cache_dir = Path(self.config.get('cache-dir'))
         self.cache_dir.mkdir(exist_ok=True, parents=True)
+        os.environ['WILDLAND_CONFIG_DIR'] = str(config.base_dir)
 
         mount_dir = Path(self.config.get('mount-dir'))
         self.bridge_separator = '\uFF1A' if self.config.get('alt-bridge-separator') else ':'
         fs_socket_path = Path(self.config.get('fs-socket-path'))
-        self.fs_client = WildlandFSClient(base_dir, mount_dir, fs_socket_path,
+        self.fs_client = WildlandFSClient(config.base_dir, mount_dir, fs_socket_path,
                                           bridge_separator=self.bridge_separator)
 
         # we only connect to sync daemon if needed
@@ -348,6 +350,37 @@ class Client:
 
         return None
 
+    def find_user_manifest_within_catalog(self, user: User) -> \
+            Optional[Tuple[Storage, PurePosixPath]]:
+        """
+        Mounts containers of the given user's manifests-catalog and attempts to find that user's
+        manifest file within that catalog.
+        The user manifest file is expected to be named 'forest-owner.user.yaml' and be placed in the
+        root directory of a storage.
+        :param user: User
+        :return: tuple of Storage where the user manifest was found and PurePosixPath path pointing
+        at that manifest in the storage
+        """
+        for container in user.load_catalog(warn_about_encrypted_manifests=False):
+            all_storages = self.all_storages(container=container)
+
+            for storage_candidate in all_storages:
+                with StorageDriver.from_storage(storage_candidate) as driver:
+                    try:
+                        file_candidate = PurePosixPath('forest-owner.user.yaml')
+                        file_content = driver.read_file(file_candidate)
+
+                        # Ensure you're able to load this object
+                        self.load_object_from_bytes(
+                            WildlandObject.Type.USER, file_content, expected_owner=user.owner)
+
+                        return storage_candidate, file_candidate
+
+                    except (FileNotFoundError, WildlandError) as ex:
+                        logger.debug('Could not read user manifest. Exception: %s', ex)
+
+        return None
+
     def load_object_from_bytes(self,
                                object_type: Union[WildlandObject.Type, None],
                                data: bytes,
@@ -394,6 +427,7 @@ class Client:
     def load_object_from_dict(self,
                               object_type: Union[WildlandObject.Type, None],
                               dictionary: dict,
+                              owner: str,
                               expected_owner: Optional[str] = None,
                               container: Optional[Container] = None):
         """
@@ -401,6 +435,7 @@ class Client:
         :param dictionary: dict containing object data
         :param object_type: expected type of object; if None, will use dict 'object' field.
         On mismatch of expected and actual type, a WildlandError will be raised.
+        :param owner: owner in whose context we load the dict
         :param expected_owner: expected owner. On mismatch of expected and actual owner,
         a WildlandError will be raised.
         :param container: used if object is STORAGE. Ignored otherwise.
@@ -408,7 +443,7 @@ class Client:
         if 'encrypted' in dictionary.keys():
             raise ManifestDecryptionKeyUnavailableError()
         if dictionary.get('object') == 'link':
-            link = self.load_link_object(dictionary, expected_owner)
+            link = self.load_link_object(dictionary, owner)
             obj = self.load_object_from_bytes(object_type, link.get_target_file())
             if expected_owner and obj.owner != expected_owner:
                 raise WildlandError('Owner mismatch: expected {}, got {}'.format(
@@ -443,7 +478,7 @@ class Client:
                                                container=container)
         return wl_object
 
-    def load_object_from_url(self, object_type: WildlandObject.Type, url: str,
+    def load_object_from_url(self, object_type: Optional[WildlandObject.Type], url: str,
                              owner: str, expected_owner: Optional[str] = None):
         """
         Load and return a Wildland object from any URL, including Wildland URLs.
@@ -472,9 +507,9 @@ class Client:
                     raise PathError(f'Container not found for path: {wlpath}')
                 return result
 
-        content = self.read_from_url(url, owner)
+        content = self.read_from_url(url, owner, True)
 
-        if object_type == WildlandObject.Type.USER:
+        if object_type == WildlandObject.Type.USER or not object_type:
             Manifest.verify_and_load_pubkeys(content, self.session.sig)
 
         local_owners = self.config.get('local-owners')
@@ -500,7 +535,7 @@ class Client:
                                            trusted_owner=trusted_owner, local_owners=local_owners,
                                            decrypt=decrypt)
 
-    def load_object_from_url_or_dict(self, object_type: WildlandObject.Type,
+    def load_object_from_url_or_dict(self, object_type: Optional[WildlandObject.Type],
                                      obj: Union[str, dict],
                                      owner: str, expected_owner: Optional[str] = None,
                                      container: Optional[Container] = None):
@@ -517,7 +552,8 @@ class Client:
             return self.load_object_from_url(object_type, obj, owner, expected_owner)
 
         if isinstance(obj, collections.abc.Mapping):
-            return self.load_object_from_dict(object_type, obj, expected_owner=owner,
+            return self.load_object_from_dict(object_type, obj, owner,
+                                              expected_owner=expected_owner,
                                               container=container)
         raise ValueError(f'{obj} is neither url nor dict')
 
@@ -577,7 +613,7 @@ class Client:
                     # not a user transition, or user already known
                     continue
                 user = step.user
-                logger.info('importing user %s', user.owner)
+                logger.debug('importing user %s', user.owner)
                 # save the original manifest, don't risk the need to re-sign
                 path = self.new_path(WildlandObject.Type.USER, user.owner)
                 path.write_bytes(user.manifest.to_bytes())
@@ -871,7 +907,8 @@ class Client:
 
     def save_object(self, object_type: WildlandObject.Type,
                     obj, path: Optional[Path] = None,
-                    storage_driver: Optional[StorageDriver] = None) -> Path:
+                    storage_driver: Optional[StorageDriver] = None,
+                    enforce_original_bytes: bool = False) -> Path:
         """
         Save an existing Wildland object and return the path it was saved to.
         :param obj: Object to be saved
@@ -879,13 +916,19 @@ class Client:
         :param path: (optional), path to save the object to; if omitted, object's local_path will be
         used.
         :param storage_driver: if the object should be written to a given StorageDriver
+        :param enforce_original_bytes: should the object be written as-it-was, or should any
+        changes, updated fields etc. be used.
         """
         path = path or obj.local_path
         assert path is not None
-        if object_type == WildlandObject.Type.USER:
-            data = self.session.dump_user(obj, path)
+
+        if enforce_original_bytes and obj.manifest:
+            data = obj.manifest.to_bytes()
         else:
-            data = self.session.dump_object(obj, path)
+            if object_type == WildlandObject.Type.USER:
+                data = self.session.dump_user(obj, path)
+            else:
+                data = self.session.dump_object(obj, path)
 
         if storage_driver:
             with storage_driver:
@@ -901,7 +944,7 @@ class Client:
         return path
 
     def save_new_object(self, object_type: WildlandObject.Type, object_, name: Optional[str] = None,
-                        path: Optional[Path] = None):
+                        path: Optional[Path] = None, enforce_original_bytes: bool = False):
         """
         Save a new object in appropriate directory. Use the name as a hint for file
         name.
@@ -917,7 +960,8 @@ class Client:
 
             path = self.new_path(object_type, name or object_type.value)
 
-        return self.save_object(object_type, object_, path=path)
+        return self.save_object(object_type, object_, path=path,
+                                enforce_original_bytes=enforce_original_bytes)
 
     def new_path(self, manifest_type: WildlandObject.Type, name: str,
                  skip_numeric_suffix: bool = False, base_dir: Path = None) -> Path:
@@ -935,6 +979,13 @@ class Client:
 
         if not base_dir.exists():
             base_dir.mkdir(parents=True)
+
+        if name.endswith('.yaml'):
+            name = name[:-len('.yaml')]
+
+        for t in WildlandObject.Type:
+            if name.endswith(f'.{t.value}'):
+                name = name[:-len(f'.{t.value}')]
 
         i = 0
         while True:
@@ -1170,8 +1221,7 @@ class Client:
                 try:
                     return local_path.read_bytes()
                 except IOError as e:
-                    raise WildlandError('Error retrieving file URL: {}: {}'.format(
-                        url, e)) from e
+                    raise WildlandError(f'Error retrieving file URL: {url}: {e}') from e
             raise FileNotFoundError(2, 'File URL not found', url)
 
         if url.startswith('http:') or url.startswith('https:'):
@@ -1180,8 +1230,7 @@ class Client:
                 resp.raise_for_status()
                 return resp.content
             except Exception as e:
-                raise WildlandError('Error retrieving HTTP/HTTPS URL: {}: {}'.format(
-                    url, e)) from e
+                raise WildlandError(f'Error retrieving HTTP/HTTPS URL: {url}: {e}') from e
 
         raise WildlandError(f'Unrecognized URL: {url}')
 
@@ -1192,6 +1241,12 @@ class Client:
 
         assert path.is_absolute
         return 'file://' + self.config.get('local-hostname') + quote(str(path))
+
+    def is_local_url(self, url: str) -> bool:
+        """
+        Check if the provided url is a local url.
+        """
+        return url.startswith('file://' + self.config.get('local-hostname'))
 
     def parse_file_url(self, url: str, owner: str) -> Optional[Path]:
         """
@@ -1407,3 +1462,31 @@ class Client:
             self.stop_sync(job_id)
 
         return msg, success
+
+    def load_pubkeys_from_field(self, input_list, default_owner: str = None):
+        """
+        Load and set pubkeys from provided access list. Default owner is provided
+        in order to load user access provided as WLPath.
+        """
+        final_list = deepcopy(input_list)
+        for elmnt in final_list:
+            if elmnt.get("user-path", None):
+                if default_owner:
+                    aliases = {'default': default_owner}
+                else:
+                    aliases = {}
+                search = Search(client=self, wlpath=elmnt["user-path"], aliases=aliases)
+                bridge = list(search.read_bridge())[0]
+                user = self.load_object_from_url_or_dict(object_type=WildlandObject.Type.USER,
+                                                         obj=bridge.user_location,
+                                                         owner=bridge.owner,
+                                                         expected_owner=bridge.user_id)
+                self.recognize_users_and_bridges([user], [bridge])
+            elif elmnt.get("user", None):
+                if elmnt["user"] == "*":
+                    continue
+                user = self.load_object_from_name(WildlandObject.Type.USER, elmnt["user"])
+            else:
+                raise WildlandError(f"Unknown entry: {elmnt}")
+            elmnt["pubkeys"] = self.session.sig.get_all_pubkeys(user.owner)
+        return final_list

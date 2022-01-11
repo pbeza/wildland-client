@@ -44,6 +44,7 @@ from xdg import BaseDirectory
 import wildland.cli.cli_common as cli_common
 from wildland.client import Client
 from wildland.wildland_object.wildland_object import WildlandObject
+from wildland.fs_client import StorageInfo
 from .cli_base import aliased_group, ContextObj
 from .cli_exc import CliError
 from .cli_storage import do_create_storage_from_templates
@@ -59,6 +60,7 @@ from ..storage import Storage, StorageBackend
 from ..storage_sync.base import BaseSyncer, SyncConflict
 from ..tests.profiling.profilers import profile
 from ..utils import yaml_parser
+from ..wlpath import WildlandPath
 
 try:
     RUNTIME_DIR = Path(BaseDirectory.get_runtime_dir())
@@ -179,15 +181,22 @@ def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Opt
             raise CliError(f'Could not load [{storage_template}] storage template. {we}') from we
 
     if access:
-        access_list = [{'user': obj.client.load_object_from_name(
-            WildlandObject.Type.USER, user).owner} for user in access]
+        access_list = []
+        for a in access:
+            if WildlandPath.WLPATH_RE.match(a):
+                # We use canonical form of a Wildland path because we want the whole
+                # path with prefix into manifest
+                access_list.append({"user-path": WildlandPath.get_canonical_form(a)})
+            else:
+                access_list.append({"user": obj.client.load_object_from_name(
+                    WildlandObject.Type.USER, a).owner})
     elif not encrypt_manifest:
         access_list = [{'user': '*'}]
     else:
         access_list = []
 
-    owner_user = obj.client.load_object_from_name(WildlandObject.Type.USER,
-                                                  owner or '@default-owner')
+    owner_user = obj.client.load_object_from_name(
+        WildlandObject.Type.USER, owner or '@default-owner')
 
     container = Container(
         owner=owner_user.owner,
@@ -306,7 +315,7 @@ def list_(obj: ContextObj):
             click.echo(f'Error {e.error_code}: {e.error_description}')
 
     # TODO: this used to use a client method called load_users_with_bridge_paths; perhaps this
-    # will be obsolete soon? repeated code from cli_user.py::list_
+    #  will be obsolete soon? repeated code from cli_user.py::list_
     bridges_from_default_user: Dict[str, List[str]] = dict()
     for bridge in bridges:
         if bridge.owner != default_user:
@@ -322,7 +331,7 @@ def list_(obj: ContextObj):
 
     for container in containers:
         # TODO: that's an ugly workaround which only partially works
-        # to be replaced when _container_info will be ready to accept WLContainer
+        #  to be replaced when _container_info will be ready to accept WLContainer
         _container_result, _container = obj.wlcore.container_find_by_id(container.id)
         if _container_result.success:
             _container_info(obj.client, _container, users_and_bridge_paths)
@@ -346,7 +355,7 @@ def info(obj: ContextObj, name):
             click.echo(f'Error {e.error_code}: {e.error_description}')
 
     # TODO: this used to use a client method called load_users_with_bridge_paths; perhaps this
-    # will be obsolete soon? repeated code from cli_user.py::list_
+    #  will be obsolete soon? repeated code from cli_user.py::list_
     bridges_from_default_user: Dict[str, List[str]] = dict()
     for bridge in bridges:
         if bridge.owner != default_user:
@@ -364,7 +373,7 @@ def info(obj: ContextObj, name):
     if not container_result.success or not container:
         raise CliError(f'{container_result}')
     # TODO: that's an ugly workaround which only partially works
-    # to be replaced when _container_info will be ready to accept WLContainer
+    #  to be replaced when _container_info will be ready to accept WLContainer
     result, _container = obj.wlcore.container_find_by_id(container.id)
     if not result.success:
         raise CliError(f'{result}')
@@ -549,6 +558,16 @@ def _get_storages_idx_to_del(ctx, del_storage, input_file):
     return to_del_nested
 
 
+def _get_container_accesses(ctx, input_file):
+    if not os.path.exists(input_file):
+        return []
+    container_manifest = cli_common.find_manifest_file(
+        ctx.obj.client, input_file, 'container').read_bytes()
+    container_yaml = list(yaml_parser.safe_load_all(container_manifest))[1]
+
+    return container_yaml.get('access', [])
+
+
 def wl_path_for_container(client: Client, container: Container,
                           user_paths: Optional[Iterable[Iterable[PurePosixPath]]] = None) -> str:
     """
@@ -625,38 +644,22 @@ def prepare_mount(obj: ContextObj,
         subcontainers = []
 
     if not subcontainers or not only_subcontainers:
-        storages = obj.client.get_storages_to_mount(container)
+        storages: List[Storage] = obj.client.get_storages_to_mount(container)
         primary_storage_id = obj.fs_client.find_primary_storage_id(container)
 
         if primary_storage_id is None:
             if verbose:
                 click.echo(f'new: {container_name}')
             _cache_sync(obj.client, container, storages, verbose, user_paths)
-            yield (container, storages, user_paths, subcontainer_of)
+            yield container, storages, user_paths, subcontainer_of
         elif remount:
-            storages_to_remount = []
-
-            orphaned_storage_paths = obj.fs_client.get_orphaned_container_storage_paths(
-                container, storages)
-
-            for path in orphaned_storage_paths:
-                storage_id = obj.fs_client.find_storage_id_by_path(path)
-                assert storage_id is not None
-                click.echo(f'Removing orphaned storage {path} (id: {storage_id})')
+            to_remount, to_unmount = cli_common.prepare_remount(
+                obj, container, storages, user_paths)
+            for storage_id in to_unmount:
                 obj.fs_client.unmount_storage(storage_id)
 
-            for storage in storages:
-                if obj.fs_client.should_remount(container, storage, user_paths):
-                    storages_to_remount.append(storage)
-
-                    if verbose:
-                        click.echo(f'changed: {storage.backend_id}')
-                else:
-                    if verbose:
-                        click.echo(f'not changed: {storage.backend_id}')
-
             _cache_sync(obj.client, container, storages, verbose, user_paths)
-            yield (container, storages_to_remount, user_paths, subcontainer_of)
+            yield container, to_remount, user_paths, subcontainer_of
         else:
             raise WildlandError(f'Already mounted: {container.local_path}')
 
@@ -816,6 +819,7 @@ def _mount(obj: ContextObj, container_names: Sequence[str],
     params: List[Tuple[Container, List[Storage], List[Iterable[PurePosixPath]], Container]] = []
     successfully_loaded_container_names: List[str] = []
     fails: List[str] = []
+    storages_count = 0
 
     for container_name in container_names:
         current_params: List[Tuple[Container, List[Storage],
@@ -844,9 +848,11 @@ def _mount(obj: ContextObj, container_names: Sequence[str],
         for container in counter(reordered):
             try:
                 user_paths = client.get_bridge_paths_for_user(container.owner)
-                mount_params = prepare_mount(
+                mount_params_generator = prepare_mount(
                     obj, container, str(container), user_paths,
                     remount, with_subcontainers, None, list_all, only_subcontainers)
+                mount_params = list(mount_params_generator)
+                storages_count += sum(len(params[1]) for params in mount_params)
                 current_params.extend(mount_params)
             except WildlandError as ex:
                 fails.append(f'Cannot mount container {container}: {str(ex)}')
@@ -854,11 +860,8 @@ def _mount(obj: ContextObj, container_names: Sequence[str],
         successfully_loaded_container_names.append(container_name)
         params.extend(current_params)
 
-    if len(params) > 1:
-        click.echo(f'Mounting storages for containers: {len(params)}')
-        obj.fs_client.mount_multiple_containers(params, remount=remount)
-    elif len(params) > 0:
-        click.echo('Mounting one storage')
+    if storages_count:
+        click.echo(f'Mounting storage(s): {storages_count}')
         obj.fs_client.mount_multiple_containers(params, remount=remount)
     else:
         click.echo('No containers need (re)mounting')
@@ -936,8 +939,9 @@ def _unmount(obj: ContextObj, container_names: Sequence[str], path: str,
 
     if unmount_all:
         ids = obj.fs_client.get_mounted_storage_ids()
-        if len(ids) > 0:
-            click.echo(f'Unmounting {len(ids)} storages')
+        unmount_count = _count_normal_storages(obj, ids)
+        if unmount_count > 0:
+            click.echo(f'Unmounting {unmount_count} storages')
             for ident in ids:
                 obj.fs_client.unmount_storage(ident)
             click.echo('Stopping all sync jobs')
@@ -996,7 +1000,8 @@ def _unmount(obj: ContextObj, container_names: Sequence[str], path: str,
     all_cache_ids = list(dict.fromkeys(all_cache_ids))
 
     if all_storage_ids or all_cache_ids:
-        click.echo(f'Unmounting {len(storage_ids)} containers')
+        storages_count = _count_normal_storages(obj, all_storage_ids + all_cache_ids)
+        click.echo(f'Unmounting {storages_count} storages')
         for storage_id in all_storage_ids:
             obj.fs_client.unmount_storage(storage_id)
 
@@ -1011,6 +1016,11 @@ def _unmount(obj: ContextObj, container_names: Sequence[str], path: str,
     if fails:
         raise WildlandError('\n'.join(fails))
 
+
+def _count_normal_storages(obj: ContextObj, storage_ids: List[int]):
+    return len(list(filter(
+        lambda storage_id: not _is_pseudomanifest_storage_id(obj, storage_id), storage_ids
+    )))
 
 def _mount_path_to_backend_id(path: PurePosixPath) -> Optional[str]:
     pattern = r'^/.users/[0-9a-z-]+:/.backends/[0-9a-z-]+/([0-9a-z-]+)$'
@@ -1100,9 +1110,8 @@ def _is_pseudomanifest_storage_id(obj: ContextObj, storage_id: int) -> bool:
     """
     Check whether given storage ID corresponds to a pseudomanifest storage.
     """
-    primary_path = obj.fs_client.get_primary_unique_mount_path_from_storage_id(storage_id)
-    return _is_pseudomanifest_primary_mount_path(primary_path)
-
+    storage_info: StorageInfo = obj.fs_client.get_storage_info(storage_id)
+    return storage_info.type == 'pseudomanifest'
 
 def _is_pseudomanifest_primary_mount_path(path: PurePosixPath) -> bool:
     """
@@ -1325,7 +1334,7 @@ def dump(ctx: click.Context, path: str, decrypt: bool):
 @container_.command(short_help='edit container manifest in external tool')
 @click.option('--editor', metavar='EDITOR', help='custom editor')
 @click.option('--remount/--no-remount', '-r/-n', default=True, help='remount mounted container')
-@click.option('--publish/--no-publish', '-p/-P', default=True, help='publish edited container')
+@click.option('--publish/--no-publish', '-p/-P', default=False, help='publish edited container')
 @click.argument('path', metavar='FILE or WLPATH')
 @click.pass_context
 def edit(ctx: click.Context, path: str, publish: bool, editor: Optional[str], remount: bool):
@@ -1335,5 +1344,20 @@ def edit(ctx: click.Context, path: str, publish: bool, editor: Optional[str], re
     container, manifest_modified = cli_common.resolve_object(
         ctx, path, WildlandObject.Type.CONTAINER, cli_common.edit, editor=editor, remount=remount)
 
-    if publish and manifest_modified:
-        cli_common.republish_object(ctx.obj.client, container)
+    if manifest_modified:
+        if isinstance(container, Container):
+            owner = container.owner
+        else:
+            # container object should always be an instance of Container class
+            click.echo('Edited object is not a container.')
+            return
+
+        client = ctx.obj.client
+
+        if Publisher.is_published(client, owner, container.get_primary_publish_path()):
+            cli_common.republish_object(client, container)
+
+        elif publish:
+            user = client.load_object_from_name(WildlandObject.Type.USER, owner)
+            click.echo('Publishing a container')
+            Publisher(client, user).publish(container)

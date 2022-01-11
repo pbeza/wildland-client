@@ -86,6 +86,8 @@ class Link(WildlandObject, obj_type=WildlandObject.Type.LINK):
             fields['storage']['version'] = Manifest.CURRENT_VERSION
         storage_obj = client.load_object_from_dict(
             WildlandObject.Type.STORAGE, fields['storage'],
+            owner=fields.get("owner", None) or fields.get("storage-owner", None) \
+                or kwargs.get('expected_owner', None),
             expected_owner=fields.get("storage-owner", None) or kwargs.get('expected_owner', None)
         )
         storage_driver = StorageDriver.from_storage(storage_obj)
@@ -103,11 +105,21 @@ class Link(WildlandObject, obj_type=WildlandObject.Type.LINK):
     def from_manifest(cls, manifest, client, object_type=None, **kwargs):
         raise WildlandError('Link object cannot be an independent manifest')
 
-    def to_manifest_fields(self, inline: bool):
+    def to_manifest_fields(self, inline: bool, str_repr_only: bool = False):
+        if self.storage_driver.storage:
+            params = self.storage_driver.storage.to_manifest_fields(inline=True)
+        elif str_repr_only:
+            params = self.storage_driver.storage_backend.params
+        else:
+            raise WildlandError('Link object not initialized with Storage')
+
+        if params.get("access"):
+            params["access"] = self.client.load_pubkeys_from_field(
+                params["access"], '@default-owner')
         fields = {
             'object': 'link',
             'file': str(self.file_path),
-            'storage': self.storage_driver.storage_backend.params
+            'storage': params
         }
         if self.storage_owner:
             fields["storage-owner"] = self.storage_owner
@@ -117,7 +129,7 @@ class Link(WildlandObject, obj_type=WildlandObject.Type.LINK):
         """
         This function provides filtered sensitive and unneeded fields for representation
         """
-        fields = self.to_manifest_fields(inline=True)
+        fields = self.to_manifest_fields(inline=True, str_repr_only=True)
         if not include_sensitive:
             del fields['storage']
         elif self.storage_driver.storage_backend:

@@ -35,7 +35,7 @@ from ..user import User
 
 from .cli_base import aliased_group, ContextObj
 from .cli_exc import CliError
-from ..wlpath import WILDLAND_URL_PREFIX
+from ..wlpath import WILDLAND_URL_PREFIX, WildlandPath
 from .cli_common import sign, verify, edit, modify_manifest, add_fields, del_fields, dump, \
     check_if_any_options, check_options_conflict, publish, unpublish
 from ..exc import WildlandError
@@ -43,7 +43,7 @@ from ..manifest.manifest import Manifest
 from ..storage_driver import StorageDriver
 from ..storage import Storage
 from ..log import get_logger
-from ..core.wildland_objects_api import WLObjectType
+from ..core.wildland_objects_api import WLObjectType, WLUser, WLBridge
 
 logger = get_logger('cli-user')
 
@@ -102,10 +102,6 @@ def create(obj: ContextObj, key, paths, additional_pubkeys, name):
         if not key:
             obj.wlcore.user_remove_key(owner, force=False)
         raise CliError(f'Failed to create user: {result}')
-
-    _, path = obj.wlcore.object_get_local_path(WLObjectType.USER, user.id)
-
-    click.echo(f'Created: {path}')
 
     _, current_default = obj.wlcore.env.get_default_user()
     if not current_default:
@@ -374,9 +370,8 @@ def find_user_manifest_within_catalog(obj, user: User) -> \
 
     :param obj: ContextObj
     :param user: User
-    :return tuple of Storage where the user manifest was found and PurePosixPath path pointing
+    :return: tuple of Storage where the user manifest was found and PurePosixPath path pointing
     at that manifest in the storage
-
     """
     for container in user.load_catalog(warn_about_encrypted_manifests=False):
         all_storages = obj.client.all_storages(container=container)
@@ -546,12 +541,8 @@ def import_manifest(obj: ContextObj, path_or_url: str, paths: Iterable[str],
                    ' use user\'s paths')
 @click.option('--bridge-owner', help="specify a different (then default) user to be used as the "
                                      "owner of created bridge manifests")
-@click.option('--only-first', is_flag=True, default=False,
-              help="import only first encountered bridge "
-                   "(ignored in all cases except WL container paths)")
 @click.argument('path-or-url')
-def user_import(obj: ContextObj, path_or_url: str, paths: Tuple[str], bridge_owner: Optional[str],
-                only_first: bool):
+def user_import(obj: ContextObj, path_or_url: str, paths: List[str], bridge_owner: Optional[str]):
     """
     Import a provided user or bridge manifest.
     Accepts a local path, an url or a Wildland path to manifest or to bridge.
@@ -560,8 +551,45 @@ def user_import(obj: ContextObj, path_or_url: str, paths: Tuple[str], bridge_own
     """
     # TODO: remove imported keys and manifests on failure: requires some thought about how to
     # collect information on (potentially) multiple objects created
+    p = Path(path_or_url)
+    name = path_or_url
+    name = name.split('/')[-1]
 
-    import_manifest(obj, path_or_url, paths, WildlandObject.Type.USER, bridge_owner, only_first)
+    if p.exists():
+        yaml_data = p.read_bytes()
+        name = p.name
+        result, imported_object = obj.wlcore.object_import_from_yaml(yaml_data, name)
+    else:
+        result, imported_object = obj.wlcore.object_import_from_url(path_or_url, name)
+
+    if not result.success:
+        if len(result.errors) == 1 and result.errors[0].error_code == 4:
+            result, imported_object = obj.wlcore.user_get_by_id(result.errors[0].error_description)
+            if not imported_object:
+                raise CliError(f'Failed to import manifest: {str(result)}')
+            click.echo('User already exists, skipping.')
+        else:
+            raise CliError(f'Failed to import manifest: {str(result)}')
+
+    if isinstance(imported_object, WLUser):
+        result, bridges = obj.wlcore.bridge_list()
+        for bridge in bridges:
+            if bridge.user_id == imported_object.owner:
+                click.echo('Bridge already exists, skipping.')
+                return
+        result, _ = obj.wlcore.bridge_create(paths, bridge_owner, imported_object.owner,
+                                             user_url=path_or_url, name=name)
+    elif isinstance(imported_object, WLBridge):
+        # TODO: this requires better handling through wlcore's bridge function, which are
+        # TODO: not yet implemented. See #698
+        obj.wlcore.bridge_delete(imported_object.id)
+        import_manifest(obj, path_or_url, paths, WildlandObject.Type.USER, bridge_owner, False)
+    else:
+        raise CliError(f'Cannot import {path_or_url}: only user or bridge '
+                       f'manifests can be imported')
+
+    if not result.success:
+        raise CliError(f'Failed to import {path_or_url}: {result}')
 
 
 @user_.command('refresh', short_help='Iterate over bridges and pull latest user manifests',
@@ -621,7 +649,7 @@ user_.add_command(unpublish)
 @click.option('--del-path', metavar='PATH', multiple=True, help='path to remove')
 @click.option('--add-catalog-entry', metavar='PATH', multiple=True, help='container path to add')
 @click.option('--del-catalog-entry', metavar='PATH', multiple=True, help='container path to remove')
-@click.option('--add-pubkey', metavar='PUBKEY', multiple=True, help='raw public keys to append')
+@click.option('--add-pubkey', metavar='PUBKEY', multiple=True, help='raw public key to append')
 @click.option('--add-pubkey-user', metavar='USER', multiple=True,
               help='user whose public keys should be appended to FILE')
 @click.option('--del-pubkey', metavar='PUBKEY', multiple=True, help='public key to remove')
@@ -638,10 +666,28 @@ def modify(ctx: click.Context,
     _option_check(ctx, add_path, del_path, add_catalog_entry, del_catalog_entry,
                   add_pubkey, add_pubkey_user, del_pubkey)
 
-    pubkeys = _get_all_pubkeys_and_check_conflicts(ctx, add_pubkey, add_pubkey_user, del_pubkey)
+    add_members = []
+    add_pubkeys = []
+    for p in add_pubkey:
+        if WildlandPath.WLPATH_RE.match(p):
+            add_members.append({"user-path": WildlandPath.get_canonical_form(p)})
+        else:
+            add_pubkeys.append(p)
 
-    to_add = {'paths': add_path, 'manifests-catalog': add_catalog_entry, 'pubkeys': pubkeys}
-    to_del = {'paths': del_path, 'manifests-catalog': del_catalog_entry, 'pubkeys': del_pubkey}
+    del_members = []
+    del_pubkeys = []
+    for p in del_pubkey:
+        if WildlandPath.WLPATH_RE.match(p):
+            del_members.append({"user-path": WildlandPath.get_canonical_form(p)})
+        else:
+            del_pubkeys.append(p)
+
+    pubkeys = _get_all_pubkeys_and_check_conflicts(ctx, add_pubkeys, add_pubkey_user, del_pubkeys)
+
+    to_add = {'paths': add_path, 'manifests-catalog': add_catalog_entry,
+              'pubkeys': pubkeys, 'members': add_members}
+    to_del = {'paths': del_path, 'manifests-catalog': del_catalog_entry,
+              'pubkeys': del_pubkeys, 'members': del_members}
 
     modify_manifest(ctx, input_file,
                     edit_funcs=[add_fields, del_fields],

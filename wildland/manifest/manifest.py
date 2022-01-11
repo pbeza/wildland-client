@@ -135,16 +135,25 @@ class Manifest:
         keys_to_encrypt = sig.get_all_pubkeys(owner)
         if 'access' in fields.keys():
             for data_dict in fields['access']:
-                user = data_dict['user']
+                pubkeys = None
+                user = data_dict.get('user', None)
+                user_path = data_dict.get('user-path', None)
+                if not user and not user_path:
+                    raise ManifestError(f"Unknown field in access: {data_dict}")
                 if user == '*':
                     return fields
                 if user == owner:
+                    data_dict.pop("pubkeys", None)
                     continue
-                pubkeys = sig.get_all_pubkeys(user)
+                if data_dict.get("pubkeys", None):
+                    pubkeys = data_dict["pubkeys"]
+                elif user:
+                    pubkeys = sig.get_all_pubkeys(user)
                 if not pubkeys:
-                    raise ManifestError(f'Cannot encrypt to {user}.')
+                    raise ManifestError(f'Cannot encrypt to "{user if user else user_path}"')
                 keys_to_encrypt.extend(pubkeys)
-
+                if user:
+                    data_dict.pop("pubkeys", None)
         keys_to_encrypt = set(keys_to_encrypt)
         data_to_encrypt = yaml_parser.dump(fields, sort_keys=False).encode()
         try:
@@ -397,7 +406,6 @@ class Manifest:
         If attach_pubkey is true, attach the public key to the signature.
         Can force not encrypting, if needed.
         """
-
         if self.header is not None:
             self.header = None
 
@@ -409,8 +417,7 @@ class Manifest:
             data = yaml_parser.dump(fields, encoding='utf-8', sort_keys=False)
 
         owner = self._fields['owner']
-        signature = sig_context.sign(owner, data,
-                                     only_use_primary_key=only_use_primary_key)
+        signature = sig_context.sign(owner, data, only_use_primary_key=only_use_primary_key)
 
         self._original_data = data
         self._fields = fields
@@ -525,21 +532,29 @@ class Manifest:
         fields = cls._parse_yaml(rest_data, sig_context)
         # to be able to import keys from both bridge ('pubkey' field) and user ('pubkeys' field)
         # we have to handle both fields
-        pubkeys = fields.get('pubkeys', [])
-        if not pubkeys:
-            pubkeys = [fields.get('pubkey')]
 
-        if len(pubkeys) < 1:
-            raise ManifestError('Manifest doest not contain any pubkeys')
+        primary_pubkey = None
 
-        primary_pubkey = pubkeys[0]
+        if fields.get('object') == 'user':
+            pubkeys = fields.get('pubkeys', [])
+            if not pubkeys:
+                raise ManifestError('User manifest doest not contain any pubkeys')
+            primary_pubkey = pubkeys[0]
+        elif fields.get('object') == 'bridge':
+            primary_pubkey = fields.get('pubkey')
+            if not primary_pubkey:
+                raise ManifestError('Bridge manifest doest not contain a pubkey')
+            pubkeys = [primary_pubkey]
+        else:
+            pubkeys = []
 
         # Now we can verify integrity of the self-signed manifest
         owner = header.verify_rest(rest_data, sig_context, trusted_owner=None,
                                    pubkey=primary_pubkey)
 
         # Add the retrieved pubkey(s) to the sig context
-        sig_context.keys[owner] = primary_pubkey
+        if primary_pubkey:
+            sig_context.keys[owner] = primary_pubkey
 
         for pubkey in pubkeys:
             sig_context.add_pubkey(pubkey, owner)

@@ -30,7 +30,7 @@ import logging
 import subprocess
 import sys
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Callable, List, Any, Optional, Dict, Tuple, Union
 
 import click
@@ -60,6 +60,7 @@ from ..publish import Publisher
 from ..log import get_logger
 
 LOGGER = get_logger('cli-common')
+
 
 def wrap_output(func):
     """
@@ -224,8 +225,8 @@ def _sign_and_save(
         updated_user.add_user_keys(obj.client.session.sig)
 
     try:
-        manifest.encrypt_and_sign(obj.client.session.sig,
-                                  only_use_primary_key=(manifest_type == 'user'))
+        manifest.encrypt_and_sign(
+            obj.client.session.sig, only_use_primary_key=(manifest_type == 'user'))
     except SigError as se:
         raise CliError(f'Cannot sign manifest: {se}') from se
 
@@ -328,12 +329,16 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
         manifest_type = ctx.parent.parent.command.name if ctx.parent and ctx.parent.parent else None
     if manifest_type == 'wl':
         manifest_type = None
+    manifest = None
+    owner = None
+    new_owner = None
 
     path = find_manifest_file(obj.client, input_file, manifest_type)
 
     try:
         manifest = Manifest.from_file(path, obj.client.session.sig)
         actual_manifest_type = manifest.fields['object']
+        owner = manifest.fields['owner']
         if manifest_type is None:
             manifest_type = actual_manifest_type
         else:
@@ -366,8 +371,8 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
             return False
 
         try:
-            manifest = Manifest.from_unsigned_bytes(data, obj.client.session.sig)
-            manifest.skip_verification()
+            new_manifest = Manifest.from_unsigned_bytes(data, obj.client.session.sig)
+            new_manifest.skip_verification()
         except (ManifestError, WildlandError) as e:
             click.secho(f'Manifest parse error: {e}', fg="red")
             if click.confirm('Do you want to edit the manifest again to fix the error?'):
@@ -375,8 +380,10 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
             click.echo('Changes not saved.')
             return False
 
+        new_owner = new_manifest.fields['owner']
+
         try:
-            _sign_and_save(obj, manifest, manifest_type, path)
+            _sign_and_save(obj, new_manifest, manifest_type, path)
         except CliError as e:
             click.secho(f'Manifest signing error: {e}', fg="red")
             if click.confirm('Do you want to edit the manifest again to fix the error?'):
@@ -388,9 +395,45 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
 
     if remount and manifest_type == 'container' and obj.fs_client.is_running():
         path = find_manifest_file(obj.client, input_file, manifest_type)
-        remount_container(obj, path)
+        owner_changed = owner is not None and owner != new_owner
+        if owner_changed:
+            LOGGER.debug("Owner changed")
+            assert manifest is not None
+            hard_remount_container(obj, path, old_manifest=manifest)
+        else:
+            remount_container(obj, path)
 
     return True
+
+
+def hard_remount_container(obj, container_path: Path, old_manifest: Manifest):
+    """
+    Unmount all storages and then mount new ones.
+
+    @param obj context object
+    @param container_path is the path to the new container manifest, to be mounted
+    @param old_manifest manifest before changes, to be unmounted
+    """
+    old_container = WildlandObject.from_manifest(old_manifest, obj.client,
+                                                 WildlandObject.Type.CONTAINER,
+                                                 local_owners=obj.client.config.get(
+                                                     'local-owners'))
+
+    if obj.fs_client.find_primary_storage_id(old_container) is not None:
+        click.echo('Container is mounted, remounting')
+        # unmount old container
+        for path in obj.fs_client.get_unique_storage_paths(old_container):
+            storage_and_pseudo_ids = find_storage_and_pseudomanifest_storage_ids(obj, path)
+            LOGGER.debug('  Removing storage %s @ id: %d', path, storage_and_pseudo_ids[0])
+            for storage_id in storage_and_pseudo_ids:
+                obj.fs_client.unmount_storage(storage_id)
+
+        # mount new container
+        container = obj.client.load_object_from_file_path(
+            WildlandObject.Type.CONTAINER, container_path)
+        storages = obj.client.get_storages_to_mount(container)
+        user_paths = obj.client.get_bridge_paths_for_user(container.owner)
+        obj.fs_client.mount_container(container, storages, user_paths, remount=True)
 
 
 @click.command(short_help='publish a manifest')
@@ -498,7 +541,57 @@ def remount_container(ctx_obj: ContextObj, path: Path):
         user_paths = ctx_obj.client.get_bridge_paths_for_user(container.owner)
         storages = ctx_obj.client.get_storages_to_mount(container)
 
-        ctx_obj.fs_client.mount_container(container, storages, user_paths, remount=True)
+        to_remount, to_unmount = prepare_remount(
+            ctx_obj, container, storages, user_paths, force_remount=True)
+        for storage_id in to_unmount:
+            ctx_obj.fs_client.unmount_storage(storage_id)
+
+        ctx_obj.fs_client.mount_container(container, to_remount, user_paths, remount=True)
+
+
+def prepare_remount(obj, container, storages, user_paths, force_remount=False):
+    """
+    Return storages to remount and storage IDs to unmount when remounting the container.
+    """
+    LOGGER.debug('Prepare remount')
+    storages_to_remount = []
+    storages_to_unmount = []
+
+    for path in obj.fs_client.get_orphaned_container_storage_paths(container, storages):
+        storage_and_pseudo_ids = find_storage_and_pseudomanifest_storage_ids(obj, path)
+        LOGGER.debug('  Removing orphan storage %s @ id: %d', path, storage_and_pseudo_ids[0])
+        storages_to_unmount += storage_and_pseudo_ids
+
+    if not force_remount:
+        for storage in storages:
+            if obj.fs_client.should_remount(container, storage, user_paths):
+                LOGGER.debug('  Remounting storage: %s', storage.backend_id)
+                storages_to_remount.append(storage)
+            else:
+                LOGGER.debug('  Storage not changed: %s', storage.backend_id)
+    else:
+        storages_to_remount = storages
+
+    return storages_to_remount, storages_to_unmount
+
+
+def find_storage_and_pseudomanifest_storage_ids(obj, path):
+    """
+    Find first storage ID for a given mount path. ``None` is returned if the given path is not
+    related to any storage.
+    """
+    storage_id = obj.fs_client.find_storage_id_by_path(path)
+
+    pm_path = PurePosixPath(str(path) + '-pseudomanifest/.manifest.wildland.yaml')
+    pseudo_storage_id = obj.fs_client.find_storage_id_by_path(pm_path)
+    if pseudo_storage_id is None:
+        pm_path = PurePosixPath(str(path) + '/.manifest.wildland.yaml')
+        pseudo_storage_id = obj.fs_client.find_storage_id_by_path(pm_path)
+
+    assert storage_id is not None
+    assert pseudo_storage_id is not None
+
+    return storage_id, pseudo_storage_id
 
 
 def modify_manifest(pass_ctx: click.Context, input_file: str, edit_funcs: List[Callable[..., dict]],
@@ -613,7 +706,7 @@ def del_fields(
         **_kwargs
         ) -> dict:
     """
-    Callback function for `modify_manifest`. Removes values from a list or a set either by values
+    Callback function for `modify_manifest`. Remove values from a list or a set either by values
     or keys. Non-existent values or keys are ignored.
     """
     for field, values_or_key in to_del.items():
@@ -624,7 +717,16 @@ def del_fields(
             keys = values_or_key
             values = []
 
+        # fixme: special treatment for "members" and "access" fields, we ignore 'pubkeys'.
+        #  Find if it's interesting to create a generic function that would delete  values based on
+        #  partial input. For example, we provide {"user-path": WLPATH} and
+        #  it deletes member entry being {"user-path": WLPATH, "pubkeys": [PUBKEY1, PUBKEY2, ...]}
+        #
+        #  See Wildland/wildland-client#740
         obj = fields.get(field)
+        if obj and field in ("members", "access"):
+            for m in obj:
+                m.pop("pubkeys", None)
 
         if isinstance(obj, list):
             obj = dict(zip(range(len(obj)), obj))

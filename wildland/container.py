@@ -188,7 +188,7 @@ class Container(PublishableWildlandObject, obj_type=WildlandObject.Type.CONTAINE
             access=fields.get('access')
         )
 
-    def to_manifest_fields(self, inline: bool) -> dict:
+    def to_manifest_fields(self, inline: bool, str_repr_only: bool = False) -> dict:
         cleaned_backends: List[Union[dict, str]] = []
 
         for cache in self._storage_cache:
@@ -201,7 +201,8 @@ class Container(PublishableWildlandObject, obj_type=WildlandObject.Type.CONTAINE
                 continue
             try:
                 backend_object = cache.get(self.client, self.owner)
-                cleaned_backends.append(backend_object.to_manifest_fields(inline=True))
+                cleaned_backends.append(backend_object.to_manifest_fields(
+                    inline=True, str_repr_only=str_repr_only))
             except (ManifestError, WildlandError, AttributeError):
                 # errors can occur due to impossible-to-decrypt backend or other failures, like
                 # inaccessible backend
@@ -219,6 +220,8 @@ class Container(PublishableWildlandObject, obj_type=WildlandObject.Type.CONTAINE
         }
         if not self.access:
             del fields['access']
+        else:
+            fields["access"] = self.client.load_pubkeys_from_field(self.access, self.owner)
         self.SCHEMA.validate(fields)
         if inline:
             del fields['owner']
@@ -229,7 +232,7 @@ class Container(PublishableWildlandObject, obj_type=WildlandObject.Type.CONTAINE
         """
         This function provides filtered sensitive and unneeded fields for representation
         """
-        fields = self.to_manifest_fields(inline=False)
+        fields = self.to_manifest_fields(inline=False, str_repr_only=True)
         if self.local_path:
             fields.update({"local-path": str(self.local_path)})
 

@@ -99,7 +99,8 @@ class User(PublishableWildlandObject, obj_type=WildlandObject.Type.USER):
                  paths: List[PurePosixPath],
                  manifests_catalog: List[Union[str, dict]],
                  client,
-                 manifest: Manifest = None):
+                 manifest: Manifest = None,
+                 members: List[dict] = None):
         super().__init__()
         self.owner = owner
         self.paths = paths
@@ -109,6 +110,10 @@ class User(PublishableWildlandObject, obj_type=WildlandObject.Type.USER):
         self.pubkeys = pubkeys
         self.manifest = manifest
         self.client = client
+
+        # Track if loaded or not pubkeys for members
+        self._loaded_members = False
+        self.members = members if members else []
 
     def get_unique_publish_id(self) -> str:
         return f'{self.owner}.user'
@@ -164,7 +169,8 @@ class User(PublishableWildlandObject, obj_type=WildlandObject.Type.USER):
             paths=[PurePosixPath(p) for p in fields['paths']],
             manifests_catalog=deepcopy(fields.get('manifests-catalog', [])),
             manifest=manifest,
-            client=client)
+            client=client,
+            members=fields.get('members', []))
 
     @property
     def has_catalog(self) -> bool:
@@ -190,6 +196,7 @@ class User(PublishableWildlandObject, obj_type=WildlandObject.Type.USER):
                                     str(e))
                 continue
             except WildlandError as e:
+                logger.debug('User %s: cannot load manifests catalog entry: %s', self.owner, str(e))
                 unknown_failure_containers += 1
                 continue
 
@@ -236,9 +243,12 @@ class User(PublishableWildlandObject, obj_type=WildlandObject.Type.USER):
         """Primary pubkey for signatures. User manifest needs to be signed with this key"""
         return self.pubkeys[0]
 
-    def to_manifest_fields(self, inline: bool) -> dict:
+    def to_manifest_fields(self, inline: bool, str_repr_only: bool = False) -> dict:
         if inline:
             raise WildlandError('User manifest cannot be inlined.')
+        if not self._loaded_members:
+            self.members = self.client.load_pubkeys_from_field(self.members, self.owner)
+            self._loaded_members = True
         result: Dict[Any, Any] = {
                 'version': Manifest.CURRENT_VERSION,
                 'object': 'user',
@@ -246,6 +256,7 @@ class User(PublishableWildlandObject, obj_type=WildlandObject.Type.USER):
                 'paths': [str(p) for p in self.paths],
                 'manifests-catalog': list(),
                 'pubkeys': self.pubkeys.copy(),
+                'members': self.members
             }
         for cached_object in self._manifests_catalog:
             result['manifests-catalog'].append(cached_object.get_raw_object(
@@ -257,7 +268,7 @@ class User(PublishableWildlandObject, obj_type=WildlandObject.Type.USER):
         """
         This function provides filtered sensitive and unneeded fields for representation
         """
-        fields = self.to_manifest_fields(inline=False)
+        fields = self.to_manifest_fields(inline=False, str_repr_only=True)
         if not include_sensitive:
             # Remove sensitive fields
             del fields["manifests-catalog"]
@@ -272,3 +283,6 @@ class User(PublishableWildlandObject, obj_type=WildlandObject.Type.USER):
             sig_context.add_pubkey(self.pubkeys[0])
         for additional_pubkey in self.pubkeys[1:]:
             sig_context.add_pubkey(additional_pubkey, self.owner)
+        for user in self.members:
+            for pubkey in user.get('pubkeys', []):
+                sig_context.add_pubkey(pubkey, self.owner)
