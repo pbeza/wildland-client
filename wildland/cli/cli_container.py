@@ -369,15 +369,8 @@ def info(obj: ContextObj, name):
         if bridge_paths:
             users_and_bridge_paths[user.owner] = bridge_paths
 
-    container_result, container = obj.wlcore.object_get(WLObjectType.CONTAINER, name)
-    if not container_result.success or not container:
-        raise CliError(f'{container_result}')
-    # TODO: that's an ugly workaround which only partially works
-    #  to be replaced when _container_info will be ready to accept WLContainer
-    result, _container = obj.wlcore.container_find_by_id(container.id)
-    if not result.success:
-        raise CliError(f'{result}')
-    _container_info(obj.client, _container, users_and_bridge_paths)
+    container = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, name)
+    _container_info(obj.client, container, users_and_bridge_paths)
 
 
 @container_.command('delete', short_help='delete a container', alias=['rm', 'remove'])
