@@ -20,6 +20,7 @@
 """
 Wildland core implementation - container-related functions
 """
+from pathlib import PurePosixPath
 from typing import List, Tuple, Optional
 
 import wildland.core.core_utils as utils
@@ -67,9 +68,47 @@ class WildlandCoreContainer(WildlandCoreApi):
         :param title: title of the container, will be used to generate mount paths
         :param owner: owner of the container; if omitted, default owner will be used
         :param name: name of the container to be created, used in naming container file
-        :return: Tuple of WildlandResult and, if successful, the created WLContainer
+        :return: Tuple of WildlandResult and, if successful, the created WLContainer with its path
         """
-        raise NotImplementedError
+        return self.__container_create(paths, access_users, encrypt_manifest, categories, title,
+                                       owner, name)
+
+    @wildland_result(default_output=None)
+    def __container_create(self, paths: List[str],
+                           access_users: Optional[List[str]] = None,
+                           encrypt_manifest: bool = True,
+                           categories: Optional[List[str]] = None,
+                           title: Optional[str] = None, owner: Optional[str] = None,
+                           name: Optional[str] = None):
+
+        if access_users:
+            access_list = []
+            for user in access_users:
+                result_u, u = self.object_get(WLObjectType.USER, user)
+                if result_u.success:
+                    access_list.append({'user': u.owner})
+        elif not encrypt_manifest:
+            access_list = [{'user': '*'}]
+        else:
+            access_list = []
+
+        owner_result, owner_user = self.object_get(WLObjectType.USER, owner or '@default-owner')
+        if not owner_result.success:
+            return owner_user, None
+
+        container = Container(
+            owner=owner_user.owner,
+            paths=[PurePosixPath(p) for p in paths],
+            backends=[],
+            client=self.client,
+            title=title,
+            categories=[PurePosixPath(c) for c in categories],
+            access=access_list
+        )
+
+        path = self.client.save_new_object(WildlandObject.Type.CONTAINER, container, name)
+        wl_container = utils.container_to_wlcontainer(container)
+        return wl_container, path
 
     def container_list(self) -> Tuple[WildlandResult, List[WLContainer]]:
         """
@@ -263,7 +302,23 @@ class WildlandCoreContainer(WildlandCoreApi):
         :param container_id: id of the container to be published (user_id:/.uuid/container_uuid)
         :return: WildlandResult
         """
-        raise NotImplementedError
+        return self.__container_publish(container_id)
+
+    @wildland_result()
+    def __container_publish(self, container_id):
+        result, container = self.container_find_by_id(container_id)
+        if not result.success:
+            raise FileNotFoundError(f'Cannot find container {container_id}')
+
+        try:
+            owner_user = self.client.load_object_from_name(WildlandObject.Type.USER,
+                                                           container.owner)
+            if owner_user.has_catalog:
+                logger.info(f'Publishing container: [%s]', container.get_primary_publish_path())
+                publisher = Publisher(self.client, owner_user)
+                publisher.publish(container)
+        except WildlandError as ex:
+            raise WildlandError(f"Failed to publish container: {ex}") from ex
 
     def container_unpublish(self, container_id) -> WildlandResult:
         """
