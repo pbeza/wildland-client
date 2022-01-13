@@ -20,6 +20,7 @@
 API for Wildland Core
 """
 import abc
+from pathlib import Path
 from typing import List, Tuple, Optional, Callable, Dict
 from enum import Enum
 from .wildland_result import WildlandResult
@@ -408,7 +409,7 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
                          categories: Optional[List[str]] = None,
                          title: Optional[str] = None, owner: Optional[str] = None,
                          name: Optional[str] = None) -> \
-            Tuple[WildlandResult, Optional[WLContainer]]:
+            Tuple[WildlandResult, Optional[WLContainer], Optional[Path]]:
         """
         Create a new container manifest
         :param paths: container paths (must be absolute paths)

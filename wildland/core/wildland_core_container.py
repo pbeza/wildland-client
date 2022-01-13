@@ -20,7 +20,7 @@
 """
 Wildland core implementation - container-related functions
 """
-from pathlib import PurePosixPath
+from pathlib import PurePosixPath, Path
 from typing import List, Tuple, Optional
 
 import wildland.core.core_utils as utils
@@ -55,7 +55,7 @@ class WildlandCoreContainer(WildlandCoreApi):
                          categories: Optional[List[str]] = None,
                          title: Optional[str] = None, owner: Optional[str] = None,
                          name: Optional[str] = None) -> \
-            Tuple[WildlandResult, Optional[WLContainer]]:
+            Tuple[WildlandResult, Optional[WLContainer], Optional[Path]]:
         """
         Create a new container manifest
         :param paths: container paths (must be absolute paths)
@@ -73,7 +73,7 @@ class WildlandCoreContainer(WildlandCoreApi):
         return self.__container_create(paths, access_users, encrypt_manifest, categories, title,
                                        owner, name)
 
-    @wildland_result(default_output=None)
+    @wildland_result(default_output=(None, None))
     def __container_create(self, paths: List[str],
                            access_users: Optional[List[str]] = None,
                            encrypt_manifest: bool = True,
@@ -85,7 +85,7 @@ class WildlandCoreContainer(WildlandCoreApi):
             access_list = []
             for user in access_users:
                 result_u, u = self.object_get(WLObjectType.USER, user)
-                if result_u.success:
+                if result_u.success and u:
                     access_list.append({'user': u.owner})
         elif not encrypt_manifest:
             access_list = [{'user': '*'}]
@@ -93,9 +93,10 @@ class WildlandCoreContainer(WildlandCoreApi):
             access_list = []
 
         owner_result, owner_user = self.object_get(WLObjectType.USER, owner or '@default-owner')
-        if not owner_result.success:
-            return owner_user, None
+        if not owner_result.success or not owner_user:
+            return owner_result, None, None
 
+        categories = categories if categories else []
         container = Container(
             owner=owner_user.owner,
             paths=[PurePosixPath(p) for p in paths],
@@ -307,14 +308,14 @@ class WildlandCoreContainer(WildlandCoreApi):
     @wildland_result()
     def __container_publish(self, container_id):
         result, container = self.container_find_by_id(container_id)
-        if not result.success:
+        if not result.success or not container:
             raise FileNotFoundError(f'Cannot find container {container_id}')
 
         try:
             owner_user = self.client.load_object_from_name(WildlandObject.Type.USER,
                                                            container.owner)
             if owner_user.has_catalog:
-                logger.info(f'Publishing container: [%s]', container.get_primary_publish_path())
+                logger.info('Publishing container: [%s]', container.get_primary_publish_path())
                 publisher = Publisher(self.client, owner_user)
                 publisher.publish(container)
         except WildlandError as ex:

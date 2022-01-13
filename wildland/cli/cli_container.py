@@ -60,7 +60,6 @@ from ..storage import Storage, StorageBackend
 from ..storage_sync.base import BaseSyncer, SyncConflict
 from ..tests.profiling.profilers import profile
 from ..utils import yaml_parser
-from ..wlpath import WildlandPath
 
 try:
     RUNTIME_DIR = Path(BaseDirectory.get_runtime_dir())
@@ -170,9 +169,11 @@ def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Opt
             raise CliError('--category option requires --title or container name')
         title = name
 
-    result, container, container_path = obj.wlcore.container_create(path, access, encrypt_manifest,
-                                                                    category, title, owner, name)
-    if not result.success or not container:
+    result, container, container_path = obj.wlcore.container_create(list(path), list(access),
+                                                                    encrypt_manifest,
+                                                                    list(category), title, owner,
+                                                                    name)
+    if not result.success or not container or not container_path:
         raise CliError(f'Failed to create container: {str(result)}')
 
     click.echo(f'Created: {container_path}')
@@ -191,7 +192,7 @@ def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Opt
     if storage_templates:
         try:
             result, _container = obj.wlcore.container_find_by_id(container.id)
-            if not result.success:
+            if not result.success or not _container:
                 raise CliError(str(result))
             do_create_storage_from_templates(obj.client, _container, storage_templates, local_dir,
                                              no_publish=no_publish)
