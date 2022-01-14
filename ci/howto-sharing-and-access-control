@@ -48,8 +48,8 @@ mycontainer_uuid=$(wl container dump mycontainer | grep '/.uuid/' | cut -d / -f 
 expected="version: '1'
 object: container
 owner: '$alice_userid'
-paths:
-- /.uuid/$mycontainer_uuid
+container-id: /.uuid/$mycontainer_uuid
+paths: []
 title: null
 categories: []
 backends:
@@ -82,8 +82,8 @@ expected_pcre="signature: \|
 version: '1'
 object: container
 owner: '$alice_userid'
-paths:
-- /.uuid/$mycontainer_uuid
+container-id: /.uuid/$mycontainer_uuid
+paths: \[\]
 title: null
 categories: \[\]
 access:
@@ -101,8 +101,8 @@ expected_pcre="signature: \|
 version: '1'
 object: container
 owner: '$alice_userid'
-paths:
-- /.uuid/$UUID_PCRE
+container-id: /.uuid/$UUID_PCRE
+paths: \[\]
 title: null
 categories: \[\]
 access:

@@ -131,7 +131,7 @@ get_userid() {
 }
 
 get_container_uuid() {
-    wl container dump "$1" | grep -oP "\- \/.uuid/\K$UUID_PCRE"
+    wl container dump "$1" | grep -oP "container-id: \/.uuid/\K$UUID_PCRE"
 }
 
 get_storage_uuid() { # $1 = container UUID, $2 = storage type

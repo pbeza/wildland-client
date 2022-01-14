@@ -1187,8 +1187,8 @@ paths:
 - /users/Remote
 manifests-catalog:
  - object: container
-   paths:
-    - /.uuid/11e69833-0152-4563-92fc-b1540fc54a69
+   container-id: /.uuid/11e69833-0152-4563-92fc-b1540fc54a69
+   paths: []
    backends:
     storage:
      - object: storage
@@ -1209,8 +1209,8 @@ signature: |
 ---
 object: container
 owner: '0xddd'
+container-id: /.uuid/11e69833-0152-4563-92fc-b1540fc54a70
 paths:
-- /.uuid/11e69833-0152-4563-92fc-b1540fc54a70
 - /path
 backends:
  storage:

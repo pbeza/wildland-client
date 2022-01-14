@@ -28,8 +28,8 @@ run wl container create s3-photos
 expected_pcre="version: '1'
 object: container
 owner: '$USERID_PCRE'
-paths:
-- /.uuid/$UUID_PCRE
+container-id: /.uuid/$UUID_PCRE
+paths: \[\]
 title: null
 categories: \[\]
 backends:

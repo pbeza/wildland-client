@@ -170,7 +170,7 @@ class RemounterWrapper(Remounter):
                 if actual_b.is_primary:
                     storage_id = expected_b[1]
                 # register as mounted - backend specific path
-                uuid = get_container_uuid_from_uuid_path(str(expected.paths[0]))
+                uuid = get_container_uuid_from_uuid_path(str(expected.container_id))
                 path = f'/.users/{expected.owner}:/.backends/{uuid}/{expected_b[0]}'
                 self.control_client.add_storage_paths(
                     expected_b[1],
@@ -776,14 +776,14 @@ def test_wlpath_change_pattern(cli, base_dir, client, search_mock, control_clien
         dictionary=catalog_container._storage_cache[0].storage,
         owner=default_owner,
         expected_owner=catalog_container.owner,
-        container=catalog_container.paths[0]
+        container=catalog_container.container_id
     )
     catalog_s1 = client.load_object_from_dict(
         object_type=WildlandObject.Type.STORAGE,
         dictionary=catalog_container._storage_cache[1].storage,
         owner=default_owner,
         expected_owner=catalog_container.owner,
-        container=catalog_container.paths[0]
+        container=catalog_container.container_id
     )
     search_mock.containers_results = [
         [c1],
