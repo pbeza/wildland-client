@@ -60,6 +60,7 @@ from ..storage import Storage, StorageBackend
 from ..storage_sync.base import BaseSyncer, SyncConflict
 from ..tests.profiling.profilers import profile
 from ..utils import yaml_parser
+from ..wlpath import WildlandPath
 
 try:
     RUNTIME_DIR = Path(BaseDirectory.get_runtime_dir())
@@ -189,11 +190,13 @@ def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Opt
         except WildlandError as we:
             raise CliError(f'Could not load [{storage_template}] storage template. {we}') from we
 
+    # TODO: _container is WildlandContainer not WLContainer
+    result, _container = obj.wlcore.container_find_by_id(container.id)
+    if not result.success or not _container:
+        raise CliError(str(result))
+
     if storage_templates:
         try:
-            result, _container = obj.wlcore.container_find_by_id(container.id)
-            if not result.success or not _container:
-                raise CliError(str(result))
             do_create_storage_from_templates(obj.client, _container, storage_templates, local_dir,
                                              no_publish=no_publish)
         except (WildlandError, ValueError) as ex:
@@ -450,15 +453,24 @@ def modify(ctx: click.Context,
                   del_access, encrypt_manifest, no_encrypt_manifest, del_storage)
 
     def get_user_owners(user_name):
+        if WildlandPath.WLPATH_RE.match(user_name):
+            # We use canonical form of a Wildland path because we want the whole
+            # path with prefix into manifest
+            return {'user-path': WildlandPath.get_canonical_form(user_name)}
+
         result, user = ctx.obj.wlcore.object_get(WLObjectType.USER, user_name)
         if not result.success or not user:
             raise CliError(f'{result}')
-        return user.owner
+        return {'user': user.owner}
 
-    add_access_owners = [{'user': get_user_owners(user)} for user in add_access]
+    add_access_owners = [get_user_owners(user_name) for user_name in add_access]
     to_add = {'paths': add_path, 'categories': add_category, 'access': add_access_owners}
 
-    del_access_owners = [{'user': get_user_owners(user)} for user in del_access]
+    container_access = _get_container_accesses(ctx, input_file)
+    if add_access_owners and {'user': '*'} in container_access:
+        raise CliError("Cannot add more access entry while access is set to '*'.")
+
+    del_access_owners = [get_user_owners(user_name) for user_name in del_access]
     to_del = {'paths': del_path, 'categories': del_category, 'access': del_access_owners}
 
     to_del_nested = _get_storages_idx_to_del(ctx, del_storage, input_file)

@@ -35,6 +35,7 @@ from ..control_client import ControlClientUnableToConnectError
 from ..publish import Publisher
 from ..wildland_object.wildland_object import WildlandObject
 from ..wlenv import WLEnv
+from ..wlpath import WildlandPath
 
 logger = get_logger('core')
 
@@ -84,9 +85,14 @@ class WildlandCoreContainer(WildlandCoreApi):
         if access_users:
             access_list = []
             for user in access_users:
-                result_u, u = self.object_get(WLObjectType.USER, user)
-                if result_u.success and u:
-                    access_list.append({'user': u.owner})
+                if WildlandPath.WLPATH_RE.match(user):
+                    # We use canonical form of a Wildland path because we want the whole
+                    # path with prefix into manifest
+                    access_list.append({"user-path": WildlandPath.get_canonical_form(user)})
+                else:
+                    result_u, u = self.object_get(WLObjectType.USER, user)
+                    if result_u.success and u:
+                        access_list.append({'user': u.owner})
         elif not encrypt_manifest:
             access_list = [{'user': '*'}]
         else:
