@@ -20,11 +20,13 @@
 API for Wildland Core
 """
 import abc
+from pathlib import Path
 from typing import List, Tuple, Optional, Callable, Dict
 from enum import Enum
 from .wildland_result import WildlandResult
 from .wildland_objects_api import WLObject, WLTemplateFile, WLBridge, WLObjectType, WLUser, \
     WLStorageBackend, WLStorage, WLContainer
+from ..container import Container
 
 
 class ModifyMethod(Enum):
@@ -407,7 +409,7 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
                          categories: Optional[List[str]] = None,
                          title: Optional[str] = None, owner: Optional[str] = None,
                          name: Optional[str] = None) -> \
-            Tuple[WildlandResult, Optional[WLContainer]]:
+            Tuple[WildlandResult, Optional[WLContainer], Optional[Path]]:
         """
         Create a new container manifest
         :param paths: container paths (must be absolute paths)
@@ -431,10 +433,15 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         """
 
     @abc.abstractmethod
-    def container_delete(self, container_id: str) -> WildlandResult:
+    def container_delete(self, container_id: str, cascade: bool = False,
+                         force: bool = False, no_unpublish: bool = False) -> WildlandResult:
         """
         Delete provided container.
         :param container_id: container ID (in the form of user_id:/.uuid/container_uuid)
+        :param cascade: also delete local storage manifests
+        :param force: delete even when using local storage manifests; ignore errors on parse
+        :param no_unpublish: do not attempt to unpublish the container before deleting it
+        :return: WildlandResult
         """
 
     @abc.abstractmethod
@@ -528,7 +535,7 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         """
 
     @abc.abstractmethod
-    def container_find(self, path: str) -> \
+    def container_find_by_path(self, path: str) -> \
             Tuple[WildlandResult, List[Tuple[WLContainer, WLStorage]]]:
         """
         Find container by path relative to Wildland mount root.
@@ -536,6 +543,15 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         :return: tuple of WildlandResult and list of tuples of WLContainer, WLStorage that contain
         the provided path
         """
+
+    @abc.abstractmethod
+    def container_find_by_id(self, container_id: str) -> Tuple[WildlandResult, Optional[Container]]:
+        """
+        Find container by id.
+        :param container_id: id of the container to be found (user_id:/.uuid/container_uuid)
+        :return: tuple of WildlandResult and, if successful, the WLContainer
+        """
+
 
     # STORAGES
 
