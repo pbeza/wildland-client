@@ -662,6 +662,27 @@ def test_storage_create(cli, base_dir):
     assert "location: /zip" in data
     assert "backend-id:" in data
 
+def test_container_remount_after_storage_creation(cli):
+    _create_user_container_storage(cli)
+    cli('start')
+
+    result = cli('status', capture=True)
+    assert 'Mounted containers:' in result
+    assert result.count('storage: local') == 1
+    assert 'No sync jobs running' in result
+
+    result = cli('storage', 'create', 'local', 'new_local_storage',
+        '--container', 'Container',
+        '--location', '/NEW_PATH', capture=True)
+    assert 'Using container:' in result
+    assert 'Adding storage' in result
+    assert 'Saved container' in result
+    assert 'Container is mounted, remounting' in result
+
+    result = cli('status', capture=True)
+    assert 'Mounted containers:' in result
+    assert result.count('storage: local') == 2
+    assert 'No sync jobs running' in result
 
 def test_storage_create_not_inline(cli, base_dir):
     _create_user_container_storage(cli)
