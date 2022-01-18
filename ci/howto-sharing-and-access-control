@@ -56,7 +56,7 @@ backends:
   storage: []"
 run wl container dump mycontainer
 
-expected="Error: Secret key not found: $bob_userid"
+expected="Error: Failed to create container: 2 - Secret key not found: $bob_userid"
 expected_fail=1
 run wl container create another-container --owner bob
 
