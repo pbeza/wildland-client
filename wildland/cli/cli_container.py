@@ -47,6 +47,7 @@ from wildland.client import Client
 from wildland.control_client import ControlClientUnableToConnectError
 from wildland.wildland_object.wildland_object import WildlandObject
 from wildland.fs_client import StorageInfo
+import wildland.core.core_utils as core_utils
 from .cli_base import aliased_group, ContextObj
 from .cli_exc import CliError
 from .cli_storage import do_create_storage_from_templates
@@ -216,15 +217,12 @@ def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Opt
         owner_user.add_catalog_entry(str(obj.client.local_url(container_path)))
         obj.client.save_object(WildlandObject.Type.USER, owner_user)
 
-    if not no_publish:
-        try:
-            owner_user = obj.client.load_object_from_name(WildlandObject.Type.USER, container.owner)
-            if owner_user.has_catalog:
-                click.echo(f'Publishing container: [{_container.get_primary_publish_path()}]')
-                publisher = Publisher(obj.client, owner_user)
-                publisher.publish(_container)
-        except WildlandError as ex:
-            raise WildlandError(f"Failed to publish container: {ex}") from ex
+    if no_publish:
+        return
+
+    result = obj.wlcore.container_publish(container.id)
+    if not result.success:
+        raise CliError(str(result))
 
 
 @container_.command(short_help='update container')
@@ -1375,6 +1373,4 @@ def edit(ctx: click.Context, path: str, publish: bool, editor: Optional[str], re
             cli_common.republish_object(client, container)
 
         elif publish:
-            user = client.load_object_from_name(WildlandObject.Type.USER, owner)
-            click.echo('Publishing a container')
-            Publisher(client, user).publish(container)
+            ctx.obj.wlcore.container_publish(core_utils.container_to_wlcontainer(container).id)
