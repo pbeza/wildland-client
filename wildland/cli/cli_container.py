@@ -52,6 +52,7 @@ from .cli_base import aliased_group, ContextObj
 from .cli_exc import CliError
 from .cli_storage import do_create_storage_from_templates
 from ..container import Container
+from ..core.wildland_objects_api import WLObjectType
 from ..exc import WildlandError
 from ..manifest.manifest import ManifestError
 from ..manifest.template import TemplateManager
@@ -340,13 +341,10 @@ def delete(obj: ContextObj, names, force: bool, cascade: bool, no_unpublish: boo
 
 
 def _delete(obj: ContextObj, name: str, force: bool, cascade: bool, no_unpublish: bool):
-    # TODO: also consider detecting user-container link (i.e. user's main container).
-
-    try:
-        container = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, name)
-    except ManifestError as ex:
+    container_result, container = obj.wlcore.object_get(WLObjectType.CONTAINER, name)
+    if not container_result.success or not container:
         if force:
-            logger.warning('Failed to load manifest: %s', ex)
+            logger.warning('Failed to load manifest: %s', container_result)
             try:
                 path = obj.client.find_local_manifest(WildlandObject.Type.CONTAINER, name)
                 if path:
@@ -358,81 +356,20 @@ def _delete(obj: ContextObj, name: str, force: bool, cascade: bool, no_unpublish
             if cascade:
                 logger.warning('Unable to cascade remove: manifest failed to load.')
             return
-        logger.warning('Failed to load manifest, cannot delete: %s', ex)
+        logger.warning('Failed to load manifest, cannot delete: %s', container_result)
         click.echo('Use --force to force deletion.')
         return
 
-    if not container.local_path:
-        raise CliError('Can only delete a local manifest')
+    delete_result = obj.wlcore.container_delete(container.id, cascade, force, no_unpublish)
 
-    user = obj.client.load_object_from_name(WildlandObject.Type.USER, container.owner)
-    has_catalog_entry = user.has_catalog_entry(obj.client.local_url(container.local_path))
+    usage_cascade = '' if cascade else '--cascade to delete all content associated with this ' \
+                                       'container'
+    usage_force = '' if force else '--force to force deletion'
+    usage = ' or '.join(filter(None, [usage_cascade, usage_force]))
+    usage = f'\nUse {usage}' if usage != '' else usage
 
-    if has_catalog_entry and not cascade and not force:
-        logger.warning('User has catalog entry associated with this container.')
-        click.echo('Use --cascade to delete all content associated with this container or --force '
-                   'to force deletion')
-        return
-
-    # unmount if mounted
-    try:
-        for mount_path in obj.fs_client.get_unique_storage_paths(container):
-            storage_id = obj.fs_client.find_storage_id_by_path(mount_path)
-
-            if storage_id:
-                obj.fs_client.unmount_storage(storage_id)
-
-            for storage_id in obj.fs_client.find_all_subcontainers_storage_ids(container):
-                obj.fs_client.unmount_storage(storage_id)
-    except ControlClientUnableToConnectError:
-        pass
-
-    has_local = False
-
-    for backend in container.load_raw_backends(include_inline=False):
-        path = obj.client.parse_file_url(backend, container.owner)
-        if path and path.exists():
-            if cascade:
-                click.echo('Deleting storage: {}'.format(path))
-                path.unlink()
-            else:
-                click.echo('Container refers to a local manifest: {}'.format(path))
-                has_local = True
-
-    if has_local and not force:
-        raise CliError('Container refers to local manifests, not deleting '
-                       '(use --force or --cascade)')
-
-    # unpublish
-    if not no_unpublish:
-        try:
-            click.echo(f'Unpublishing container: [{container.get_primary_publish_path()}]')
-            Publisher(obj.client, user).unpublish(container)
-        except WildlandError:
-            # not published
-            pass
-
-    try:
-        Publisher(obj.client, user).remove_from_cache(container)
-    except WildlandError as e:
-        logger.warning('Failed to remove container from cache: %s', e)
-        if not force:
-            click.echo('Cannot remove container. Use --force to force deletion.')
-            return
-
-    if cascade:
-        try:
-            if container.local_path:
-                user.remove_catalog_entry(obj.client.local_url(container.local_path))
-                obj.client.save_object(WildlandObject.Type.USER, user)
-        except WildlandError as e:
-            logger.warning('Failed to remove catalog entry: %s', e)
-            if not force:
-                click.echo('Cannot remove container. Use --force to force deletion.')
-                return
-
-    click.echo(f'Deleting: {container.local_path}')
-    container.local_path.unlink()
+    if not delete_result.success:
+        raise CliError(f'{delete_result}{usage}')
 
 
 container_.add_command(cli_common.sign)
