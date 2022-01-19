@@ -451,37 +451,27 @@ def modify(ctx: click.Context,
     unless publish is False.
     """
     _option_check(ctx, add_path, del_path, add_category, del_category, title, add_access,
-                  del_access, encrypt_manifest,
-                  no_encrypt_manifest, del_storage)
+                  del_access, encrypt_manifest, no_encrypt_manifest, del_storage)
 
-    add_access_owners = []
-    for a in add_access:
-        if WildlandPath.WLPATH_RE.match(a):
-            add_access_owners.append(
-                {'user-path': WildlandPath.get_canonical_form(a)}
-            )
-        else:
-            add_access_owners.append(
-                {'user': ctx.obj.client.load_object_from_name(WildlandObject.Type.USER, a).owner}
-            )
+    def get_user_owners(user_name):
+        if WildlandPath.WLPATH_RE.match(user_name):
+            # We use canonical form of a Wildland path because we want the whole
+            # path with prefix into manifest
+            return {'user-path': WildlandPath.get_canonical_form(user_name)}
+
+        result, user = ctx.obj.wlcore.object_get(WLObjectType.USER, user_name)
+        if not result.success or not user:
+            raise CliError(f'{result}')
+        return {'user': user.owner}
+
+    add_access_owners = [get_user_owners(user_name) for user_name in add_access]
     to_add = {'paths': add_path, 'categories': add_category, 'access': add_access_owners}
 
     container_access = _get_container_accesses(ctx, input_file)
     if add_access_owners and {'user': '*'} in container_access:
         raise CliError("Cannot add more access entry while access is set to '*'.")
 
-    del_access_owners = []
-    for a in del_access:
-        if WildlandPath.WLPATH_RE.match(a):
-            # We use canonical form of a Wildland path because we want the whole
-            # path with prefix into manifest
-            del_access_owners.append(
-                {'user-path': WildlandPath.get_canonical_form(a)}
-            )
-        else:
-            del_access_owners.append(
-                {'user': ctx.obj.client.load_object_from_name(WildlandObject.Type.USER, a).owner}
-            )
+    del_access_owners = [get_user_owners(user_name) for user_name in del_access]
     to_del = {'paths': del_path, 'categories': del_category, 'access': del_access_owners}
 
     to_del_nested = _get_storages_idx_to_del(ctx, del_storage, input_file)
@@ -533,22 +523,24 @@ def _option_check(ctx, add_path, del_path, add_category, del_category, title, ad
 
 
 def _get_storages_idx_to_del(ctx, del_storage, input_file):
-    to_del_nested = {}
-    if del_storage:
-        idxs_to_delete = []
-        container_manifest = cli_common.find_manifest_file(
-            ctx.obj.client, input_file, 'container').read_bytes()
-        container_yaml = list(yaml_parser.safe_load_all(container_manifest))[1]
-        storages_obj = container_yaml.get('backends', {}).get('storage', {})
-        for s in del_storage:
-            if s.isnumeric():
-                idxs_to_delete.append(int(s))
-            else:
-                for idx, obj_storage in enumerate(storages_obj):
-                    if obj_storage['backend-id'] == s:
-                        idxs_to_delete.append(idx)
-        click.echo('Storage indexes to remove: ' + str(idxs_to_delete))
-        to_del_nested[('backends', 'storage')] = idxs_to_delete
+    to_del_nested: Dict[tuple, list] = {}
+    if not del_storage:
+        return to_del_nested
+
+    idxs_to_delete = []
+    container_manifest = cli_common.find_manifest_file(
+        ctx.obj.client, input_file, 'container').read_bytes()
+    container_yaml = list(yaml_parser.safe_load_all(container_manifest))[1]
+    storages_obj = container_yaml.get('backends', {}).get('storage', {})
+    for s in del_storage:
+        if s.isnumeric():
+            idxs_to_delete.append(int(s))
+        else:
+            for idx, obj_storage in enumerate(storages_obj):
+                if obj_storage['backend-id'] == s:
+                    idxs_to_delete.append(idx)
+    click.echo('Storage indexes to remove: ' + str(idxs_to_delete))
+    to_del_nested[('backends', 'storage')] = idxs_to_delete
 
     return to_del_nested
 
