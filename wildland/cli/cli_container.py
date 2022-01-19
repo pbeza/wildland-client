@@ -149,7 +149,7 @@ class OptionRequires(click.Option):
               help='do not publish the container after creation')
 @click.option('--encrypt-manifest/--no-encrypt-manifest', default=True, required=False,
               help='if --no-encrypt, this manifest will not be encrypted and '
-              '--access cannot be used.')
+                   '--access cannot be used.')
 @click.argument('name', metavar='CONTAINER', required=False)
 @click.pass_obj
 def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Optional[str],
@@ -171,6 +171,16 @@ def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Opt
             raise CliError('--category option requires --title or container name')
         title = name
 
+    result, container, container_path = obj.wlcore.container_create(list(path), list(access),
+                                                                    encrypt_manifest,
+                                                                    list(category), title, owner,
+                                                                    name)
+    if not result.success or not container or not container_path:
+        raise CliError(f'Failed to create container: {str(result)}')
+
+    click.echo(f'Created: {container_path}')
+
+    # TODO: replace with core.storage_create_from_template
     storage_templates = []
 
     if storage_template:
@@ -181,40 +191,14 @@ def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Opt
         except WildlandError as we:
             raise CliError(f'Could not load [{storage_template}] storage template. {we}') from we
 
-    if access:
-        access_list = []
-        for a in access:
-            if WildlandPath.WLPATH_RE.match(a):
-                # We use canonical form of a Wildland path because we want the whole
-                # path with prefix into manifest
-                access_list.append({"user-path": WildlandPath.get_canonical_form(a)})
-            else:
-                access_list.append({"user": obj.client.load_object_from_name(
-                    WildlandObject.Type.USER, a).owner})
-    elif not encrypt_manifest:
-        access_list = [{'user': '*'}]
-    else:
-        access_list = []
-
-    owner_user = obj.client.load_object_from_name(
-        WildlandObject.Type.USER, owner or '@default-owner')
-
-    container = Container(
-        owner=owner_user.owner,
-        paths=[PurePosixPath(p) for p in path],
-        backends=[],
-        client=obj.client,
-        title=title,
-        categories=[PurePosixPath(c) for c in category],
-        access=access_list
-    )
-
-    container_path = obj.client.save_new_object(WildlandObject.Type.CONTAINER, container, name)
-    click.echo(f'Created: {container_path}')
+    # TODO: _container is WildlandContainer not WLContainer
+    result, _container = obj.wlcore.container_find_by_id(container.id)
+    if not result.success or not _container:
+        raise CliError(str(result))
 
     if storage_templates:
         try:
-            do_create_storage_from_templates(obj.client, container, storage_templates, local_dir,
+            do_create_storage_from_templates(obj.client, _container, storage_templates, local_dir,
                                              no_publish=no_publish)
         except (WildlandError, ValueError) as ex:
             click.echo(f'Removing container: {container_path}')
@@ -222,6 +206,9 @@ def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Opt
             raise WildlandError(f'Failed to create storage from template. {ex}') from ex
 
     if update_user:
+        owner_user = obj.client.load_object_from_name(
+            WildlandObject.Type.USER, owner or '@default-owner')
+
         if not owner_user.local_path:
             raise WildlandError('Cannot update user because the manifest path is unknown')
         click.echo(f'Attaching container to user [{owner_user.owner}]')
@@ -233,9 +220,9 @@ def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Opt
         try:
             owner_user = obj.client.load_object_from_name(WildlandObject.Type.USER, container.owner)
             if owner_user.has_catalog:
-                click.echo(f'Publishing container: [{container.get_primary_publish_path()}]')
+                click.echo(f'Publishing container: [{_container.get_primary_publish_path()}]')
                 publisher = Publisher(obj.client, owner_user)
-                publisher.publish(container)
+                publisher.publish(_container)
         except WildlandError as ex:
             raise WildlandError(f"Failed to publish container: {ex}") from ex
 

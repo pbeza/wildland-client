@@ -25,6 +25,7 @@ from enum import Enum
 from .wildland_result import WildlandResult
 from .wildland_objects_api import WLObject, WLTemplateFile, WLBridge, WLObjectType, WLUser, \
     WLStorageBackend, WLStorage, WLContainer
+from ..container import Container
 
 
 class ModifyMethod(Enum):
@@ -526,13 +527,21 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         """
 
     @abc.abstractmethod
-    def container_find(self, path: str) -> \
+    def container_find_by_path(self, path: str) -> \
             Tuple[WildlandResult, List[Tuple[WLContainer, WLStorage]]]:
         """
         Find container by path relative to Wildland mount root.
         :param path: path to file (relative to Wildland mount root)
         :return: tuple of WildlandResult and list of tuples of WLContainer, WLStorage that contain
         the provided path
+        """
+
+    @abc.abstractmethod
+    def container_find_by_id(self, container_id: str) -> Tuple[WildlandResult, Optional[Container]]:
+        """
+        Find container by id.
+        :param container_id: id of the container to be found (user_id:/.uuid/container_uuid)
+        :return: tuple of WildlandResult and, if successful, the WLContainer
         """
 
     # STORAGES

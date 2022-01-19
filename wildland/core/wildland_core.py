@@ -26,6 +26,7 @@ from pathlib import PurePosixPath, Path
 import wildland.core.core_utils as utils
 from wildland.manifest.manifest import Manifest
 from wildland.log import get_logger
+from .wildland_core_container import WildlandCoreContainer
 from ..client import Client
 from ..user import User
 from ..container import Container
@@ -48,7 +49,7 @@ logger = get_logger('core')
 # TODO cli should get its own, simple tests with mocked methods
 
 
-class WildlandCore(WildlandCoreUser, WildlandCoreApi):
+class WildlandCore(WildlandCoreContainer, WildlandCoreUser, WildlandCoreApi):
     """Wildland Core implementation"""
     # All user-facing methods should be wrapped in wildland_result or otherwise assure
     # they wrap all exceptions in WildlandResult
@@ -472,146 +473,6 @@ class WildlandCore(WildlandCoreUser, WildlandCoreApi):
         Unpublish the given bridge.
         :param bridge_id: id of the bridge to be unpublished (user_id:/.uuid/bridge_uuid)
         :return: WildlandResult
-        """
-        raise NotImplementedError
-
-    # CONTAINERS
-    def container_create(self, paths: List[str],
-                         access_users: Optional[List[str]] = None,
-                         encrypt_manifest: bool = True,
-                         categories: Optional[List[str]] = None,
-                         title: Optional[str] = None, owner: Optional[str] = None,
-                         name: Optional[str] = None) -> \
-            Tuple[WildlandResult, Optional[WLContainer]]:
-        """
-        Create a new container manifest
-        :param paths: container paths (must be absolute paths)
-        :param access_users: list of additional users who should be able to access this manifest;
-        provided as either user fingerprints or WL paths to users.
-        Mutually exclusive with encrypt_manifest=False
-        :param encrypt_manifest: whether container manifest should be encrypted. Default: True.
-        Mutually exclusive with a not-None access_users
-        :param categories: list of categories, will be used to generate mount paths
-        :param title: title of the container, will be used to generate mount paths
-        :param owner: owner of the container; if omitted, default owner will be used
-        :param name: name of the container to be created, used in naming container file
-        :return: Tuple of WildlandResult and, if successful, the created WLContainer
-        """
-        raise NotImplementedError
-
-    def container_list(self) -> Tuple[WildlandResult, List[WLContainer]]:
-        """
-        List all known containers.
-        :return: WildlandResult, List of WLContainers
-        """
-        raise NotImplementedError
-
-    def container_delete(self, container_id: str) -> WildlandResult:
-        """
-        Delete provided container.
-        :param container_id: container ID (in the form of user_id:/.uuid/container_uuid)
-        """
-        return self.__container_delete(container_id)
-
-    @wildland_result(default_output=())
-    def __container_delete(self, container_id: str):
-        found = False
-        for container in self.client.load_all(WildlandObject.Type.CONTAINER):
-            if utils.container_to_wlcontainer(container).id == container_id:
-                if not container.local_path:
-                    raise FileNotFoundError('Can only delete a local manifest')
-                container.local_path.unlink()
-                found = True
-                break
-        if not found:
-            raise FileNotFoundError(f'Cannot find container {container_id}')
-
-    def container_duplicate(self, container_id: str, name: Optional[str] = None) -> \
-            Tuple[WildlandResult, Optional[WLContainer]]:
-        """
-        Create a copy of the provided container at the provided friendly name, with a newly
-        generated id and copied storages
-        :param container_id: id of the container to be duplicated, in the form of
-        owner_id:/.uuid/container_uuid
-        :param name: optional name for the new container. If omitted, will be generated
-        automatically
-        :return: WildlandResult and, if duplication was successful, the new container
-        """
-        raise NotImplementedError
-
-    def container_import_from_data(self, yaml_data: str, overwrite: bool = True) -> \
-            Tuple[WildlandResult, Optional[WLContainer]]:
-        """
-        Import container from provided yaml data.
-        :param yaml_data: yaml data to be imported
-        :param overwrite: if a container of provided uuid already exists, overwrite it;
-        default: True. If this is False and the container already exists, this operation will fail.
-        :return: tuple of WildlandResult, imported WLContainer (if import was successful)
-        """
-        raise NotImplementedError
-
-    def container_create_cache(self, container_id: str, storage_template_name: str) \
-            -> WildlandResult:
-        """
-        Create cache storage for a container.
-        :param container_id: id of the container (in the form of its publish_path,
-        userid:/.uuid/container_uuid)
-        :param storage_template_name: use the specified storage template to create a new
-        cache storage (becomes primary storage for the container while mounted)
-        :return: WildlandResult
-        :rtype:
-        """
-        raise NotImplementedError
-
-    def container_delete_cache(self, container_id: str) -> WildlandResult:
-        """
-        Delete cache storage for container.
-        :param container_id: id of the container (in the form of its publish_path,
-        userid:/.uuid/container_uuid)
-        :return: WildlandResult
-        """
-        raise NotImplementedError
-
-    def container_modify(self, container_id: str, manifest_field: str, operation: ModifyMethod,
-                         modify_data: List[str]) -> WildlandResult:
-        """
-        Modify container manifest
-        :param container_id: id of the container to be modified, in the form of
-        user_id:/.uuid/container_uuid
-        :param manifest_field: field to modify; supports the following:
-            - paths
-            - categories
-            - title
-            - access
-        :param operation: operation to perform on field ('add', 'delete' or 'set')
-        :param modify_data: list of values to be added/removed
-        :return: WildlandResult
-        """
-        raise NotImplementedError
-
-    def container_publish(self, container_id) -> WildlandResult:
-        """
-        Publish the given container.
-        :param container_id: id of the container to be published (user_id:/.uuid/container_uuid)
-        :return: WildlandResult
-        """
-        raise NotImplementedError
-
-    def container_unpublish(self, container_id) -> WildlandResult:
-        """
-        Unpublish the given container.
-        :param container_id: id of the container to be unpublished (user_id:/.uuid/container_uuid)
-        :return: WildlandResult
-        """
-        raise NotImplementedError
-
-    def container_find(self, path: str) -> \
-            Tuple[WildlandResult, List[Tuple[WLContainer, WLStorage]]]:
-        """
-        Find container by path relative to Wildland mount root.
-        :param path: path to file (relative to Wildland mount root)
-        :return: tuple of WildlandResult and list of tuples of WLContainer, WLStorage that contain
-        the provided path
         """
         raise NotImplementedError
 
