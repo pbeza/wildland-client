@@ -319,7 +319,7 @@ class WildlandCoreContainer(WildlandCoreApi):
             owner_user = self.client.load_object_from_name(WildlandObject.Type.USER,
                                                            container.owner)
             if owner_user.has_catalog:
-                logger.info('Publishing container: [%s]', container.get_primary_publish_path())
+                logger.info('Publishing a container: [%s]', container.get_primary_publish_path())
                 publisher = Publisher(self.client, owner_user)
                 publisher.publish(container)
         except WildlandError as ex:

@@ -1359,8 +1359,8 @@ def test_container_publish_after_edit_with_publish_flag(cli, tmp_path, base_dir)
     assert not tuple(tmp_path.glob('*.container.yaml'))
 
     editor = r'sed -i s,PATH,HTAP,g'
-    result = cli('container', 'edit', 'Container', '--editor', editor, '--publish', capture=True)
-    out_lines = result.splitlines()
+    out_lines = wl_call_output(base_dir, 'container', 'edit', 'Container', '--editor', editor,
+                               '--publish', stderr=subprocess.STDOUT).decode().splitlines()
     assert len(out_lines) == 2
     assert re.match('Saved: .*/Container.container.yaml', out_lines[0])
     assert 'Publishing a container' in out_lines[1]
