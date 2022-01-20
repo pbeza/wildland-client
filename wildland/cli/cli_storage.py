@@ -90,7 +90,11 @@ def _make_create_command(backend: Type[StorageBackend]):
                           '--access cannot be used. For inline storage, container manifest might '
                           'still be encrypted.'),
         click.Option(['--no-publish'], is_flag=True,
-                     help='do not publish the container after creation'),
+                     help='do not publish the container after creation.'),
+        click.Option(['--skip-sync'], is_flag=True,
+                     help='Skip syncing from the first local storage to the created storage. If '
+                          'the created storage is local then syncing is skipped regardless if '
+                          'this option is present or not.'),
         click.Argument(['name'], metavar='NAME', required=False),
     ]
 
@@ -127,6 +131,7 @@ def _do_create(
         access: Sequence[str],
         encrypt_manifest: bool,
         no_publish: bool,
+        skip_sync: bool,
         **data):
 
     obj: ContextObj = click.get_current_context().obj
@@ -168,6 +173,8 @@ def _do_create(
     elif container_obj.access:
         access_users = container_obj.access
 
+    params['type'] = backend.TYPE
+
     storage = Storage(
         storage_type=backend.TYPE,
         owner=container_obj.owner,
@@ -190,14 +197,45 @@ def _do_create(
     if _is_container_mounted(obj, container_mount_path):
         remount_container(obj, container_obj.local_path)
 
-    if no_publish:
-        return
+    if not no_publish:
+        try:
+            user = obj.client.load_object_from_name(WildlandObject.Type.USER, container_obj.owner)
+            Publisher(obj.client, user).republish(container_obj)
+        except WildlandError as ex:
+            raise WildlandError(f"Failed to republish container: {ex}") from ex
 
-    try:
-        user = obj.client.load_object_from_name(WildlandObject.Type.USER, container_obj.owner)
-        Publisher(obj.client, user).republish(container_obj)
-    except WildlandError as ex:
-        raise WildlandError(f"Failed to republish container: {ex}") from ex
+    if skip_sync:
+        click.echo('Skipping syncing as requested.')
+    elif len(obj.client.get_all_storages(container_obj)) == 1:
+        click.echo('Skipping syncing as there is just one storage attached to the container.')
+    elif Client.is_local_storage(storage):
+        click.echo('Skipping syncing as the created storage is local.')
+    elif not storage.is_writeable:
+        click.echo('Skipping syncing as the created storage is read-only.')
+    else:
+        try:
+            source_storage = obj.client.get_local_storage(
+                container_obj, excluded_storage=storage.backend_id)
+        except WildlandError:
+            try:
+                source_storage = obj.client.get_remote_storage(
+                    container_obj, excluded_storage=storage.backend_id)
+            except WildlandError:
+                logger.debug('No appropriate source storage found for syncing with %s',
+                             str(storage))
+                return
+
+        logger.debug("sync: {%s} -> {%s}", source_storage, storage)
+
+        response = obj.client.do_sync(container_obj.uuid, container_obj.sync_id,
+            source_storage.params, storage.params, one_shot=True, unidir=True,
+            wait_if_already_running=True)
+        logger.debug(response)
+        msg, success = obj.client.wait_for_sync(container_obj.sync_id, stop_on_finish=True)
+        click.echo(msg)
+        if not success:
+            raise WildlandError(f'Failed to sync storage for container {container_obj.uuid} '
+                f'(source: {source_storage}, target: {storage})')
 
 
 def _is_container_mounted(obj: ContextObj, container_mount_path: PurePosixPath) -> bool:
@@ -236,7 +274,9 @@ def list_(obj: ContextObj):
             click.echo(backend)
 
 
-@storage_.command('delete', short_help='delete a storage', alias=['rm', 'remove'])
+@storage_.command('delete', short_help='delete a storage; sync removed storage with the first '
+    'remote storage (or to the first local storage if no remote storage was found)',
+    alias=['rm', 'remove'])
 @click.pass_obj
 @click.option('--force', '-f', is_flag=True,
               help='delete even if used by containers or if manifest cannot be loaded;'
@@ -286,29 +326,28 @@ def _delete(obj: ContextObj, name: str, force: bool, no_cascade: bool, container
                 click.echo(f"Syncing of {container_obj.uuid} is in progress.")
                 return
 
-    if container_to_sync:
-        for c in container_to_sync:
-            storage_to_delete = _get_storage_by_id_or_type(name, obj.client.all_storages(c))
-            click.echo(f'Outdated storage for container {c.uuid}, attempting to sync storage.')
-            target = None
+    for c in container_to_sync:
+        storage_to_delete = _get_storage_by_id_or_type(name, obj.client.all_storages(c))
+        click.echo(f'Outdated storage for container {c.uuid}, attempting to sync storage.')
+        target = None
+        try:
+            target = obj.client.get_remote_storage(c, excluded_storage=name)
+        except WildlandError:
+            pass
+        if not target:
             try:
-                target = obj.client.get_remote_storage(c, excluded_storage=name)
+                target = obj.client.get_local_storage(c, excluded_storage=name)
             except WildlandError:
-                pass
-            if not target:
-                try:
-                    target = obj.client.get_local_storage(c, excluded_storage=name)
-                except WildlandError:
-                    # pylint: disable=raise-missing-from
-                    raise WildlandError("Cannot find storage to sync data into.")
-            logger.debug("sync: {%s} -> {%s}", storage_to_delete, target)
-            response = obj.client.do_sync(c.uuid, c.sync_id, storage_to_delete.params,
-                                          target.params, one_shot=True, unidir=True)
-            logger.debug(response)
-            msg, success = obj.client.wait_for_sync(c.sync_id)
-            click.echo(msg)
-            if not success:
-                container_failed_to_sync.append(c.uuid)
+                # pylint: disable=raise-missing-from
+                raise WildlandError("Cannot find storage to sync data into.")
+        logger.debug("sync: {%s} -> {%s}", storage_to_delete, target)
+        response = obj.client.do_sync(c.uuid, c.sync_id, storage_to_delete.params,
+                                        target.params, one_shot=True, unidir=True)
+        logger.debug(response)
+        msg, success = obj.client.wait_for_sync(c.sync_id)
+        click.echo(msg)
+        if not success:
+            container_failed_to_sync.append(c.uuid)
 
     if container_failed_to_sync and not force:
         click.echo(f"Failed to sync storage for containers: {','.join(container_failed_to_sync)}")
