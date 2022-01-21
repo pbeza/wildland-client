@@ -8,6 +8,7 @@
         "version": {"$ref": "/schemas/types.json#version"},
         "owner": { "$ref": "/schemas/types.json#fingerprint" },
         "object": {},
+        "primary-path": {},
         "paths": {},
         "title": {},
         "categories": {},
@@ -24,6 +25,10 @@
             },
             "properties": {
                 "object": { "const": "container"},
+                "primary-path": {
+                    "type": ["string", "null"],
+                    "description": "The container's primary path."
+                },
                 "paths": {
                     "type": "array",
                     "items": { "$ref": "/schemas/types.json#abs-path" },
@@ -69,6 +74,7 @@
             "properties": {
                 "object": {},
                 "paths": {},
+                "primary-path": {},
                 "title": {},
                 "categories": {},
                 "backends": {},

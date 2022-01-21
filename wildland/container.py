@@ -73,6 +73,7 @@ class Container(PublishableWildlandObject, obj_type=WildlandObject.Type.CONTAINE
                  paths: List[PurePosixPath],
                  backends: List[Union[str, dict]],
                  client,
+                 primary_path: Optional[str] = None,
                  title: Optional[str] = None,
                  categories: Optional[List[PurePosixPath]] = None,
                  manifest: Manifest = None,
@@ -96,6 +97,14 @@ class Container(PublishableWildlandObject, obj_type=WildlandObject.Type.CONTAINE
         self._uuid_path = self._ensure_uuid()
         self._storage_cache = [_StorageCache(self.fill_storage_fields(b), self)
                                for b in deepcopy(backends)]
+
+        # the primary container access path; defaults to the container's uuid path
+        if primary_path is not None:
+            self.primary_path = PurePosixPath(primary_path)
+        else:
+            self.primary_path = self._uuid_path
+        if primary_path is not None and PurePosixPath(primary_path) not in self.paths:
+            self.paths.append(PurePosixPath(primary_path))
 
     @property
     def uuid_path(self) -> PurePosixPath:
@@ -165,7 +174,8 @@ class Container(PublishableWildlandObject, obj_type=WildlandObject.Type.CONTAINE
             return self._str_repr
         fields = self.to_repr_fields(include_sensitive=include_sensitive)
         array_repr: List[str] = []
-        for field in ['owner', 'paths', 'local-path', 'backends', 'title', 'categories', 'access']:
+        for field in ['owner', 'primary-path', 'paths', 'local-path',
+                      'backends', 'title', 'categories', 'access']:
             if fields.get(field, None):
                 if field == 'paths':
                     array_repr += [f"paths={[str(p) for p in fields['paths']]}"]
@@ -182,13 +192,14 @@ class Container(PublishableWildlandObject, obj_type=WildlandObject.Type.CONTAINE
     def parse_fields(cls, fields: dict, client, manifest: Optional[Manifest] = None, **kwargs):
         return cls(
             owner=fields['owner'],
+            primary_path=fields.get('primary-path'),
             paths=[PurePosixPath(p) for p in fields['paths']],
             backends=fields['backends']['storage'],
             client=client,
             title=fields.get('title'),
             categories=[PurePosixPath(p) for p in fields.get('categories', [])],
             manifest=manifest,
-            access=fields.get('access')
+            access=fields.get('access'),
         )
 
     def to_manifest_fields(self, inline: bool, str_repr_only: bool = False) -> dict:
@@ -215,6 +226,7 @@ class Container(PublishableWildlandObject, obj_type=WildlandObject.Type.CONTAINE
             "version": Manifest.CURRENT_VERSION,
             "object": WildlandObject.Type.CONTAINER.value,
             "owner": self.owner,
+            "primary-path": str(self.primary_path),
             "paths": [str(p) for p in self.paths],
             "title": self.title,
             "categories": [str(cat) for cat in self.categories],
