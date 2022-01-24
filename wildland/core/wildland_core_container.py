@@ -319,7 +319,7 @@ class WildlandCoreContainer(WildlandCoreApi):
             owner_user = self.client.load_object_from_name(WildlandObject.Type.USER,
                                                            container.owner)
             if owner_user.has_catalog:
-                logger.info('Publishing a container: [%s]', container.get_primary_publish_path())
+                logger.info('Publishing container: [%s]', container.get_primary_publish_path())
                 publisher = Publisher(self.client, owner_user)
                 publisher.publish(container)
         except WildlandError as ex:
@@ -341,7 +341,44 @@ class WildlandCoreContainer(WildlandCoreApi):
         :return: tuple of WildlandResult and list of tuples of WLContainer, WLStorage that contain
         the provided path
         """
-        raise NotImplementedError
+        return self.__container_find_by_path(path)
+
+    @wildland_result(default_output=None)
+    def __container_find_by_path(self, path: str):
+        fs_client = self.client.fs_client
+        path = fs_client.mount_dir / path
+        if not path.exists():
+            raise FileNotFoundError(f'Given path [{path}] does not exist.')
+
+        try:
+            relpath = path.resolve().relative_to(fs_client.mount_dir)
+        except ValueError as e:
+            raise WildlandError(f'Given path [{path}] is not a subpath of the mountpoint '
+                                f'[{fs_client.mount_dir}]') from e
+
+        if path.is_dir():
+            results = fs_client.run_control_command('dirinfo', path=('/' + str(relpath)))
+        else:
+            results = [fs_client.run_control_command('fileinfo', path=('/' + str(relpath)))]
+
+        response: List[Tuple[WLContainer, WLStorage]] = []
+        for result in results:
+            if not result:
+                continue
+            result_c, container = self.container_find_by_id(result['storage']['container-path'])
+            if not result_c.success:
+                continue
+            for storage in container.load_storages():
+                if storage.backend_id == result['storage']['backend-id']:
+                    wl_container = utils.container_to_wlcontainer(container)
+                    wl_storage = utils.storage_to_wl_storage(storage)
+                    response.append((wl_container, wl_storage))
+                    break
+
+        if not results:
+            raise WildlandError('Given path was not found in any storage')
+
+        return response
 
     def container_find_by_id(self, container_id: str) -> Tuple[WildlandResult, Optional[Container]]:
         """

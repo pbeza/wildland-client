@@ -112,6 +112,7 @@ def storage_to_wl_storage(storage: Storage) -> WLStorage:
         trusted=storage.trusted,
         primary=storage.primary,
         access_ids=[],  # TODO
+        backend_id=storage.backend_id,
     )
     return wl_storage
 

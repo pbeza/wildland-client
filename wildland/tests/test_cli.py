@@ -1363,7 +1363,7 @@ def test_container_publish_after_edit_with_publish_flag(cli, tmp_path, base_dir)
                                '--publish', stderr=subprocess.STDOUT).decode().splitlines()
     assert len(out_lines) == 2
     assert re.match('Saved: .*/Container.container.yaml', out_lines[0])
-    assert 'Publishing a container' in out_lines[1]
+    assert 'Publishing container' in out_lines[1]
 
     assert len(tuple(tmp_path.glob('*.container.yaml'))) == 1
 

@@ -1289,19 +1289,25 @@ def find(obj: ContextObj, path: str):
     be relative with respect to the current working directory (not to the Wildland's mountpoint).
     """
     absolute_path = Path(path).resolve()
-    results = set(sorted([
-        (fileinfo.backend_id, f'wildland:{fileinfo.storage_owner}:{fileinfo.container_path}:')
-        for fileinfo in obj.fs_client.pathinfo(absolute_path)
-    ]))
+    try:
+        relpath = absolute_path.resolve().relative_to(obj.fs_client.mount_dir)
+    except ValueError as e:
+        raise CliError(f'Given path [{absolute_path}] is not a subpath of the mountpoint '
+                       f'[{obj.fs_client.mount_dir}]') from e
 
-    if not results:
+    result, wl_objects = obj.wlcore.container_find_by_path(str(relpath))
+
+    if not result.success:
+        raise CliError(str(result))
+
+    if not wl_objects:
         raise CliError('Given path was not found in any storage')
 
-    for result in results:
-        (backend_id, wlpath) = result
-
+    for result in wl_objects:
+        (container, storage) = result
+        wlpath = f'wildland:{container.owner}:{container.id}'
         click.echo(f'Container: {wlpath}\n'
-                   f'  Backend id: {backend_id}')
+                   f'  Backend id: {storage.backend_id}')
 
 
 @container_.command(short_help='verify and dump contents of a container')
