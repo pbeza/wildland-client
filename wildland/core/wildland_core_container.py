@@ -56,7 +56,7 @@ class WildlandCoreContainer(WildlandCoreApi):
                          categories: Optional[List[str]] = None,
                          title: Optional[str] = None, owner: Optional[str] = None,
                          name: Optional[str] = None) -> \
-            Tuple[WildlandResult, Optional[WLContainer], Optional[Path]]:
+            Tuple[WildlandResult, Optional[Tuple[WLContainer, Path]]]:
         """
         Create a new container manifest
         :param paths: container paths (must be absolute paths)
@@ -69,12 +69,13 @@ class WildlandCoreContainer(WildlandCoreApi):
         :param title: title of the container, will be used to generate mount paths
         :param owner: owner of the container; if omitted, default owner will be used
         :param name: name of the container to be created, used in naming container file
-        :return: Tuple of WildlandResult and, if successful, the created WLContainer with its path
+        :return: Tuple of WildlandResult and, if successful, the created WLContainer together with
+        its path
         """
         return self.__container_create(paths, access_users, encrypt_manifest, categories, title,
                                        owner, name)
 
-    @wildland_result(default_output=(None, None))
+    @wildland_result(default_output=None)
     def __container_create(self, paths: List[str],
                            access_users: Optional[List[str]] = None,
                            encrypt_manifest: bool = True,
@@ -99,7 +100,7 @@ class WildlandCoreContainer(WildlandCoreApi):
 
         owner_result, owner_user = self.object_get(WLObjectType.USER, owner or '@default-owner')
         if not owner_result.success or not owner_user:
-            return owner_result, None, None
+            return owner_result, None
 
         categories = categories if categories else []
         container = Container(
@@ -113,7 +114,7 @@ class WildlandCoreContainer(WildlandCoreApi):
         )
         path = self.client.save_new_object(WildlandObject.Type.CONTAINER, container, name)
         wl_container = utils.container_to_wlcontainer(container)
-        return wl_container, path
+        return WildlandResult(), (wl_container, path)
 
     def container_list(self) -> Tuple[WildlandResult, List[WLContainer]]:
         """
@@ -239,7 +240,7 @@ class WildlandCoreContainer(WildlandCoreApi):
         return WildlandResult()
 
     def container_duplicate(self, container_id: str, name: Optional[str] = None) -> \
-            Tuple[WildlandResult, Optional[WLContainer]]:
+            Tuple[WildlandResult, Optional[Tuple[WLContainer, Path]]]:
         """
         Create a copy of the provided container at the provided friendly name, with a newly
         generated id and copied storages
@@ -247,9 +248,19 @@ class WildlandCoreContainer(WildlandCoreApi):
         owner_id:/.uuid/container_uuid
         :param name: optional name for the new container. If omitted, will be generated
         automatically
-        :return: WildlandResult and, if duplication was successful, the new container
+        :return: Tuple of WildlandResult and, if successful, the created WLContainer together with
+        its path
         """
-        raise NotImplementedError
+        return self.__container_duplicate(container_id, name)
+
+    @wildland_result(default_output=None)
+    def __container_duplicate(self, container_id: str, name: Optional[str]):
+        result, container = self.container_find_by_id(container_id)
+        if not result.success or not container:
+            return result, None
+        new_container = container.copy(name)
+        path = self.client.save_new_object(WildlandObject.Type.CONTAINER, new_container, name)
+        return WildlandResult(), (path, new_container)
 
     def container_import_from_data(self, yaml_data: str, overwrite: bool = True) -> \
             Tuple[WildlandResult, Optional[WLContainer]]:
@@ -344,9 +355,9 @@ class WildlandCoreContainer(WildlandCoreApi):
         return self.__container_find_by_path(path)
 
     @wildland_result(default_output=None)
-    def __container_find_by_path(self, path: str):
+    def __container_find_by_path(self, _path: str):
         fs_client = self.client.fs_client
-        path = fs_client.mount_dir / path
+        path = fs_client.mount_dir / _path
         if not path.exists():
             raise FileNotFoundError(f'Given path [{path}] does not exist.')
 
@@ -366,7 +377,7 @@ class WildlandCoreContainer(WildlandCoreApi):
             if not result:
                 continue
             result_c, container = self.container_find_by_id(result['storage']['container-path'])
-            if not result_c.success:
+            if not result_c.success or not container:
                 continue
             for storage in container.load_storages():
                 if storage.backend_id == result['storage']['backend-id']:

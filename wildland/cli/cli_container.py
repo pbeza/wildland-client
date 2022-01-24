@@ -172,12 +172,14 @@ def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Opt
             raise CliError('--category option requires --title or container name')
         title = name
 
-    result, container, container_path = obj.wlcore.container_create(list(path), list(access),
-                                                                    encrypt_manifest,
-                                                                    list(category), title, owner,
-                                                                    name)
-    if not result.success or not container or not container_path:
+    result, container_tuple = obj.wlcore.container_create(list(path), list(access),
+                                                          encrypt_manifest, list(category), title,
+                                                          owner, name)
+    if not result.success or not container_tuple or len(container_tuple) < 2:
         raise CliError(f'Failed to create container: {str(result)}')
+    (container, container_path) = container_tuple
+    if not container or not container_path:
+        raise CliError(f'Failed to create container')
 
     click.echo(f'Created: {container_path}')
 
@@ -1272,12 +1274,19 @@ def duplicate(obj: ContextObj, new_name, cont):
     """
     Duplicate an existing container manifest.
     """
+    result, container = obj.wlcore.object_get(WLObjectType.CONTAINER, cont)
+    if not result.success or not container:
+        raise CliError(f'Could not resolve container {cont}\n{str(result)}')
 
-    container = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, cont)
-    new_container = container.copy(new_name)
+    result, container_tuple = obj.wlcore.container_duplicate(container.id, new_name)
+    if not result.success:
+        raise CliError(str(result))
 
-    path = obj.client.save_new_object(WildlandObject.Type.CONTAINER, new_container, new_name)
-    click.echo(f'Created: {path}')
+    (new_container, container_path) = container_tuple
+    if not container or not container_path:
+        raise CliError(f'Failed to duplicate container')
+
+    click.echo(f'Created: {container_path}')
 
 
 @container_.command(short_help='find container by absolute file or directory path')
@@ -1303,10 +1312,9 @@ def find(obj: ContextObj, path: str):
     if not wl_objects:
         raise CliError('Given path was not found in any storage')
 
-    for result in wl_objects:
-        (container, storage) = result
+    for container, storage in wl_objects:
         wlpath = f'wildland:{container.owner}:{container.id}'
-        click.echo(f'Container: {wlpath}\n'
+        click.echo(f'Container: {wlpath}:\n'
                    f'  Backend id: {storage.backend_id}')
 
 

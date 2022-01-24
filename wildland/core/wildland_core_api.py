@@ -407,7 +407,7 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
                          categories: Optional[List[str]] = None,
                          title: Optional[str] = None, owner: Optional[str] = None,
                          name: Optional[str] = None) -> \
-            Tuple[WildlandResult, Optional[WLContainer], Optional[Path]]:
+            Tuple[WildlandResult, Optional[Tuple[WLContainer, Path]]]:
         """
         Create a new container manifest
         :param paths: container paths (must be absolute paths)
@@ -420,7 +420,8 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         :param title: title of the container, will be used to generate mount paths
         :param owner: owner of the container; if omitted, default owner will be used
         :param name: name of the container to be created, used in naming container file
-        :return: Tuple of WildlandResult and, if successful, the created WLContainer
+        :return: Tuple of WildlandResult and, if successful, the created WLContainer together with
+        its path
         """
 
     @abc.abstractmethod
@@ -444,7 +445,7 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def container_duplicate(self, container_id: str, name: Optional[str] = None) -> \
-            Tuple[WildlandResult, Optional[WLContainer]]:
+            Tuple[WildlandResult, Optional[Tuple[WLContainer, Path]]]:
         """
         Create a copy of the provided container at the provided friendly name, with a newly
         generated id and copied storages
@@ -452,7 +453,8 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         owner_id:/.uuid/container_uuid
         :param name: optional name for the new container. If omitted, will be generated
         automatically
-        :return: WildlandResult and, if duplication was successful, the new container
+        :return: Tuple of WildlandResult and, if successful, the created WLContainer together with
+        its path
         """
 
     @abc.abstractmethod
