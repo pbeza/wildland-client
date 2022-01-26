@@ -289,7 +289,7 @@ class Manifest:
             del fields['subcontainers']
             
         for path in fields.get('paths', []):
-            if PurePosixPath(path).parent == PurePosixPath('/.uuid/'):
+            if path is not None and PurePosixPath(path).parent == PurePosixPath('/.uuid/'):
                 fields['container-id'] = path
                 new_paths = fields.get('paths').remove(path)
                 fields['paths'] = new_paths if new_paths else []
