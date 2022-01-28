@@ -179,7 +179,7 @@ def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Opt
         raise CliError(f'Failed to create container: {str(result)}')
     (container, container_path) = container_tuple
     if not container or not container_path:
-        raise CliError(f'Failed to create container')
+        raise CliError('Failed to create container')
 
     click.echo(f'Created: {container_path}')
 
@@ -1281,11 +1281,10 @@ def duplicate(obj: ContextObj, new_name, cont):
     result, container_tuple = obj.wlcore.container_duplicate(container.id, new_name)
     if not result.success:
         raise CliError(str(result))
+    if not container_tuple or not container_tuple[0] or not container_tuple[1]:
+        raise CliError('Failed to duplicate container')
 
-    (new_container, container_path) = container_tuple
-    if not container or not container_path:
-        raise CliError(f'Failed to duplicate container')
-
+    container_path = container_tuple[1]
     click.echo(f'Created: {container_path}')
 
 
@@ -1298,6 +1297,8 @@ def find(obj: ContextObj, path: str):
     be relative with respect to the current working directory (not to the Wildland's mountpoint).
     """
     absolute_path = Path(path).resolve()
+    if not absolute_path.exists():
+        raise CliError(f'[{absolute_path}] does not exist')
     try:
         relpath = absolute_path.resolve().relative_to(obj.fs_client.mount_dir)
     except ValueError as e:

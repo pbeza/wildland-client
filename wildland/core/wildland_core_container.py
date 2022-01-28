@@ -21,7 +21,7 @@
 Wildland core implementation - container-related functions
 """
 from pathlib import PurePosixPath, Path
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict
 
 import wildland.core.core_utils as utils
 from wildland.exc import WildlandError
@@ -372,7 +372,11 @@ class WildlandCoreContainer(WildlandCoreApi):
         else:
             results = [fs_client.run_control_command('fileinfo', path=('/' + str(relpath)))]
 
-        response: List[Tuple[WLContainer, WLStorage]] = []
+        response: Dict[str, Tuple[WLContainer, WLStorage]] = {}
+
+        def get_index(wl_c: WLContainer, wl_s: WLStorage):
+            return f'{wl_c.owner}:{wl_c.id}:{wl_s.backend_id}'
+
         for result in results:
             if not result:
                 continue
@@ -380,16 +384,20 @@ class WildlandCoreContainer(WildlandCoreApi):
             if not result_c.success or not container:
                 continue
             for storage in container.load_storages():
-                if storage.backend_id == result['storage']['backend-id']:
-                    wl_container = utils.container_to_wlcontainer(container)
-                    wl_storage = utils.storage_to_wl_storage(storage)
-                    response.append((wl_container, wl_storage))
-                    break
+                if storage.backend_id != result['storage']['backend-id']:
+                    continue
+                wl_container = utils.container_to_wlcontainer(container)
+                wl_storage = utils.storage_to_wl_storage(storage)
+                if response.get(get_index(wl_container, wl_storage)) is not None:
+                    continue
+                response[get_index(wl_container, wl_storage)] = (wl_container, wl_storage)
+                break
 
-        if not results:
+        response_list = [response[idx] for idx in response]
+        if not response_list:
             raise WildlandError('Given path was not found in any storage')
 
-        return response
+        return response_list
 
     def container_find_by_id(self, container_id: str) -> Tuple[WildlandResult, Optional[Container]]:
         """
