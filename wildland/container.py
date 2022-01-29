@@ -458,7 +458,7 @@ class Container(PublishableWildlandObject, obj_type=WildlandObject.Type.CONTAINE
         """Copy this container to a new object with a new UUID and appropriately edited storages."""
         new_container = Container(
             owner=self.owner,
-            paths=self.paths[1:],
+            paths=self.paths,
             backends=[],
             client=self.client,
             title=self.title,

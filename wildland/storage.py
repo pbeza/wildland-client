@@ -265,7 +265,7 @@ class Storage(PublishableWildlandObject, obj_type=WildlandObject.Type.STORAGE):
 
         if self.container:
             container_fields = self.container.to_manifest_fields(inline=False)
-            container_fields['paths'][0] = PurePosixPath(
+            container_fields['container-id'] = PurePosixPath(
                 str(self.container.get_primary_publish_path()).replace(old_uuid, new_uuid)
             )
             container = Container.parse_fields(container_fields, self.client)
