@@ -136,7 +136,8 @@ class Bridge(PublishableWildlandObject, obj_type=WildlandObject.Type.BRIDGE):
         uuid = uuid5(BRIDGE_PLACEHOLDER_UUID_NS, self.user_id)
         return Container(
             owner=self.user_id,
-            paths=[PurePosixPath('/.uuid/' + str(uuid)), PurePosixPath('/')],
+            container_id=PurePosixPath('/.uuid/' + str(uuid)),
+            paths=[PurePosixPath('/')],
             backends=[{
                 'type': 'static',
                 'backend-id': str(uuid),

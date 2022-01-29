@@ -83,8 +83,8 @@ f'''# All YAML comments will be discarded when the manifest is saved
 version: '1'
 object: container
 owner: '0xaaa'
+container-id: /.uuid/{container.uuid}
 paths:
-- /.uuid/{container.uuid}
 - /PATH
 title: 'null'
 categories: []
@@ -137,12 +137,12 @@ def test_edit_path(client, base_dir):
     with open(base_dir / "containers/Container.container.yaml", "r") as f:
         content = f.read()
         assert "- /NEW" in content
-        assert "paths:\n- /.uuid/" in content
+        assert "container-id: /.uuid/" in content
 
     with pm_backend.open(PurePosixPath(), flags=0) as f:
         content = f.read().decode()
         assert "- /NEW" in content
-        assert "paths:\n- /.uuid/" in content
+        assert "container-id: /.uuid/" in content
 
 
 def test_edit_with_non_default_owner(client, base_dir):
@@ -151,12 +151,12 @@ def test_edit_with_non_default_owner(client, base_dir):
     with open(base_dir / "containers/ContainerB.container.yaml", "r") as f:
         content = f.read()
         assert "- /NEW" in content
-        assert "paths:\n- /.uuid/" in content
+        assert "container-id: /.uuid/" in content
 
     with pm_backend.open(PurePosixPath(), flags=0) as f:
         content = f.read().decode()
         assert "- /NEW" in content
-        assert "paths:\n- /.uuid/" in content
+        assert "container-id: /.uuid/" in content
 
 
 def test_edit_category(client, base_dir):
@@ -281,8 +281,8 @@ def test_many_changes_at_once(client, base_dir):
 version: '1'
 object: container
 owner: '0xaaa'
+container-id: {uuid_path}
 paths:
-- {uuid_path}
 - /PATH
 - /NEW
 title: new_title
@@ -307,8 +307,8 @@ access:
         f'''version: '1'
 object: container
 owner: '0xaaa'
+container-id: {uuid_path}
 paths:
-- {uuid_path}
 - /PATH
 - /PATH
 - /Ano/ther
@@ -325,8 +325,8 @@ access:
 version: '1'
 object: container
 owner: '0xaaa'
+container-id: {uuid_path}
 paths:
-- {uuid_path}
 - /PATH
 - /Ano/ther
 title: other_title

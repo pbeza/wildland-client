@@ -105,7 +105,7 @@ def test_container_repr(client, cli):
 
     assert dropbox_backend_id is not None
 
-    expected_str = f"container(owner='0xaaa', paths=['/.uuid/{container.uuid}', '/path'], " \
+    expected_str = f"container(owner='0xaaa', container-id: '/.uuid/{container.uuid}', paths=['/path'], " \
                    f"local-path='{client.base_dir}/containers/Container1.container.yaml', " \
                    f"backends=['file://localhost{client.base_dir}/storage/Storage1.storage.yaml'," \
                    f" {{'type': 'dropbox', 'backend-id': '{dropbox_backend_id}'}}])"

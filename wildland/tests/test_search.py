@@ -194,7 +194,7 @@ def test_resolve_first(base_dir, client):
     search = Search(client, WildlandPath.from_str(':/path:'),
                     aliases={'default': '0xaaa'})
     step = list(search._resolve_first())[0]
-    assert step.container.paths[1] == PurePosixPath('/path')
+    assert step.container.paths[0] == PurePosixPath('/path')
 
     _, backend = search._find_storage(step)
     assert isinstance(backend, LocalStorageBackend)
@@ -203,7 +203,7 @@ def test_resolve_first(base_dir, client):
     search = Search(client, WildlandPath.from_str(':/path/subpath:'),
                     aliases={'default': '0xaaa'})
     step = list(search._resolve_first())[0]
-    assert step.container.paths[1] == PurePosixPath('/path/subpath')
+    assert step.container.paths[0] == PurePosixPath('/path/subpath')
 
     _, backend = search._find_storage(step)
     assert isinstance(backend, LocalStorageBackend)
@@ -580,8 +580,8 @@ pubkeys:
 - key.0xbbb
 manifests-catalog:
  - object: container
-   paths:
-    - /.uuid/11e69833-0152-4563-92fc-b1540fc54a69
+   container-id: /.uuid/11e69833-0152-4563-92fc-b1540fc54a69
+   paths: []
    backends:
     storage:
      - object: storage
@@ -653,8 +653,8 @@ pubkeys:
 - key.0xbbb
 manifests-catalog:
  - object: container
-   paths:
-    - /.uuid/11e69833-0152-4563-92fc-b1540fc54a69
+   container-id: /.uuid/11e69833-0152-4563-92fc-b1540fc54a69
+   paths: []
    backends:
     storage:
      - object: storage
@@ -725,8 +725,8 @@ signature: |
 ---
 object: container
 owner: '0xfff'
-paths:
-- /.uuid/11e69833-0152-4563-92fc-b1540fc54a69
+container-id: /.uuid/11e69833-0152-4563-92fc-b1540fc54a69
+paths: []
 backends:
   storage:
    - object: storage

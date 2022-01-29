@@ -145,11 +145,13 @@ class Container(PublishableWildlandObject, obj_type=WildlandObject.Type.CONTAINE
         return (self.owner == other.owner and
                 set(self.paths) == set(other.paths) and
                 self.title == other.title and
-                set(self.categories) == set(other.categories))
+                set(self.categories) == set(other.categories) and
+                self.container_id == other.container_id)
 
     def __hash__(self):
         return hash((
             self.owner,
+            self.container_id,
             frozenset(self.paths),
             self.title,
             frozenset(self.categories),

@@ -142,8 +142,8 @@ def container(cli, base_dir, data_dir):
             'object': 'container',
             'owner': '0xaaa',
             'version': Manifest.CURRENT_VERSION,
+            'container-id': '/.uuid/98cf16bf-f59b-4412-b54f-d8acdef391c0',
             'paths': [
-                '/.uuid/98cf16bf-f59b-4412-b54f-d8acdef391c0',
                 '/PATH',
             ],
             'backends': {
@@ -159,7 +159,8 @@ def container(cli, base_dir, data_dir):
                         'object': 'container',
                         'version': Manifest.CURRENT_VERSION,
                         'owner': '0xaaa',
-                        'paths': ['/.uuid/39f437f3-b071-439c-806b-6d14fa55e827'],
+                        'container-id': '/.uuid/39f437f3-b071-439c-806b-6d14fa55e827',
+                        'paths': [],
                         'backends': {
                             'storage': [{
                                 'object': 'storage',
@@ -198,18 +199,18 @@ def test_timeline_subcontainers(base_dir, container, data_dir):
     container = client.load_object_from_name(WildlandObject.Type.CONTAINER, container)
     subcontainers = list(client.all_subcontainers(container))
     assert len(subcontainers) == 2
-    assert subcontainers[0].paths[1:] == [PurePosixPath('/timeline/2008/02/03')]
+    assert subcontainers[0].paths == [PurePosixPath('/timeline/2008/02/03')]
     assert subcontainers[0]._storage_cache[0].storage == {
         'object': 'storage',
         'type': 'delegate',
         'subdirectory': '/2008/02/03/dir2/dir3/file2',
         'owner': container.owner,
-        'container-path': str(subcontainers[0].paths[0]),
-        'reference-container': f'wildland:@default:{container.paths[0]}:',
-        'backend-id': str(subcontainers[0].paths[0])[7:],
+        'container-path': str(subcontainers[0].container_id),
+        'reference-container': f'wildland:@default:{container.container_id}:',
+        'backend-id': str(subcontainers[0].container_id)[7:],
         'version': Manifest.CURRENT_VERSION
     }
-    assert subcontainers[1].paths[1:] == [PurePosixPath('/timeline/2010/05/07')]
+    assert subcontainers[1].paths == [PurePosixPath('/timeline/2010/05/07')]
     assert subcontainers[1]._storage_cache[0].storage['subdirectory'] == '/2010/05/07/dir1/file1'
 
 def test_timeline_subcontainers_fuse(base_dir, env, container, data_dir):
@@ -229,7 +230,7 @@ def test_timeline_subcontainers_fuse(base_dir, env, container, data_dir):
 
     container = client.load_object_from_name(WildlandObject.Type.CONTAINER, container)
     for subcontainer in client.all_subcontainers(container):
-        env.mount_storage(subcontainer.paths[1:], client.select_storage(subcontainer).params)
+        env.mount_storage(subcontainer.paths, client.select_storage(subcontainer).params)
 
     assert treewalk.walk_all(env.mnt_dir) == [
         'timeline/',
@@ -252,8 +253,8 @@ def old_container(cli, base_dir, data_dir):
             'object': 'container',
             'owner': '0xaaa',
             'version': Manifest.CURRENT_VERSION,
+            'container-id': '/.uuid/98cf16bf-f59b-4412-b54f-d8acdef391c0',
             'paths': [
-                '/.uuid/98cf16bf-f59b-4412-b54f-d8acdef391c0',
                 '/PATH',
             ],
             'backends': {
@@ -268,7 +269,8 @@ def old_container(cli, base_dir, data_dir):
                         'object': 'container',
                         'version': Manifest.CURRENT_VERSION,
                         'owner': '0xaaa',
-                        'paths': ['/.uuid/39f437f3-b071-439c-806b-6d14fa55e827'],
+                        'container-id': '/.uuid/39f437f3-b071-439c-806b-6d14fa55e827',
+                        'paths': [],
                         'backends': {
                             'storage': [{
                                 'object': 'storage',

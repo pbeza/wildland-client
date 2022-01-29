@@ -204,8 +204,8 @@ class TimelineStorageBackend(CachedStorageMixin, StorageBackend):
 
             yield PurePosixPath(self.root + '/' + date + '/' + name), \
                 ContainerStub({
+                    'container-id': '/.uuid/{!s}'.format(uuid.uuid3(ns, name)),
                     'paths': [
-                        '/.uuid/{!s}'.format(uuid.uuid3(ns, name)),
                         self.root + '/' + date,
                     ],
                     'title': file.name,
