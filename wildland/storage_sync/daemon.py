@@ -35,7 +35,6 @@ import click
 
 from wildland.config import Config
 from wildland.exc import WildlandError
-from wildland.hashdb import HashDb
 from wildland.log import init_logging
 from wildland.control_server import ControlServer, control_command, ControlHandler
 from wildland.manifest.schema import Schema
@@ -307,13 +306,6 @@ class SyncDaemon:
                        f'of type {target_backend.TYPE}.'
 
             # Store information about container/backend mappings
-            assert self.base_dir
-            hash_db = HashDb(self.base_dir)
-            uuid = job_id.split('|')[1]
-            hash_db.update_storages_for_containers(uuid, [source_backend, target_backend])
-
-            source_backend.set_config_dir(self.base_dir)  # hashdb location
-            target_backend.set_config_dir(self.base_dir)
             syncer = BaseSyncer.from_storages(source_storage=source_backend,
                                               target_storage=target_backend,
                                               log_prefix=f'Container: {container_name}',
