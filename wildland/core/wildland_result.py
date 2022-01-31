@@ -38,6 +38,7 @@ from .wildland_objects_api import WLObjectType
 class WLErrorType(Enum):
     """
     Listing of possible WL error types.
+    TODO: descriptions?
     """
     MANIFEST_ERROR = 1, "Incorrect manifest"
     SIGNATURE_ERROR = 2, "Incorrect signature"
