@@ -188,8 +188,8 @@ class WildlandCore(WildlandCoreUser, WildlandCoreApi):
             return utils.storage_to_wl_storage(wildland_object)
         return None
 
-    def object_import_from_yaml(self, yaml_data: bytes, object_name: Optional[str], force=False) -> \
-            Tuple[WildlandResult, Optional[WLObject]]:
+    def object_import_from_yaml(self, yaml_data: bytes, object_name: Optional[str],
+                                force=False) -> Tuple[WildlandResult, Optional[WLObject]]:
         """
         Import object from raw data. Only copies the provided object to appropriate WL manifest
         directory, does not create any bridges or other objects.
@@ -217,7 +217,7 @@ class WildlandCore(WildlandCoreUser, WildlandCoreApi):
         :param object_name: name of the object to be created
         :param force: set True if the existed file should be rewritten
         """
-        return self.__object_import_from_url(url, object_name)
+        return self.__object_import_from_url(url, object_name, force)
 
     @wildland_result(default_output=None)
     def __object_import_from_url(self, url: str, object_name: Optional[str], force):

@@ -124,7 +124,7 @@ def wl_obj_to_wildland_object_type(wl_obj: WLObjectType) -> Optional[WildlandObj
         return None
 
 
-def find_object_manifest_path(obj: WildlandObject, client: Client) -> Path:
+def find_object_manifest_path(obj: WildlandObject, client: Client) -> Optional[Path]:
     """
     Find and return the object manifest path if it's already saved.
     """
@@ -134,6 +134,7 @@ def find_object_manifest_path(obj: WildlandObject, client: Client) -> Path:
         # streamlined and faster way, see #759
         if get_object_id(existing_obj) == known_id:
             return path
+    return None
 
 
 def wildland_object_to_wl_object(obj: WildlandObject, client: Client) -> WLObject:

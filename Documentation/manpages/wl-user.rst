@@ -134,6 +134,10 @@ For Wildland object path, will import all referenced bridges and their reference
 
     Override the owner of created bridge manifests with provided owner.
 
+.. option:: --force-reimport
+
+    Override the existed user if exists.
+
 .. program:: wl-user-refresh
 .. _wl-user-refresh:
 
