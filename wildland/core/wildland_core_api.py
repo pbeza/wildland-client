@@ -20,7 +20,7 @@
 API for Wildland Core
 """
 import abc
-from typing import List, Tuple, Optional, Callable, Dict
+from typing import List, Tuple, Optional, Callable, Dict, Any
 from enum import Enum
 from .wildland_result import WildlandResult
 from .wildland_objects_api import WLObject, WLTemplateFile, WLBridge, WLObjectType, WLUser, \
@@ -545,9 +545,9 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         """
 
     @abc.abstractmethod
-    def storage_create(self, backend_type: str, backend_params: Dict[str, str],
-                       container_id: str, trusted: bool = False,
-                       watcher_interval: Optional[int] = 0,
+    def storage_create(self, backend_type: str, backend_params: Dict[str, Any],
+                       container_id: str, name: Optional[str], trusted: bool = False,
+                       watcher_interval: Optional[int] = 0, inline: bool = True,
                        access_users: Optional[list[str]] = None, encrypt_manifest: bool = True) -> \
             Tuple[WildlandResult, Optional[WLStorage]]:
         """
@@ -556,8 +556,11 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         :param backend_params: params for the given backend as a dict of param_name, param_value.
         They must conform to parameter names as provided by supported_storage_backends
         :param container_id: container this storage is for
+        :param name: name of the storage to be created, used in naming storage file
         :param trusted: should the storage be trusted
         :param watcher_interval: set the storage watcher-interval in seconds
+        :param inline: Add the storage directly to container manifest,
+        instead of saving it to a file
         :param access_users: limit access to this storage to the users provided here as either
         user fingerprints or WL paths to users.
         Default: same as the container

@@ -31,8 +31,6 @@ import os
 import errno
 import time
 
-import click
-
 from .cached import CachedStorageMixin, DirectoryCachedStorageMixin
 from .buffered import FullBufferedFile, PagedFile, File
 from .base import StorageBackend, Attr, verify_local_access
@@ -106,18 +104,6 @@ class BaseCached(StorageBackend):
     def __init__(self, **kwds):
         super().__init__(**kwds)
         self.root = Path(self.params['location'])
-
-    @classmethod
-    def cli_options(cls):
-        return [
-            click.Option(['--location'], metavar='PATH',
-                         help='path in local filesystem',
-                         required=True)
-        ]
-
-    @classmethod
-    def cli_create(cls, data):
-        return {'location': data['location']}
 
     @staticmethod
     def _stat(st: os.stat_result) -> Attr:

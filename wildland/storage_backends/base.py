@@ -35,9 +35,7 @@ import stat
 from dataclasses import dataclass
 from pathlib import PurePosixPath, Path
 from uuid import UUID
-from typing import Optional, Dict, Type, Any, List, Iterable, Tuple, Union, TYPE_CHECKING
-
-import click
+from typing import Optional, Dict, Type, Any, Iterable, Tuple, Union, TYPE_CHECKING
 
 import wildland
 from wildland.wildland_object.wildland_object import PublishableWildlandObject
@@ -280,23 +278,6 @@ class StorageBackend(metaclass=abc.ABCMeta):
         if self.LOCATION_PARAM is None:
             return None
         return self.params.get(self.LOCATION_PARAM)
-
-    @classmethod
-    def cli_options(cls) -> List[click.Option]:
-        """
-        Provide a list of command-line options needed to create this storage. If using mixins,
-        check if a super() call is needed.
-        """
-        return []
-
-    @classmethod
-    def cli_create(cls, data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Convert provided command-line arguments to a list of storage parameters. If using mixins,
-        check if a super() call is needed.
-        """
-        # pylint: disable=unused-argument
-        return {}
 
     @staticmethod
     def types() -> Dict[str, Type['StorageBackend']]:

@@ -29,8 +29,6 @@ import re
 from pathlib import PurePosixPath
 from typing import List, Dict, Any, Iterable, Tuple, Optional, Iterator, Set
 
-import click
-
 from wildland.client import Client
 from wildland.container import Container
 from wildland.link import Link
@@ -61,37 +59,6 @@ class FileChildrenMixin(StorageBackend):
     # pylint: disable=abstract-method
 
     DEFAULT_MANIFEST_PATTERN = {'type': 'glob', 'path': '/*.{object-type}.yaml'}
-
-    @classmethod
-    def cli_options(cls) -> List[click.Option]:
-        result = super(FileChildrenMixin, cls).cli_options()
-        result.append(
-            click.Option(['--subcontainer-manifest'], metavar='PATH', multiple=True,
-                         help='Relative path to a child manifest (can be repeated), '
-                              'cannot be used together with manifest-pattern'))
-        result.append(
-            click.Option(['--manifest-pattern'], metavar='GLOB',
-                         help='Set the manifest pattern for storage, cannot be used '
-                              'together with --subcontainer-manifest'))
-        return result
-
-    @classmethod
-    def cli_create(cls, data: Dict[str, Any]) -> Dict[str, Any]:
-        result = super(FileChildrenMixin, cls).cli_create(data)
-        if data.get('subcontainer_manifest'):
-            if data.get('manifest_pattern'):
-                raise WildlandError('--subcontainer-manifest and --manifest-pattern '
-                                    'are mutually exclusive.')
-            result['manifest-pattern'] = {
-                    'type': 'list',
-                    'paths': list(data['subcontainer_manifest'])
-                }
-        elif data.get('manifest_pattern'):
-            result['manifest-pattern'] = {
-                    'type': 'glob',
-                    'path': data['manifest_pattern']
-                }
-        return result
 
     @property
     def supports_publish(self) -> bool:
