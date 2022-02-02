@@ -287,26 +287,34 @@ class Search:
         mount_cmds = {}
         patterns_for_path = set()
         for final_step in self._resolve_all():
+            print('final step: '+str(final_step))
             if final_step.container is None:
+                print('final step container is None')
                 continue
             if self.wlpath.file_path is not None:
+                # file path is none in this case - pointing to a container
                 final_step.pattern = self.wlpath.file_path
             for step in final_step.steps_chain():
+                print('step: '+str(step))
                 if step.pattern is None or step.container is None:
+                    print('step.pattern or step.container is None')
                     continue
                 mount_path, mount_params = self._get_params_for_mount_step(step)
+                print('mount path and params for step: '+str(mount_path)+', '+str(mount_params))
                 if mount_params:
                     mount_cmds[mount_path] = mount_params
                 patterns_for_path.add(
                     mount_path / step.pattern.relative_to(PurePosixPath('/')))
 
+        print('returning: '+str(list(mount_cmds.values()))+ ', '+str(patterns_for_path))
         return list(mount_cmds.values()), patterns_for_path
 
     def _resolve_all(self) -> Iterable[Step]:
         """
         Resolve all path parts, yield all results that match.
         """
-
+        
+        print('RESOLVE ALL:')
         # deduplicate results
         seen_last = set()
         # deduplicate and cache result of self._resolve_first(); it's here,
@@ -316,20 +324,27 @@ class Search:
         seen_first = set()
         cache_key = (self.initial_owner, self.wlpath.parts[0])
         if cache_key in self._resolve_cache:
+            print('key in cache')
             first_iter = self._resolve_cache[cache_key]
         else:
             first_iter = self._resolve_first()
+            print('resolve first results: '+str(first_iter))
         for step in first_iter:
             if step in seen_first:
+                print('step already seen in seen_first')
                 continue
+            print('adding '+str(step)+'to first iter')
             seen_first.add(step)
             for last_step in self._resolve_rest(step, 1):
+                print('last_step '+str(last_step))
                 if last_step not in seen_last:
+                    print('yielding: '+str(last_step))
                     yield last_step
                     seen_last.add(last_step)
         self._resolve_cache[cache_key] = seen_first
 
     def _resolve_rest(self, step: Step, i: int) -> Iterable[Step]:
+        print('RESOLVE REST: ')
         if i == len(self.wlpath.parts):
             yield step
             return
@@ -337,8 +352,10 @@ class Search:
         seen = set()
         cache_key = (step, self.wlpath.parts[i])
         if cache_key in self._resolve_cache:
+            print('key in _resolve cache, adding '+str(self._resolve_cache[cache_key])+' to next_steps')
             next_steps = self._resolve_cache[cache_key]
         else:
+            print('key not in cache, calling _resolve_next')
             next_steps = self._resolve_next(step, i)
         for next_step in next_steps:
             if next_step in seen:
@@ -362,11 +379,13 @@ class Search:
         return storage, StorageBackend.from_params(storage.params, deduplicate=True)
 
     def _resolve_first(self):
+        print('RESOLVE_FIRST')
         if self.wlpath.hint:
             hint_user = self.client.load_object_from_url(WildlandObject.Type.USER, self.wlpath.hint,
                                                          self.initial_owner, self.initial_owner)
 
             for step in self._user_step(hint_user, self.initial_owner, self.client, None, None):
+                print('calling resolve_next from _resolve_first (1)')
                 yield from self._resolve_next(step, 0)
 
         # Try local containers
@@ -376,6 +395,7 @@ class Search:
         for user in self.local_users:
             if user.owner == self.initial_owner:
                 for step in self._user_step(user, self.initial_owner, self.client, None, None):
+                    print('going to resolve_next from _resolve_first (2)')
                     yield from self._resolve_next(step, 0)
 
     def _resolve_local(self, part: PurePosixPath,
@@ -413,7 +433,9 @@ class Search:
         Resolve next part by looking up a manifest in the current container.
         """
 
+        print('RESOLVE NEXT FOR '+str(step))
         if not step.container:
+            print('no container found for step')
             return
 
         part = self.wlpath.parts[i]
@@ -422,14 +444,19 @@ class Search:
         yield from self._resolve_local(part, step.owner, step)
 
         storage, storage_backend = self._find_storage(step)
+        print('storage for step: '+str(storage))
+        print('backend for step: '+str(storage_backend))
 
         try:
             pattern = storage_backend.get_subcontainer_watch_pattern(part)
+            print('adding pattern: '+str(pattern)+' as the pattern for the step')
             step.pattern = pattern
+            print('updated step: '+str(step))
         except NotImplementedError:
             logger.warning('Storage %s does not support watching', storage.params["type"])
 
         if not storage_backend.can_have_children:
+            print('backend cannot have children')
             logger.debug('Storage %s does not support subcontainers - cannot look for %s inside',
                          storage.params["type"], part)
             return
@@ -442,6 +469,7 @@ class Search:
                 return
 
             for manifest_path, subcontainer_data in children_iter:
+                print(str(manifest_path)+' found in children_iter')
                 try:
                     container_or_bridge = step.client.load_subcontainer_object(
                         step.container, storage, subcontainer_data)
@@ -450,14 +478,16 @@ class Search:
                     continue
 
                 if isinstance(container_or_bridge, Container):
+                    print('the child is a container')
                     if container_or_bridge == step.container:
                         # manifests catalog published into itself
                         container_or_bridge.is_manifests_catalog = True
-                    logger.info('%s: container manifest: %s', part, subcontainer_data)
+                    #logger.info('%s: container manifest: %s', str(part), str(subcontainer_data))
                     yield from self._container_step(
                         step, part, container_or_bridge)
                 elif isinstance(container_or_bridge, Bridge):
-                    logger.info('%s: bridge manifest: %s', part, subcontainer_data)
+                    #logger.info('%s: bridge manifest: %s', part, subcontainer_data)
+                    print('the child is a bridge')
                     yield from self._bridge_step(
                         step.client, step.owner,
                         part, manifest_path, storage_backend,
@@ -470,6 +500,7 @@ class Search:
                         step: Step,
                         part: PurePosixPath,
                         container: Container) -> Iterable[Step]:
+        print('_CONTAINER_STEP:')
 
         try:
             self._verify_owner(container, step.owner)
@@ -481,6 +512,15 @@ class Search:
             logger.debug('%s: path not found in manifest, skipping', part)
             return
 
+        print('yielding: '+str(Step(
+            owner=step.owner,
+            client=step.client,
+            container=container,
+            user=None,
+            bridge=None,
+            previous=step,
+        )))
+        
         yield Step(
             owner=step.owner,
             client=step.client,
@@ -499,6 +539,8 @@ class Search:
                      bridge: Bridge,
                      step: Optional[Step]) -> Iterable[Step]:
 
+        print()
+        print('_BRIDGE_STEP FOR '+str(step))
         self._verify_owner(bridge, owner)
 
         if str(part) != '*' and part not in bridge.paths:
@@ -556,6 +598,7 @@ class Search:
                 return
         assert isinstance(user, User)
         next_client.recognize_users_and_bridges([user], [bridge])
+        
         yield from self._user_step(
             user, next_owner, next_client, bridge, step)
 
@@ -567,6 +610,15 @@ class Search:
                    step: Optional[Step]) -> Iterable[Step]:
 
         self._verify_owner(user, owner)
+        print('yielding from _user_step: '+str(Step(
+            owner=user.owner,
+            client=client,
+            container=None,
+            user=user,
+            bridge=current_bridge,
+            previous=step,
+        )))
+        
         yield Step(
             owner=user.owner,
             client=client,
@@ -582,7 +634,16 @@ class Search:
                                container, container.owner, user.owner)
                 continue
 
-            logger.info("user's container manifest: %s", container)
+            #logger.info("user's container manifest: %s", container)
+            
+            print('yielding container step from _user_step '+str(Step(
+                owner=user.owner,
+                client=client,
+                container=container,
+                user=user,
+                bridge=current_bridge,
+                previous=step,
+            )))
 
             yield Step(
                 owner=user.owner,
