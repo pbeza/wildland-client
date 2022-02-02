@@ -32,7 +32,6 @@ import threading
 import time
 from pathlib import Path, PurePosixPath
 from typing import Optional, List, Dict, Tuple
-import click
 import inotify_simple
 
 from .base import StorageBackend, File, Attr, verify_local_access
@@ -146,19 +145,6 @@ class LocalStorageBackend(FileChildrenMixin, StorageBackend):
         if not location_path.is_dir():
             logger.info('LocalStorage root does not exist: %s', location_path)
         self.root = location_path
-
-    @classmethod
-    def cli_options(cls):
-        opts = super(LocalStorageBackend, cls).cli_options()
-        opts.append(click.Option(['--location'], metavar='PATH', help='path in local filesystem',
-                                 required=True))
-        return opts
-
-    @classmethod
-    def cli_create(cls, data):
-        result = super(LocalStorageBackend, cls).cli_create(data)
-        result['location'] = data['location']
-        return result
 
     def _path(self, path: PurePosixPath) -> Path:
         """Given path inside filesystem, calculate path on disk, relative to

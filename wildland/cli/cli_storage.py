@@ -29,12 +29,13 @@ import types
 from typing import Iterable, List, Optional, Sequence, Tuple, Type, Union
 from pathlib import Path, PurePosixPath
 import functools
-import uuid
 import click
 
 from wildland.wildland_object.wildland_object import WildlandObject
+import wildland.core.core_utils as core_utils
 from .cli_base import aliased_group, ContextObj
 from .cli_exc import CliError
+from .storages import list_backends, StorageBackendCli
 from ..client import Client
 from .cli_common import sign, verify, edit, modify_manifest, set_fields, \
     add_fields, del_fields, dump, check_if_any_options, check_options_conflict, \
@@ -45,12 +46,10 @@ from ..manifest.template import TemplateManager, StorageTemplate
 from ..publish import Publisher
 from ..log import get_logger
 from ..storage_backends.base import StorageBackend
-from ..storage_backends.dispatch import get_storage_backends
 from ..storage_sync.base import SyncState
 from ..manifest.manifest import ManifestError
 from ..exc import WildlandError
 from ..utils import format_command_options
-from ..wlpath import WildlandPath
 
 logger = get_logger('cli-storage')
 
@@ -69,7 +68,7 @@ def create():
     """
 
 
-def _make_create_command(backend: Type[StorageBackend]):
+def _make_create_command(backend: Type[StorageBackendCli]):
     params = [
         click.Option(['--container'], metavar='CONTAINER',
                      required=True,
@@ -113,7 +112,7 @@ def _make_create_command(backend: Type[StorageBackend]):
 
 
 def _add_create_commands(group: click.core.Group):
-    for backend in get_storage_backends().values():
+    for backend in list_backends().values():
         try:
             command = _make_create_command(backend)
         except NotImplementedError:
@@ -122,7 +121,7 @@ def _add_create_commands(group: click.core.Group):
 
 
 def _do_create(
-        backend: Type[StorageBackend],
+        backend: Type[StorageBackendCli],
         name: Optional[str],
         container: str,
         trusted: bool,
@@ -137,65 +136,25 @@ def _do_create(
     obj: ContextObj = click.get_current_context().obj
 
     container_obj = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, container)
-    if not container_obj.local_path:
-        raise WildlandError('Need a local container')
+    backend_params = backend.cli_create(data)
 
-    container_mount_path = container_obj.paths[0]
-    click.echo(f'Using container: {container_obj.local_path} ({container_mount_path})')
+    storage_params = dict(backend_type=backend.TYPE, backend_params=backend_params,
+                          container_id=core_utils.container_to_wlcontainer(container_obj).id,
+                          name=name, trusted=trusted, watcher_interval=watcher_interval,
+                          inline=inline, access_users=access, encrypt_manifest=encrypt_manifest)
+    result, wl_storage = obj.wlcore.storage_create(**storage_params)
+    if not result.success or not wl_storage:
+        raise CliError(f'Failed to create storage: {result}')
 
-    params = backend.cli_create(data)
-
-    # remove default, non-required values
-    for param, value in list(params.items()):
-        if value is None or value == []:
-            del params[param]
-
-    if watcher_interval:
-        params['watcher-interval'] = watcher_interval
-
-    params['backend-id'] = str(uuid.uuid4())
-
-    access_users = None
-
-    if not encrypt_manifest:
-        access_users = [{'user': '*'}]
-    elif access:
-        access_users = []
-        for a in access:
-            if WildlandPath.WLPATH_RE.match(a):
-                access_users.append(
-                    {'user-path': WildlandPath.get_canonical_form(a)}
-                )
-            else:
-                access_users.append(
-                    {'user': obj.client.load_object_from_name(WildlandObject.Type.USER, a).owner}
-                )
-    elif container_obj.access:
-        access_users = container_obj.access
-
-    params['type'] = backend.TYPE
-
-    storage = Storage(
-        storage_type=backend.TYPE,
-        owner=container_obj.owner,
-        container=container_obj,
-        params=params,
-        client=obj.client,
-        trusted=params.get('trusted', trusted),
-        access=access_users
-    )
-    storage.validate()
-    # try to load storage from params to check if everything is ok,
-    # e.g., reference container is available
-    obj.client.load_object_from_url_or_dict(WildlandObject.Type.STORAGE,
-                                            storage.to_manifest_fields(inline=False),
-                                            storage.owner, container=container_obj)
-    click.echo(f'Adding storage {storage.backend_id} to container.')
-    obj.client.add_storage_to_container(container_obj, [storage], inline, name)
-    click.echo(f'Saved container {container_obj.local_path}')
-
-    if _is_container_mounted(obj, container_mount_path):
+    if _is_container_mounted(obj, container_obj.paths[0]):
         remount_container(obj, container_obj.local_path)
+
+    storage = None
+    container_obj = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, container)
+    for container_storage in obj.client.get_all_storages(container_obj):
+        if core_utils.storage_to_wl_storage(container_storage).id == wl_storage.id:
+            storage = container_storage
+            break
 
     if not no_publish:
         try:

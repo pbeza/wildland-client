@@ -23,8 +23,7 @@
 """Static storage, publishes files from storage parameters"""
 
 from functools import partial
-from typing import Optional, Dict, Any, Mapping, Union
-import click
+from typing import Optional, Dict, Any, Mapping
 
 from .base import StorageBackend
 from .generated import GeneratedStorageMixin, StaticFileEntry, FuncDirEntry, DirEntry
@@ -70,25 +69,3 @@ class StaticStorageBackend(GeneratedStorageMixin, StorageBackend):
 
     def get_root(self) -> DirEntry:
         return FuncDirEntry('.', partial(self._dir, self.content))
-
-    @classmethod
-    def cli_options(cls):
-        return [
-            click.Option(['--file'], metavar='PATH=CONTENT',
-                         help='File to be placed in the storage',
-                         multiple=True),
-        ]
-
-    @classmethod
-    def cli_create(cls, data):
-        content: Dict[str, Union[Dict, str]] = {}
-        for file in data['file']:
-            path, data = file.split('=', 1)
-            path_parts = path.split('/')
-            content_place: Dict[str, Any] = content
-            for part in path_parts[:-1]:
-                content_place = content_place.setdefault(part, {})
-            content_place[path_parts[-1]] = data
-        return {
-            'content': content,
-        }

@@ -26,6 +26,7 @@ from pathlib import PurePosixPath, Path
 import wildland.core.core_utils as utils
 from wildland.manifest.manifest import Manifest
 from wildland.log import get_logger
+from .wildland_core_storage import WildlandCoreStorage
 from ..client import Client
 from ..user import User
 from ..container import Container
@@ -35,7 +36,7 @@ from ..link import Link
 from ..wildland_object.wildland_object import WildlandObject
 from .wildland_result import WildlandResult, WLError, wildland_result, WLErrorType
 from .wildland_core_api import WildlandCoreApi, ModifyMethod
-from .wildland_objects_api import WLBridge, WLStorageBackend, WLStorage, WLContainer, \
+from .wildland_objects_api import WLBridge, WLStorage, WLContainer, \
     WLObject, WLTemplateFile, WLObjectType
 from ..wlenv import WLEnv
 from .wildland_core_user import WildlandCoreUser
@@ -48,7 +49,7 @@ logger = get_logger('core')
 # TODO cli should get its own, simple tests with mocked methods
 
 
-class WildlandCore(WildlandCoreUser, WildlandCoreApi):
+class WildlandCore(WildlandCoreUser, WildlandCoreStorage, WildlandCoreApi):
     """Wildland Core implementation"""
     # All user-facing methods should be wrapped in wildland_result or otherwise assure
     # they wrap all exceptions in WildlandResult
@@ -612,114 +613,6 @@ class WildlandCore(WildlandCoreUser, WildlandCoreApi):
         :param path: path to file (relative to Wildland mount root)
         :return: tuple of WildlandResult and list of tuples of WLContainer, WLStorage that contain
         the provided path
-        """
-        raise NotImplementedError
-
-    # STORAGES
-
-    def supported_storage_backends(self) -> Tuple[WildlandResult, List[WLStorageBackend]]:
-        """
-        List all supported storage backends.
-        :return: WildlandResult and a list of supported storage backends.
-        """
-        raise NotImplementedError
-
-    def storage_create(self, backend_type: str, backend_params: Dict[str, str],
-                       container_id: str, trusted: bool = False,
-                       watcher_interval: Optional[int] = 0,
-                       access_users: Optional[list[str]] = None, encrypt_manifest: bool = True) -> \
-            Tuple[WildlandResult, Optional[WLStorage]]:
-        """
-        Create a storage.
-        :param backend_type: storage type
-        :param backend_params: params for the given backend as a dict of param_name, param_value.
-        They must conform to parameter names as provided by supported_storage_backends
-        :param container_id: container this storage is for
-        :param trusted: should the storage be trusted
-        :param watcher_interval: set the storage watcher-interval in seconds
-        :param access_users: limit access to this storage to the users provided here as either
-        user fingerprints or WL paths to users.
-        Default: same as the container
-        :param encrypt_manifest: should the storage manifest be encrypted. If this is False,
-        access_users should be None. The container manifest itself might also be encrypted or not,
-        this does not change its settings.
-        :return: Tuple of WildlandResult and, if creation was successful, WLStorage that was
-        created
-        """
-        raise NotImplementedError
-
-    def storage_create_from_template(self, template_name: str, container_id: str,
-                                     local_dir: Optional[str] = None):
-        """
-        Create storages for a container from a given storage template.
-        :param template_name: name of the template
-        :param container_id: container this storage is for
-        :param local_dir: str to be passed to template renderer as a parameter, can be used by
-        template creators
-        """
-        raise NotImplementedError
-
-    def storage_list(self) -> Tuple[WildlandResult, List[WLStorage]]:
-        """
-        List all known storages.
-        :return: WildlandResult, List of WLStorages
-        """
-        raise NotImplementedError
-
-    def storage_delete(self, storage_id: str, cascade: bool = True,
-                       force: bool = False) -> WildlandResult:
-        """
-        Delete provided storage.
-        :param storage_id: storage ID
-         (in the form of user_id:/.uuid/container_uuid:/.uuid/storage_uuid)
-        :param cascade: remove reference from containers
-        :param force: delete even if used by containers or if manifest cannot be loaded
-        :return: WildlandResult
-        """
-        raise NotImplementedError
-
-    def storage_import_from_data(self, yaml_data: str, overwrite: bool = True) -> \
-            Tuple[WildlandResult, Optional[WLStorage]]:
-        """
-        Import storage from provided yaml data.
-        :param yaml_data: yaml data to be imported
-        :param overwrite: if a storage of provided uuid already exists in the appropriate container,
-        overwrite it; default: True. If this is False and the storage already exists, this
-         operation will fail.
-        :return: tuple of WildlandResult, imported WLStorage (if import was successful)
-        """
-        raise NotImplementedError
-
-    def storage_modify(self, storage_id: str, manifest_field: str, operation: ModifyMethod,
-                       modify_data: List[str]) -> WildlandResult:
-        """
-        Modify storage manifest
-        :param storage_id: id of the storage to be modified, in the form of
-        user_id:/.uuid/container_uuid:/.uuid/storage_uuid
-        :param manifest_field: field to modify; supports the following:
-            - location
-            - access
-        :param operation: operation to perform on field ('add', 'delete' or 'set')
-        :param modify_data: list of values to be added/removed
-        :return: WildlandResult
-        """
-        raise NotImplementedError
-
-    def storage_publish(self, storage_id) -> WildlandResult:
-        """
-        Publish the given storage.
-        :param storage_id: id of the storage to be published
-         (user_id:/.uuid/container_uuid:/.uuid/storage_uuid)
-        :return: WildlandResult
-        """
-        raise NotImplementedError
-
-    def storage_unpublish(self, storage_id) -> WildlandResult:
-        """
-        Unpublish the given storage.
-        :param storage_id: id of the storage to be unpublished
-         (user_id:/.uuid/container_uuid:/.uuid/storage_uuid)
-        :return: WildlandResult
         """
         raise NotImplementedError
 
