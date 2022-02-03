@@ -60,6 +60,13 @@ class FileChildrenMixin(StorageBackend):
 
     DEFAULT_MANIFEST_PATTERN = {'type': 'glob', 'path': '/*.{object-type}.yaml'}
 
+    @classmethod
+    def validate_params(cls, params):
+        super(FileChildrenMixin, cls).validate_params(params)
+        if params.get('subcontainer_manifest') and params.get('manifest_pattern'):
+            raise WildlandError('--subcontainer-manifest and --manifest-pattern are mutually '
+                                'exclusive.')
+
     @property
     def supports_publish(self) -> bool:
         """

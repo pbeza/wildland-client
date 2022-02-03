@@ -279,6 +279,13 @@ class StorageBackend(metaclass=abc.ABCMeta):
             return None
         return self.params.get(self.LOCATION_PARAM)
 
+    @classmethod
+    def validate_params(cls, params):
+        """
+        Checks whether provided params match backend requirements
+        """
+        cls.SCHEMA.validate(params)
+
     @staticmethod
     def types() -> Dict[str, Type['StorageBackend']]:
         """
