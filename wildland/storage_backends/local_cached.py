@@ -25,7 +25,7 @@
 A cached version of local storage.
 """
 
-from typing import Iterable, Tuple, Optional
+from typing import Iterable, Tuple, Optional, List
 from pathlib import Path, PurePosixPath
 import os
 import errno
@@ -33,7 +33,7 @@ import time
 
 from .cached import CachedStorageMixin, DirectoryCachedStorageMixin
 from .buffered import FullBufferedFile, PagedFile, File
-from .base import StorageBackend, Attr, verify_local_access
+from .base import StorageBackend, Attr, verify_local_access, StorageParam
 from .local import LocalStorageWatcher
 from .watch import FileEventType
 from ..manifest.schema import Schema
@@ -104,6 +104,14 @@ class BaseCached(StorageBackend):
     def __init__(self, **kwds):
         super().__init__(**kwds)
         self.root = Path(self.params['location'])
+
+    @classmethod
+    def storage_options(cls) -> List[StorageParam]:
+        return [
+            StorageParam(['location'], display_name='PATH',
+                         description='path in local filesystem',
+                         required=True)
+        ]
 
     @staticmethod
     def _stat(st: os.stat_result) -> Attr:

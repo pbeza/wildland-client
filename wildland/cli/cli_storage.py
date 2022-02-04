@@ -35,7 +35,7 @@ from wildland.wildland_object.wildland_object import WildlandObject
 import wildland.core.core_utils as core_utils
 from .cli_base import aliased_group, ContextObj
 from .cli_exc import CliError
-from .storages import list_backends, StorageBackendCli
+from .cli_utils import parse_storage_cli_options, param_name_from_cli
 from ..client import Client
 from .cli_common import sign, verify, edit, modify_manifest, set_fields, \
     add_fields, del_fields, dump, check_if_any_options, check_options_conflict, \
@@ -46,6 +46,7 @@ from ..manifest.template import TemplateManager, StorageTemplate
 from ..publish import Publisher
 from ..log import get_logger
 from ..storage_backends.base import StorageBackend
+from ..storage_backends.dispatch import get_storage_backends
 from ..storage_sync.base import SyncState
 from ..manifest.manifest import ManifestError
 from ..exc import WildlandError
@@ -68,7 +69,7 @@ def create():
     """
 
 
-def _make_create_command(backend: Type[StorageBackendCli]):
+def _make_create_command(backend: Type[StorageBackend]):
     params = [
         click.Option(['--container'], metavar='CONTAINER',
                      required=True,
@@ -97,8 +98,7 @@ def _make_create_command(backend: Type[StorageBackendCli]):
         click.Argument(['name'], metavar='NAME', required=False),
     ]
 
-    params.extend(backend.cli_options())
-
+    params.extend(parse_storage_cli_options(backend.storage_options()))
     callback = functools.partial(_do_create, backend=backend)
 
     command = click.Command(
@@ -112,7 +112,7 @@ def _make_create_command(backend: Type[StorageBackendCli]):
 
 
 def _add_create_commands(group: click.core.Group):
-    for backend in list_backends().values():
+    for backend in get_storage_backends().values():
         try:
             command = _make_create_command(backend)
         except NotImplementedError:
@@ -121,7 +121,7 @@ def _add_create_commands(group: click.core.Group):
 
 
 def _do_create(
-        backend: Type[StorageBackendCli],
+        backend: Type[StorageBackend],
         name: Optional[str],
         container: str,
         trusted: bool,
@@ -136,9 +136,9 @@ def _do_create(
     obj: ContextObj = click.get_current_context().obj
 
     container_obj = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, container)
-    backend_params = backend.cli_create(data)
+    data = {param_name_from_cli(key): data[key] for key in data}
 
-    storage_params = dict(backend_type=backend.TYPE, backend_params=backend_params,
+    storage_params = dict(backend_type=backend.TYPE, backend_params=data,
                           container_id=core_utils.container_to_wlcontainer(container_obj).id,
                           name=name, trusted=trusted, watcher_interval=watcher_interval,
                           inline=inline, access_users=access, encrypt_manifest=encrypt_manifest)

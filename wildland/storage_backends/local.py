@@ -34,7 +34,7 @@ from pathlib import Path, PurePosixPath
 from typing import Optional, List, Dict, Tuple
 import inotify_simple
 
-from .base import StorageBackend, File, Attr, verify_local_access
+from .base import StorageBackend, File, Attr, verify_local_access, StorageParam
 from .file_children import FileChildrenMixin
 from ..fs_utils import flags_to_mode
 from ..manifest.schema import Schema
@@ -145,6 +145,13 @@ class LocalStorageBackend(FileChildrenMixin, StorageBackend):
         if not location_path.is_dir():
             logger.info('LocalStorage root does not exist: %s', location_path)
         self.root = location_path
+
+    @classmethod
+    def storage_options(cls) -> List[StorageParam]:
+        opts = super(LocalStorageBackend, cls).storage_options()
+        opts.append(StorageParam(['location'], display_name='PATH',
+                                 description='path in local filesystem', required=True))
+        return opts
 
     def _path(self, path: PurePosixPath) -> Path:
         """Given path inside filesystem, calculate path on disk, relative to

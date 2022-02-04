@@ -31,10 +31,10 @@ from typing import List, Dict, Any, Iterable, Tuple, Optional, Iterator, Set
 
 from wildland.client import Client
 from wildland.container import Container
+from wildland.exc import WildlandError
 from wildland.link import Link
 from wildland.storage import Storage
-from wildland.storage_backends.base import StorageBackend
-from wildland.exc import WildlandError
+from wildland.storage_backends.base import StorageBackend, StorageParam, StorageParamType
 from wildland.storage_driver import StorageDriver
 from wildland.wildland_object.wildland_object import WildlandObject, PublishableWildlandObject
 
@@ -57,8 +57,37 @@ class FileChildrenMixin(StorageBackend):
     and cli_create (see LocalStorageBackend as an example).
     """
     # pylint: disable=abstract-method
+    def __init__(self, *,
+                 params: Optional[Dict[str, Any]] = None,
+                 read_only: bool = False,
+                 **_kwds):
+        if params.get('subcontainer_manifest'):
+            params['manifest_pattern'] = {
+                'type': 'list',
+                'paths': list(params['subcontainer_manifest'])
+            }
+            del params['subcontainer_manifest']
+        elif params.get('manifest_pattern') and type(params['manifest_pattern']):
+            params['manifest_pattern'] = {
+                'type': 'glob',
+                'path': params['manifest_pattern']
+            }
+        super().__init__(params=params, read_only=read_only, **_kwds)
 
     DEFAULT_MANIFEST_PATTERN = {'type': 'glob', 'path': '/*.{object-type}.yaml'}
+
+    @classmethod
+    def storage_options(cls) -> List[StorageParam]:
+        result = super(FileChildrenMixin, cls).storage_options()
+        result.append(
+            StorageParam(['subcontainer_manifest'], display_name='PATH', param_type=StorageParamType.LIST,
+                         description='Relative path to a child manifest (can be repeated), '
+                                     'cannot be used together with manifest_pattern'))
+        result.append(
+            StorageParam(['manifest_pattern'], display_name='GLOB',
+                         description='Set the manifest pattern for storage, cannot be used '
+                                     'together with subcontainer_manifest'))
+        return result
 
     @classmethod
     def validate_params(cls, params):

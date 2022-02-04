@@ -33,20 +33,20 @@ import json
 import os
 import stat
 from dataclasses import dataclass
+from enum import Enum, auto
 from pathlib import PurePosixPath, Path
 from uuid import UUID
-from typing import Optional, Dict, Type, Any, Iterable, Tuple, Union, TYPE_CHECKING
+from typing import Optional, Dict, Type, Any, Iterable, Tuple, Union, TYPE_CHECKING, List
 
 import wildland
 from wildland.wildland_object.wildland_object import PublishableWildlandObject
 from .kv_store import KVStore
-from ..manifest.schema import Schema
-from ..manifest.manifest import Manifest
+from ..container import ContainerStub
 from ..hashdb import HashDb, HashCache
 from ..link import Link
-from ..container import ContainerStub
 from ..log import get_logger
-
+from ..manifest.manifest import Manifest
+from ..manifest.schema import Schema
 
 if TYPE_CHECKING:
     import wildland.client  # pylint: disable=cyclic-import
@@ -169,6 +169,23 @@ class File(metaclass=abc.ABCMeta):
         self.release(0)
 
 
+class StorageParamType(Enum):
+    SINGLE = auto()
+    LIST = auto()
+    BOOLEAN = auto()
+
+
+@dataclass
+class StorageParam:
+    names: List[str]
+    description: str
+    param_type: Optional[StorageParamType] = StorageParamType.SINGLE
+    display_name: Optional[str] = None
+    default_value: Union[str, bool, List[str], None] = None
+    private: bool = False
+    required: bool = False
+
+
 class StorageBackend(metaclass=abc.ABCMeta):
     """Abstract storage implementation.
 
@@ -278,6 +295,14 @@ class StorageBackend(metaclass=abc.ABCMeta):
         if self.LOCATION_PARAM is None:
             return None
         return self.params.get(self.LOCATION_PARAM)
+
+    @classmethod
+    def storage_options(cls) -> List[StorageParam]:
+        """
+        Provide a list of parameters needed to create this storage. If using mixins,
+        check if a super() call is needed.
+        """
+        return []
 
     @classmethod
     def validate_params(cls, params):

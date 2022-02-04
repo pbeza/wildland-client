@@ -23,9 +23,9 @@
 """Static storage, publishes files from storage parameters"""
 
 from functools import partial
-from typing import Optional, Dict, Any, Mapping
+from typing import Optional, Dict, Any, Mapping, List, Union
 
-from .base import StorageBackend
+from .base import StorageBackend, StorageParam, StorageParamType
 from .generated import GeneratedStorageMixin, StaticFileEntry, FuncDirEntry, DirEntry
 from ..manifest.schema import Schema
 
@@ -49,6 +49,16 @@ class StaticStorageBackend(GeneratedStorageMixin, StorageBackend):
     TYPE = 'static'
 
     def __init__(self, *, params: Optional[Dict[str, Any]] = None, **kwds):
+        content: Dict[str, Union[Dict, str]] = {}
+        for file in params['file']:
+            path, data = file.split('=', 1)
+            path_parts = path.split('/')
+            content_place: Dict[str, Any] = content
+            for part in path_parts[:-1]:
+                content_place = content_place.setdefault(part, {})
+            content_place[path_parts[-1]] = data
+        del params['file']
+        params['content'] = content
         super().__init__(params=params, **kwds)
         self.read_only = True
         if params:
@@ -69,3 +79,11 @@ class StaticStorageBackend(GeneratedStorageMixin, StorageBackend):
 
     def get_root(self) -> DirEntry:
         return FuncDirEntry('.', partial(self._dir, self.content))
+
+    @classmethod
+    def storage_options(cls) -> List[StorageParam]:
+        return [
+            StorageParam(['file'], display_name='PATH=CONTENT',
+                         description='File to be placed in the storage',
+                         param_type=StorageParamType.LIST),
+        ]
