@@ -164,7 +164,7 @@ class SyncJob:
 
         return ret
 
-    def _event_handler(self, event: SyncEvent, _context=None):
+    def _event_handler(self, event: SyncEvent):
         """
         Callback for syncer events. Runs in the worker subprocess.
         """
@@ -436,7 +436,7 @@ class SyncDaemon:
         """
         Stop all sync jobs and exit.
         """
-        logger.debug('stopping')
+        logger.info('stopping')
         with self.lock:
             for job in self.jobs.values():
                 job.stop()

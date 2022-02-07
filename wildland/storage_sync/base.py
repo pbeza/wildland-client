@@ -25,8 +25,9 @@ Storage syncing.
 # pylint: disable=no-self-use
 import abc
 import json
+import threading
 from enum import Enum
-from typing import Optional, Iterable, Dict, Type, List, Callable, Any
+from typing import Optional, Iterable, Dict, Type, List, Callable
 from pathlib import Path, PurePosixPath
 from wildland.storage import StorageBackend
 from ..storage_backends.base import OptionalError
@@ -66,7 +67,7 @@ class SyncState(Enum):
     RUNNING = 2  # continuous sync running with pending events (storages are not synced)
     SYNCED = 3  # continuous sync running with no pending events (storages are synced)
     ONE_SHOT = 4  # one-shot sync running
-    ERROR = 5  # error/exception occurred during sync, process aborted
+    ERROR = 5  # error/exception occured during sync, process aborted
 
     def __str__(self):
         return str(self.name)
@@ -264,8 +265,8 @@ class BaseSyncer(metaclass=abc.ABCMeta):
         self.target_mnt_path = target_mnt_path
         self._state = SyncState.STOPPED
         self._event_callback: Optional[Callable] = None
-        self._event_context: Any = None
         self._event_types = SyncEvent.__subclasses__()
+        self._event_lock = threading.Lock()
 
     def one_shot_sync(self, unidirectional: bool = False):
         """
@@ -305,21 +306,21 @@ class BaseSyncer(metaclass=abc.ABCMeta):
             self._state = state
             self.notify_event(SyncStateEvent(state))
 
-    def set_event_callback(self, callback: Callable[[SyncEvent, Any], None], context: Any = None):
+    def set_event_callback(self, callback: Callable[[SyncEvent], None]):
         """
         Set a callback that will be notified of sync events.
         :param callback Handler that will be called on an event.
-        :param context User data that will be passed to the callback along with the event.
         """
-        self._event_callback = callback
-        self._event_context = context
+        with self._event_lock:
+            self._event_callback = callback
 
     def notify_event(self, event: SyncEvent):
         """
         Notifies registered event callback (if any).
         """
-        if self._event_callback and type(event) in self._event_types:
-            self._event_callback(event, self._event_context)
+        with self._event_lock:
+            if self._event_callback and type(event) in self._event_types:
+                self._event_callback(event)
 
     def set_active_events(self, event_types: List[str]):
         """
@@ -327,14 +328,15 @@ class BaseSyncer(metaclass=abc.ABCMeta):
         Empty list means all event types.
         Types should be named as in SyncEvent.type field.
         """
-        if not event_types:
-            event_types = []
+        with self._event_lock:
+            if not event_types:
+                event_types = []
 
-        if len(event_types) == 0:
-            self._event_types = SyncEvent.__subclasses__()
-        else:
-            self._event_types = [cls for cls in SyncEvent.__subclasses__()
-                                 if cls.type in event_types]
+            if len(event_types) == 0:
+                self._event_types = SyncEvent.__subclasses__()
+            else:
+                self._event_types = [cls for cls in SyncEvent.__subclasses__()
+                                     if cls.type in event_types]
 
     @property
     def active_event_types(self) -> List[Type[SyncEvent]]:
@@ -342,7 +344,8 @@ class BaseSyncer(metaclass=abc.ABCMeta):
         List of event types that are active (sent to the notification callback).
         Events with types not present here are ignored.
         """
-        return self._event_types
+        with self._event_lock:
+            return self._event_types
 
     @abc.abstractmethod
     def iter_conflicts_force(self) -> Iterable[SyncConflict]:
