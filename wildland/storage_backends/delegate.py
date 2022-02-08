@@ -25,12 +25,12 @@
 Delegate proxy backend
 """
 
-from typing import Iterable, Optional, Tuple
+from typing import Iterable, Optional, Tuple, List, Dict, Any
 from pathlib import PurePosixPath
 
 import click
 
-from .base import StorageBackend, File, Attr
+from .base import StorageBackend, File, Attr, StorageParam
 from ..cli.cli_exc import CliError
 from ..exc import WildlandError
 from ..manifest.schema import Schema
@@ -81,6 +81,31 @@ class DelegateProxyStorageBackend(StorageBackend):
         if self.subdirectory.anchor != '/':
             raise ValueError(f'subdirectory needs to be an absolute path (given path: '
                              f'{str(self.subdirectory)})')
+
+    @classmethod
+    def storage_options(cls) -> List[StorageParam]:
+        return [
+            StorageParam('reference_container_url', display_name='URL',
+                         description='URL for reference container manifest',
+                         required=True),
+            StorageParam('subdirectory', display_name='SUBDIRECTORY',
+                         description='Subdirectory of reference-container to be exposed',
+                         required=False),
+        ]
+
+    @classmethod
+    def validate_and_parse_params(cls, params) -> Dict[str, Any]:
+        super(DelegateProxyStorageBackend, cls).validate_and_parse_params(params)
+        if WildlandPath.match(params['reference_container_url']):
+            wl_path = WildlandPath.from_str(params['reference_container_url'])
+            if not wl_path.has_explicit_or_default_owner():
+                raise CliError("reference container URL must contain explicit or default owner")
+        opts = {'reference-container': params['reference_container_url']}
+        if 'subdirectory' in params:
+            opts['subdirectory'] = params['subdirectory']
+
+        cls.SCHEMA.validate(opts)
+        return opts
 
     @classmethod
     def cli_options(cls):

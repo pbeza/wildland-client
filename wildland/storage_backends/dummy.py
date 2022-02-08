@@ -25,8 +25,9 @@ Local storage, similar to :command:`mount --bind`
 """
 
 from pathlib import PurePosixPath
+from typing import List, Dict, Any
 
-from .base import StorageBackend, Attr
+from .base import StorageBackend, Attr, StorageParam
 from ..manifest.schema import Schema
 from ..log import get_logger
 
@@ -47,6 +48,16 @@ class DummyStorageBackend(StorageBackend):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.read_only = True
+
+    @classmethod
+    def storage_options(cls) -> List[StorageParam]:
+        return []
+
+    @classmethod
+    def validate_and_parse_params(cls, params) -> Dict[str, Any]:
+        data = {'subcontainers': list(params.get('subcontainer', []))}
+        cls.SCHEMA.validate(data)
+        return data
 
     @classmethod
     def cli_options(cls):

@@ -42,7 +42,7 @@ import botocore
 import click
 
 from wildland.link import Link
-from wildland.storage_backends.base import StorageBackend, Attr
+from wildland.storage_backends.base import StorageBackend, Attr, StorageParam, StorageParamType
 from wildland.storage_backends.file_children import FileChildrenMixin
 from wildland.storage_backends.buffered import File, FullBufferedFile, PagedFile
 from wildland.storage_backends.cached import DirectoryCachedStorageMixin
@@ -239,6 +239,44 @@ class S3StorageBackend(FileChildrenMixin, DirectoryCachedStorageMixin, StorageBa
         self.base_path = PurePosixPath(s3_url.path)
 
         mimetypes.init()
+
+    @classmethod
+    def storage_options(cls) -> List[StorageParam]:
+        opts = super(S3StorageBackend, cls).storage_options()
+        opts.extend([
+            StorageParam('endpoint_url', display_name='URL',
+                         description='Override default AWS S3 URL with the given URL.'),
+            StorageParam('s3_url', display_name='URL', required=True,
+                         description='S3 url to access the resource in s3://<bucket_name>/path '
+                                     'format'),
+            StorageParam('with_index', param_type=StorageParamType.BOOLEAN,
+                         description='Maintain index.html files with directory listings'),
+            StorageParam('access_key', required=True,
+                         description='S3 access key'),
+            StorageParam('secret_key', required=True,
+                         description='S3 secret key (omit for a prompt)', private=True),
+        ])
+        return opts
+
+    @classmethod
+    def validate_and_parse_params(cls, params):
+        result = super(S3StorageBackend, cls).validate_and_parse_params(params)
+        base_url = urlparse(params['s3_url']).path.lstrip('/')
+        # ensuring that the s3_url entered by the user contains a trailing slash
+        if not params['s3_url'].endswith('/'):
+            params['s3_url'] = params['s3_url']+'/'
+        result.update({
+            's3_url': params['s3_url'],
+            'base_url': base_url,
+            'endpoint_url': params['endpoint_url'],
+            'credentials': {
+                'access-key': params['access_key'],
+                'secret-key': params['secret_key'],
+            },
+            'with-index': params['with_index'],
+        })
+        cls.SCHEMA.validate(result)
+        return result
 
     @classmethod
     def cli_options(cls):

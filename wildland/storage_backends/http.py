@@ -27,7 +27,7 @@ Indexed HTTP storage backend
 
 from datetime import datetime
 from pathlib import PurePosixPath
-from typing import Iterable, Tuple
+from typing import Iterable, Tuple, List
 from urllib.parse import urljoin, urlparse, quote
 import errno
 from io import BytesIO
@@ -37,7 +37,7 @@ from lxml import etree
 import requests
 
 from wildland.storage_backends.file_children import FileChildrenMixin
-from wildland.storage_backends.base import StorageBackend, Attr
+from wildland.storage_backends.base import StorageBackend, Attr, StorageParam
 from wildland.storage_backends.buffered import FullBufferedFile
 from wildland.storage_backends.cached import DirectoryCachedStorageMixin
 from wildland.manifest.schema import Schema
@@ -109,6 +109,23 @@ class HttpStorageBackend(FileChildrenMixin, DirectoryCachedStorageMixin, Storage
 
         self.public_url = self.params['url']
         self.base_path = PurePosixPath(urlparse(self.public_url).path or '/')
+
+    @classmethod
+    def storage_options(cls) -> List[StorageParam]:
+        opts = super(HttpStorageBackend, cls).storage_options()
+        opts.extend([
+            StorageParam('url', display_name='URL', description='url', required=True),
+        ])
+        return opts
+
+    @classmethod
+    def validate_and_parse_params(cls, params):
+        result = super(HttpStorageBackend, cls).validate_and_parse_params(params)
+        result.update({
+            'url': params['url'],
+        })
+        cls.SCHEMA.validate(params)
+        return result
 
     @classmethod
     def cli_options(cls):

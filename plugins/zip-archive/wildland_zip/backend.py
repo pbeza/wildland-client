@@ -24,7 +24,7 @@
 """
 A ZIP file storage.
 """
-from typing import Iterable, Tuple, Optional
+from typing import Iterable, Tuple, Optional, List, Dict, Any
 import zipfile
 from pathlib import Path, PurePosixPath
 from datetime import datetime
@@ -35,7 +35,8 @@ import click
 from wildland.manifest.schema import Schema
 from wildland.storage_backends.cached import CachedStorageMixin
 from wildland.storage_backends.buffered import FullBufferedFile
-from wildland.storage_backends.base import StorageBackend, Attr, verify_local_access, StorageError
+from wildland.storage_backends.base import StorageBackend, Attr, verify_local_access, StorageError, \
+    StorageParam
 from wildland.storage_backends.watch import SimpleStorageWatcher
 from wildland.log import get_logger
 
@@ -105,6 +106,20 @@ class ZipArchiveStorageBackend(CachedStorageMixin, StorageBackend):
 
         self.last_mtime = 0.
         self.last_size = -1
+
+    @classmethod
+    def storage_options(cls) -> List[StorageParam]:
+        return [
+            StorageParam('location', display_name='PATH',
+                         description='Location of the ZIP file (filesystem path)',
+                         required=True),
+        ]
+
+    @classmethod
+    def validate_and_parse_params(cls, params) -> Dict[str, Any]:
+        data = {'location': params['location']}
+        cls.SCHEMA.validate(data)
+        return data
 
     @classmethod
     def cli_options(cls):

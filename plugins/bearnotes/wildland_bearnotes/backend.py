@@ -31,12 +31,12 @@ import sqlite3
 import threading
 from functools import partial
 from pathlib import PurePosixPath, Path
-from typing import Iterable, Optional, List, Set, Dict, Tuple
+from typing import Iterable, Optional, List, Set, Dict, Tuple, Any
 
 import bear  # pylint: disable=import-error,wrong-import-order
 import click
 
-from wildland.storage_backends.base import StorageBackend
+from wildland.storage_backends.base import StorageBackend, StorageParam
 from wildland.storage_backends.generated import (
     CachedDirEntry,
     GeneratedStorageMixin,
@@ -241,6 +241,23 @@ class BearDBStorageBackend(GeneratedStorageMixin, StorageBackend):
 
     def watcher(self):
         return BearDBWatcher(self)
+
+    @classmethod
+    def storage_options(cls) -> List[StorageParam]:
+        return [
+            StorageParam('path', display_name='PATH',
+                         description='Path to the SQLite database', required=True),
+        ]
+
+    @classmethod
+    def validate_and_parse_params(cls, params) -> Dict[str, Any]:
+        data = {
+            'path': params['path'],
+            'trusted': True,
+            'manifest_pattern': {'type': 'glob', 'path': '/*/container.yaml'},
+        }
+        cls.SCHEMA.validate(data)
+        return data
 
     @classmethod
     def cli_options(cls):

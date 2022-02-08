@@ -25,12 +25,12 @@ Transpose storage backend.
 """
 import re
 import ast
-from typing import List, Union, Optional
+from typing import List, Union, Optional, Dict, Any
 from pathlib import PurePosixPath
 
 import click
 
-from .base import StorageBackend
+from .base import StorageBackend, StorageParam, StorageParamType
 from ..container import ContainerStub, Container
 from ..manifest.schema import Schema
 from ..client import Client
@@ -134,6 +134,11 @@ class TransposeStorageBackend(StorageBackend):
 
     def __init__(self, **kwds):
         super().__init__(**kwds)
+        if self.params.get('reference_container_url')\
+                and not self.params.get('reference-container'):
+            self.params['reference-container'] = self.params['reference_container_url']
+            del self.params['reference_container_url']
+            self.params['rules'] = [ast.literal_eval(rule) for rule in list(self.params['rules'])]
         self.reference = self.params['storage']
         self.conflict = self.params.get('conflict')
         self.url = self.params['reference-container']
@@ -175,6 +180,42 @@ class TransposeStorageBackend(StorageBackend):
             'conflict': data['conflict'],
             'rules': rules,
         }
+        return opts
+
+    @classmethod
+    def storage_options(cls) -> List[StorageParam]:
+        return [
+            StorageParam('reference_container_url',
+                         description='URL for inner container manifest', required=True,
+                         display_name='URL'),
+            StorageParam('conflict',
+                         description='''Explanation of what to do in case the given rules
+                                 are conflicting (first-apply/last-apply/all-apply)''',
+                         required=True, default_value='first-apply'),
+            StorageParam('rules',
+                         description="""The rules to follow when modifying the initial categories. 
+                         Each to be passed as a dictionary enclosed in single quotes, 
+                         e.g.: '{"match-with": "/1", "replace-with": "/2"}' 
+                         Can be repeated.""",
+                         required=True, param_type=StorageParamType.LIST),
+        ]
+
+    @classmethod
+    def validate_and_parse_params(cls, params) -> Dict[str, Any]:
+        rules = []
+        try:
+            for rule in list(params['rules']):
+                rules.append(ast.literal_eval(rule))
+        except SyntaxError as error:
+            raise WildlandError('Could not parse rules: '+repr(error)
+                                + '\nExamples of syntatically correct rules can be found'
+                                  ' in the Wildland documentation.') from error
+        opts = {
+            'reference-container': params['reference_container_url'],
+            'conflict': params['conflict'],
+            'rules': rules,
+        }
+        cls.SCHEMA.validate(opts)
         return opts
 
     def mount(self) -> None:

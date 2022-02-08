@@ -28,11 +28,12 @@ import re
 import uuid
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Iterable, Iterator, List, Set, Tuple, FrozenSet
+from typing import Iterable, Iterator, List, Set, Tuple, FrozenSet, Dict, Any
 
 import click
 
-from wildland.storage_backends.base import StorageBackend, File, Attr
+from wildland.storage_backends.base import StorageBackend, File, Attr, StorageParam, \
+    StorageParamType
 from wildland.manifest.schema import Schema
 from wildland.container import ContainerStub
 from wildland.log import get_logger
@@ -92,6 +93,38 @@ class CategorizationProxyStorageBackend(StorageBackend):
         self.unclassified_category_path = self.params.get('unclassified-category-path',
                                                           '/unclassified')
         self.read_only = True
+
+    @classmethod
+    def storage_options(cls) -> List[StorageParam]:
+        return [
+            StorageParam('reference_container_url',
+                         display_name='URL',
+                         description='URL for inner container manifest.',
+                         required=True),
+            StorageParam('with_unclassified_category',
+                         param_type=StorageParamType.BOOLEAN,
+                         default_value=False,
+                         required=False,
+                         description='Create unclassified directory holding all of the untagged '
+                                     'directories.'),
+            StorageParam('unclassified_category_path',
+                         display_name='PATH',
+                         default_value='/unclassified',
+                         required=False,
+                         description='Path to directory where unclassified directories are mounted '
+                                     '(`/unclassified` by default). This option is ignored unless '
+                                     '`with_unclassified_category` is set.'),
+        ]
+
+    @classmethod
+    def validate_and_parse_params(cls, params) -> Dict[str, Any]:
+        data = {
+            'reference-container': params['reference_container_url'],
+            'with-unclassified-category': params['with_unclassified_category'],
+            'unclassified-category-path': params['unclassified_category_path'],
+        }
+        cls.SCHEMA.validate(data)
+        return data
 
     @classmethod
     def cli_options(cls):

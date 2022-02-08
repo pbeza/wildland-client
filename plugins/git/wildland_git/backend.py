@@ -28,13 +28,13 @@ as wildland containers.
 # pylint: disable=no-member
 import stat
 from pathlib import PurePosixPath
-from typing import List, Union, Optional, Callable, Iterable, Tuple
+from typing import List, Union, Optional, Callable, Iterable, Tuple, Dict, Any
 
 import uuid
 import click
 
 from git import Blob, Tree
-from wildland.storage_backends.base import StorageBackend, Attr
+from wildland.storage_backends.base import StorageBackend, Attr, StorageParam
 from wildland.storage_backends.cached import DirectoryCachedStorageMixin
 from wildland.storage_backends.buffered import FullBufferedFile
 from wildland.manifest.schema import Schema
@@ -137,6 +137,36 @@ class GitStorageBackend(DirectoryCachedStorageMixin, StorageBackend):
             'username': data['username'],
             'password': data['password']
         })
+        return result
+
+    @classmethod
+    def storage_options(cls) -> List[StorageParam]:
+        opts = super(GitStorageBackend, cls).storage_options()
+        opts.extend([
+            StorageParam(
+                'url', display_name='URL', required=True,
+                description='Git url leading to the repo',
+            ),
+            StorageParam(
+                'username', required=False,
+                description='The git username - used for authorization purposes'
+            ),
+            StorageParam(
+                'password', required=False,
+                description='The git password/personal access token. Necessary for authorization'
+                            'purposes')
+        ])
+        return opts
+
+    @classmethod
+    def validate_and_parse_params(cls, params) -> Dict[str, Any]:
+        result = super(GitStorageBackend, cls).validate_and_parse_params(params)
+        result.update({
+            'url': params['url'],
+            'username': params['username'],
+            'password': params['password']
+        })
+        cls.SCHEMA.validate(result)
         return result
 
     def mount(self) -> None:

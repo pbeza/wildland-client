@@ -25,6 +25,8 @@
 from functools import partial
 from typing import Optional, Dict, Any, Mapping, List, Union
 
+import click
+
 from .base import StorageBackend, StorageParam, StorageParamType
 from .generated import GeneratedStorageMixin, StaticFileEntry, FuncDirEntry, DirEntry
 from ..manifest.schema import Schema
@@ -49,16 +51,6 @@ class StaticStorageBackend(GeneratedStorageMixin, StorageBackend):
     TYPE = 'static'
 
     def __init__(self, *, params: Optional[Dict[str, Any]] = None, **kwds):
-        content: Dict[str, Union[Dict, str]] = {}
-        for file in params['file']:
-            path, data = file.split('=', 1)
-            path_parts = path.split('/')
-            content_place: Dict[str, Any] = content
-            for part in path_parts[:-1]:
-                content_place = content_place.setdefault(part, {})
-            content_place[path_parts[-1]] = data
-        del params['file']
-        params['content'] = content
         super().__init__(params=params, **kwds)
         self.read_only = True
         if params:
@@ -81,9 +73,45 @@ class StaticStorageBackend(GeneratedStorageMixin, StorageBackend):
         return FuncDirEntry('.', partial(self._dir, self.content))
 
     @classmethod
+    def cli_options(cls):
+        return [
+            click.Option(['--file'], metavar='PATH=CONTENT',
+                         help='File to be placed in the storage',
+                         multiple=True),
+        ]
+
+    @classmethod
+    def cli_create(cls, data):
+        content: Dict[str, Union[Dict, str]] = {}
+        for file in data['file']:
+            path, data = file.split('=', 1)
+            path_parts = path.split('/')
+            content_place: Dict[str, Any] = content
+            for part in path_parts[:-1]:
+                content_place = content_place.setdefault(part, {})
+            content_place[path_parts[-1]] = data
+        return {
+            'content': content,
+        }
+
+    @classmethod
+    def validate_and_parse_params(cls, params) -> Dict[str, Any]:
+        content: Dict[str, Union[Dict, str]] = {}
+        for file in params.get('file'):
+            path, data = file.split('=', 1)
+            path_parts = path.split('/')
+            content_place: Dict[str, Any] = content
+            for part in path_parts[:-1]:
+                content_place = content_place.setdefault(part, {})
+            content_place[path_parts[-1]] = data
+        data = {'content': content}
+        cls.SCHEMA.validate(data)
+        return data
+
+    @classmethod
     def storage_options(cls) -> List[StorageParam]:
         return [
-            StorageParam(['file'], display_name='PATH=CONTENT',
+            StorageParam('file', display_name='PATH=CONTENT',
                          description='File to be placed in the storage',
                          param_type=StorageParamType.LIST),
         ]

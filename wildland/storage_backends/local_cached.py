@@ -25,11 +25,13 @@
 A cached version of local storage.
 """
 
-from typing import Iterable, Tuple, Optional, List
+from typing import Iterable, Tuple, Optional, List, Dict, Any
 from pathlib import Path, PurePosixPath
 import os
 import errno
 import time
+
+import click
 
 from .cached import CachedStorageMixin, DirectoryCachedStorageMixin
 from .buffered import FullBufferedFile, PagedFile, File
@@ -106,12 +108,30 @@ class BaseCached(StorageBackend):
         self.root = Path(self.params['location'])
 
     @classmethod
+    def cli_options(cls):
+        return [
+            click.Option(['--location'], metavar='PATH',
+                         help='path in local filesystem',
+                         required=True)
+        ]
+
+    @classmethod
+    def cli_create(cls, data):
+        return {'location': data['location']}
+
+    @classmethod
     def storage_options(cls) -> List[StorageParam]:
         return [
-            StorageParam(['location'], display_name='PATH',
+            StorageParam('location', display_name='PATH',
                          description='path in local filesystem',
                          required=True)
         ]
+
+    @classmethod
+    def validate_and_parse_params(cls, params) -> Dict[str, Any]:
+        result = {'location': params['location']}
+        cls.SCHEMA.validate(result)
+        return result
 
     @staticmethod
     def _stat(st: os.stat_result) -> Attr:

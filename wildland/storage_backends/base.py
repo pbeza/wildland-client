@@ -29,6 +29,7 @@ from __future__ import annotations
 import abc
 import hashlib
 import itertools
+import click as click
 import json
 import os
 import stat
@@ -177,7 +178,7 @@ class StorageParamType(Enum):
 
 @dataclass
 class StorageParam:
-    names: List[str]
+    names: str
     description: str
     param_type: Optional[StorageParamType] = StorageParamType.SINGLE
     display_name: Optional[str] = None
@@ -305,11 +306,31 @@ class StorageBackend(metaclass=abc.ABCMeta):
         return []
 
     @classmethod
-    def validate_params(cls, params):
+    def validate_and_parse_params(cls, params) -> Dict[str, Any]:
         """
-        Checks whether provided params match backend requirements
+        Checks whether provided params match backend requirements. If necessary supplements and
+        parses params
         """
-        cls.SCHEMA.validate(params)
+        return params
+
+    # TODO: remove when will be ready https://gitlab.com/wildland/wildland-client/-/issues/703
+    @classmethod
+    def cli_options(cls) -> List[click.Option]:
+        """
+        Provide a list of command-line options needed to create this storage. If using mixins,
+        check if a super() call is needed.
+        """
+        return []
+
+    # TODO: remove when will be ready https://gitlab.com/wildland/wildland-client/-/issues/703
+    @classmethod
+    def cli_create(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Convert provided command-line arguments to a list of storage parameters. If using mixins,
+        check if a super() call is needed.
+        """
+        # pylint: disable=unused-argument
+        return {}
 
     @staticmethod
     def types() -> Dict[str, Type['StorageBackend']]:

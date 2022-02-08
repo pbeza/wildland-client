@@ -26,14 +26,14 @@ Timeline backend
 """
 
 import uuid
-from typing import Tuple, Optional, Iterable
+from typing import Tuple, Optional, Iterable, List, Dict, Any
 from pathlib import PurePosixPath
 import errno
 import datetime
 
 import click
 
-from .base import StorageBackend, File, Attr
+from .base import StorageBackend, File, Attr, StorageParam
 from .cached import CachedStorageMixin
 from ..manifest.schema import Schema
 from ..container import ContainerStub
@@ -100,6 +100,26 @@ class TimelineStorageBackend(CachedStorageMixin, StorageBackend):
     def cli_create(cls, data):
         return {'reference-container': data['reference_container_url'],
                 'timeline-root': data['timeline_root']}
+
+    @classmethod
+    def storage_options(cls) -> List[StorageParam]:
+        return [
+            StorageParam('reference_container_url', display_name='URL',
+                         description='URL for inner container manifest',
+                         required=True),
+            StorageParam('timeline_root', required=False,
+                         default_value='/timeline',
+                         description='The name of the root of the timeline tree'),
+        ]
+
+    @classmethod
+    def validate_and_parse_params(cls, params) -> Dict[str, Any]:
+        result = {
+            'reference-container': params['reference_container_url'],
+            'timeline-root': params['timeline_root']
+        }
+        cls.SCHEMA.validate(result)
+        return result
 
     def mount(self):
         self.inner.request_mount()

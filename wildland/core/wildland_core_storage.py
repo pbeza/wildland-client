@@ -122,7 +122,7 @@ class WildlandCoreStorage(WildlandCoreApi):
             if value is None or value == []:
                 del backend_params[param]
 
-        backend.validate_params(backend_params)
+        backend_params = backend.validate_and_parse_params(backend_params)
 
         if watcher_interval:
             backend_params['watcher-interval'] = watcher_interval
