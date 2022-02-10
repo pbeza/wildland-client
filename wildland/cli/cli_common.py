@@ -32,7 +32,7 @@ import sys
 import tempfile
 import yaml
 
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from typing import Callable, List, Any, Optional, Dict, Tuple, Union
 
@@ -322,6 +322,7 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
     determine if it should be republished).
     """
     obj: ContextObj = ctx.obj
+    
     if obj.client.is_url(input_file):
         raise CliError('This command supports only an local path to a file. Consider using '
                        'edit command for a specific object, e.g. wl container edit')
