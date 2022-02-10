@@ -30,12 +30,10 @@ import logging
 import subprocess
 import sys
 import tempfile
-<<<<<<< Updated upstream
-from pathlib import Path
-=======
 import yaml
+
 from pathlib import Path, PurePosixPath
->>>>>>> Stashed changes
+
 from typing import Callable, List, Any, Optional, Dict, Tuple, Union
 
 import click
