@@ -18,7 +18,7 @@ def param_name_from_cli(name: str) -> str:
 def parse_storage_cli_options(storage_options: List[StorageParam]) -> List[click.Option]:
     cli_options: List[click.Option] = []
     for option in storage_options:
-        names = [param_name_to_cli(name) for name in option.names]
+        name = [param_name_to_cli(option.name)]
 
         click_option = {'help': option.description, 'required': option.required}
         if option.display_name:
@@ -33,6 +33,6 @@ def parse_storage_cli_options(storage_options: List[StorageParam]) -> List[click
             click_option['prompt'] = True
             click_option['hide_input'] = True
 
-        cli_options.append(click.Option(names, **click_option))
+        cli_options.append(click.Option(name, **click_option))
 
     return cli_options

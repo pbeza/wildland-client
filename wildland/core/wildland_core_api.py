@@ -25,6 +25,7 @@ from enum import Enum
 from .wildland_result import WildlandResult
 from .wildland_objects_api import WLObject, WLTemplateFile, WLBridge, WLObjectType, WLUser, \
     WLStorageBackend, WLStorage, WLContainer
+from ..storage import Storage
 
 
 class ModifyMethod(Enum):
@@ -644,6 +645,12 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         :param storage_id: id of the storage to be unpublished
          (user_id:/.uuid/container_uuid:/.uuid/storage_uuid)
         :return: WildlandResult
+        """
+
+    @abc.abstractmethod
+    def storage_get_by_id(self, storage_id: str) -> Tuple[WildlandResult, Optional[Storage]]:
+        """
+        Get storage from specified ID.
         """
 
     # TEMPLATES

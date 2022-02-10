@@ -834,8 +834,10 @@ def test_storage_delete_sync(cli, base_dir):
         documents = list(yaml_parser.safe_load_all(f))
         backend_id = documents[1]['backends']['storage'][0]['backend-id']
 
-    result = cli('storage', 'delete', str(backend_id), '--container', 'Container', capture=True)
-    assert "Outdated storage for container" in result.splitlines()[0]
+    assert backend_id in container_path.read_text()
+
+    cli('storage', 'delete', str(backend_id), '--container', 'Container')
+    assert backend_id not in container_path.read_text()
 
 
 def test_storage_delete_cascade(cli, base_dir):

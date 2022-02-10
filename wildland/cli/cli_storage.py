@@ -41,14 +41,13 @@ from .cli_common import sign, verify, edit, modify_manifest, set_fields, \
     add_fields, del_fields, dump, check_if_any_options, check_options_conflict, \
     publish, unpublish, remount_container
 from ..container import Container
-from ..storage import Storage, _get_storage_by_id_or_type
+from ..core.wildland_result import WLErrorType
+from ..storage import Storage
 from ..manifest.template import TemplateManager, StorageTemplate
 from ..publish import Publisher
 from ..log import get_logger
 from ..storage_backends.base import StorageBackend
 from ..storage_backends.dispatch import get_storage_backends
-from ..storage_sync.base import SyncState
-from ..manifest.manifest import ManifestError
 from ..exc import WildlandError
 from ..utils import format_command_options
 
@@ -262,64 +261,30 @@ def delete(obj: ContextObj, names, force: bool, no_cascade: bool, container: Opt
 
 
 def _delete(obj: ContextObj, name: str, force: bool, no_cascade: bool, container: Optional[str]):
-    try:
-        local_path, used_by = _get_local_path_and_find_usage(obj.client, name)
-    except ManifestError as ex:
+    result, local_path, usages = obj.wlcore.storage_get_local_path_and_find_usage(name)
+
+    if WLErrorType.MANIFEST_ERROR in [err.error_code for err in result.errors]:
         if force:
-            click.echo(f'Failed to load manifest: {ex}')
-            _delete_force(obj.client, name, no_cascade)
+            click.echo(f'Failed to load manifest: {str(result)}')
+            obj.wlcore.storage_delete_force(name, no_cascade)
         else:
-            click.echo(f'Failed to load manifest, cannot delete: {ex}')
+            click.echo(f'Failed to load manifest, cannot delete: {str(result)}')
             click.echo('Use --force to force deletion.')
-            raise
+            raise CliError(str(result))
         return
 
-    container_to_sync = []
-    container_failed_to_sync = []
-    for container_obj, _ in used_by:
-        if len(obj.client.get_all_storages(container_obj)) > 1 and not force:
-            status = obj.client.get_sync_job_state(container_obj.sync_id)
-            if status is None:
-                container_to_sync.append(container_obj)
-            elif status[0] != SyncState.SYNCED:
-                click.echo(f"Syncing of {container_obj.uuid} is in progress.")
-                return
-
-    for c in container_to_sync:
-        storage_to_delete = _get_storage_by_id_or_type(name, obj.client.all_storages(c))
-        click.echo(f'Outdated storage for container {c.uuid}, attempting to sync storage.')
-        target = None
-        try:
-            target = obj.client.get_remote_storage(c, excluded_storage=name)
-        except WildlandError:
-            pass
-        if not target:
-            try:
-                target = obj.client.get_local_storage(c, excluded_storage=name)
-            except WildlandError:
-                # pylint: disable=raise-missing-from
-                raise WildlandError("Cannot find storage to sync data into.")
-        logger.debug("sync: {%s} -> {%s}", storage_to_delete, target)
-        response = obj.client.do_sync(c.uuid, c.sync_id, storage_to_delete.params,
-                                        target.params, one_shot=True, unidir=True)
-        logger.debug(response)
-        msg, success = obj.client.wait_for_sync(c.sync_id)
-        click.echo(msg)
-        if not success:
-            container_failed_to_sync.append(c.uuid)
-
-    if container_failed_to_sync and not force:
-        click.echo(f"Failed to sync storage for containers: {','.join(container_failed_to_sync)}")
-        return
+    sync_result = obj.wlcore.storage_sync_containers(name, usages, force)
+    if not sync_result.success:
+        raise CliError(str(sync_result))
 
     if local_path:
         if no_cascade:
-            for container_obj, _ in used_by:
+            for container_obj, _ in usages:
                 click.echo(f'Storage used in container: {container_obj.local_path}')
         else:
-            _delete_cascade(obj.client, used_by)
+            obj.wlcore.storage_delete_cascade(usages)
 
-        if used_by and not force and no_cascade:
+        if usages and not force and no_cascade:
             raise CliError('Storage is still used, not deleting '
                            '(use --force or remove --no-cascade)')
 
@@ -329,66 +294,21 @@ def _delete(obj: ContextObj, name: str, force: bool, no_cascade: bool, container
         if no_cascade:
             raise CliError('Inline storage cannot be deleted in --no-cascade mode')
 
-        if len(used_by) > 1:
+        if len(usages) > 1:
             if container is None:
                 raise CliError(f'Storage {name} is used '
-                               f'in multiple containers: {[str(cont) for cont, _ in used_by]} '
+                               f'in multiple containers: {[str(cont) for cont in usages]} '
                                '(please specify container name with --container)')
 
-            container_obj = obj.client.load_object_from_name(
-                WildlandObject.Type.CONTAINER, container)
-            used_by = [(cont, backend) for cont, backend in used_by
-                       if cont.local_path == container_obj.local_path]
+            usages = obj.wlcore.storage_get_usages_within_container(usages, container)
 
-        if len(used_by) > 1:
+        if len(usages) > 1:
             if not click.confirm('Several matching results have been found: \n'
-                                 f'{used_by} \n'
+                                 f'{usages} \n'
                                  f'Do you want remove all listed storages?'):
                 return
 
-        _delete_cascade(obj.client, used_by)
-
-
-def _get_local_path_and_find_usage(client: Client, name: str) \
-        -> Tuple[Optional[Path],  List[Tuple[Container, Union[Path, str]]]]:
-    try:
-        storage = client.load_object_from_name(WildlandObject.Type.STORAGE, name)
-    except ManifestError:
-        raise
-    except WildlandError:
-        used_by = client.find_storage_usage(name)
-        if not used_by:
-            raise
-        return None, used_by
-
-    if not storage.local_path:
-        raise WildlandError('Can only delete a local manifest')
-    used_by = client.find_storage_usage(storage.backend_id)
-    return storage.local_path, used_by
-
-
-def _delete_force(client: Client, name: str, no_cascade: bool):
-    try:
-        path = client.find_local_manifest(WildlandObject.Type.STORAGE, name)
-        if path:
-            click.echo(f'Deleting file {path}')
-            path.unlink()
-    except ManifestError:
-        # already removed
-        pass
-    if not no_cascade:
-        logger.warning('Unable to cascade remove: manifest failed to load.')
-
-
-def _delete_cascade(client: Client, containers: List[Tuple[Container, Union[Path, str]]]):
-    for container, backend in containers:
-        click.echo(f'Removing {backend} from {container.local_path}')
-        container.del_storage(backend)
-        try:
-            click.echo(f'Saving: {container.local_path}')
-            client.save_object(WildlandObject.Type.CONTAINER, container)
-        except ManifestError as ex:
-            raise CliError(f'Failed to modify container manifest, cannot delete: {ex}') from ex
+        obj.wlcore.storage_delete_cascade(usages)
 
 
 def do_create_storage_from_templates(client: Client, container: Container,

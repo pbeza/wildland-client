@@ -178,7 +178,7 @@ class StorageParamType(Enum):
 
 @dataclass
 class StorageParam:
-    names: str
+    name: str
     description: str
     param_type: Optional[StorageParamType] = StorageParamType.SINGLE
     display_name: Optional[str] = None
