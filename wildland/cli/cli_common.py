@@ -57,6 +57,7 @@ from ..manifest.manifest import (
 from ..manifest.schema import SchemaError
 from ..exc import WildlandError
 from ..utils import yaml_parser
+from ..storage_sync.base import SyncState
 from ..storage import Storage, _get_storage_by_id_or_type
 from ..user import User
 from ..publish import Publisher
@@ -322,7 +323,7 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
     determine if it should be republished).
     """
     obj: ContextObj = ctx.obj
-    
+
     if obj.client.is_url(input_file):
         raise CliError('This command supports only an local path to a file. Consider using '
                        'edit command for a specific object, e.g. wl container edit')
@@ -372,33 +373,48 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
         #check if it was container edit and if there were any changes
         if manifest_type == 'container' and original_data != data:   
             container = obj.client.load_object_from_file_path(WildlandObject.Type.CONTAINER, path)
-            new_storage_ids = []
 
-            #check new manifests list of storage ids
-            for storage in yaml.safe_load(edited_s)['backends']['storage']:
-                new_storage_ids.append(storage['backend-id'])
+            #check if container isn't already syncing
+            status = obj.client.get_sync_job_state(container.sync_id)
+            if status is None:
 
-            #if any old storage not on the new list, synchronize
-            for storage in yaml.safe_load(original_data)['backends']['storage']:
-                storage_id = storage['backend-id']
-                if storage_id not in new_storage_ids:
-                    storage_to_delete = _get_storage_by_id_or_type(storage_id, obj.client.all_storages(container))
-                    click.echo(f'Outdated storage for container {container.uuid}, attempting to sync storage.')
-                    target = None
-                    try:
-                        target = obj.client.get_remote_storage(container, excluded_storage=storage_id)
-                    except WildlandError:
-                        pass
-                    if not target:
+                #check if new manifest has at least one storage to sync to
+                try:
+                    storages = yaml.safe_load(edited_s)['backends']['storage']
+                except Exception as error:
+                    click.echo(error)
+                assert storages
+
+                #check new manifest's list of storage ids
+                new_storage_ids = [storage['backend-id'] for storage in storages]
+
+                #if any old storage not on the new list, synchronize
+                for storage in yaml.safe_load(original_data)['backends']['storage']:
+                    storage_id = storage['backend-id']
+                    if storage_id not in new_storage_ids:
+                        storage_to_delete = _get_storage_by_id_or_type(storage_id, obj.client.all_storages(container))
+                        click.echo(f'Outdated storage for container {container.uuid}, attempting to sync storage.')
+                        target = None
                         try:
-                            target = obj.client.get_local_storage(container, excluded_storage=storage_id)
+                            #get first existing remote storage from new manifest.
+                            target = obj.client.get_remote_storage(container, remote_storage=new_storage_ids[0])
                         except WildlandError:
-                            # pylint: disable=raise-missing-from
-                            raise WildlandError("Cannot find storage to sync data into.")
-                    LOGGER.debug("sync: {%s} -> {%s}", storage_to_delete, target)
-                    response = obj.client.do_sync(container.uuid, container.sync_id, storage_to_delete.params,
-                                target.params, one_shot=True, unidir=True)
-                    LOGGER.debug(response)
+                            pass
+                        if not target:
+                            try:
+                                #get first existing local storage from new manifest
+                                target = obj.client.get_local_storage(container, remote_storage=new_storage_ids[0])
+                            except WildlandError:
+                                # pylint: disable=raise-missing-from
+                                raise WildlandError("Cannot find storage to sync data into.")
+                        LOGGER.debug("sync: {%s} -> {%s}", storage_to_delete, target)
+                        response = obj.client.do_sync(container.uuid, container.sync_id, storage_to_delete.params,
+                                    target.params, one_shot=True, unidir=True)
+                        LOGGER.debug(response)
+                        break
+            elif status[0] != SyncState.SYNCED:
+                click.echo(f"Syncing of {container.uuid} is in progress.")
+                break
 
         if original_data == data:
             click.echo('No changes detected, not saving.')
