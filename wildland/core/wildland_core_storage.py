@@ -33,7 +33,7 @@ from ..client import Client
 from ..container import Container
 from ..exc import WildlandError
 from ..manifest.manifest import ManifestError
-from ..storage import Storage, _get_storage_by_id_or_type
+from ..storage import Storage
 from ..storage_backends.base import StorageBackend
 from ..storage_backends.dispatch import get_storage_backends
 from ..storage_sync.base import SyncState
@@ -187,7 +187,18 @@ class WildlandCoreStorage(WildlandCoreApi):
         List all known storages.
         :return: WildlandResult, List of WLStorages
         """
-        raise NotImplementedError
+        return self.__storage_list()
+
+    @wildland_result(default_output=[])
+    def __storage_list(self):
+        result = WildlandResult()
+        storages = []
+        try:
+            for storage in self.client.load_all(WildlandObject.Type.STORAGE):
+                storages.append(utils.storage_to_wl_storage(storage))
+        except Exception as ex:
+            result.errors.append(WLError.from_exception(ex))
+        return result, storages
 
     def storage_delete(self, storage_id: str, cascade: bool = True,
                        force: bool = False) -> WildlandResult:
@@ -219,7 +230,7 @@ class WildlandCoreStorage(WildlandCoreApi):
                     return result
 
         for c in container_to_sync:
-            storage_to_delete = _get_storage_by_id_or_type(name, self.client.all_storages(c))
+            storage_to_delete = self.client.get_storage_by_id_or_type(name, self.client.all_storages(c))
             logger.info(f'Outdated storage for container {c.uuid}, attempting to sync storage.')
             target = None
             try:
@@ -280,11 +291,11 @@ class WildlandCoreStorage(WildlandCoreApi):
             WLError.from_exception(FileNotFoundError(f'Cannot find storage {storage_id}')))
         return result, None
 
-    def storage_get_local_path_and_find_usage(self, name: str) -> Tuple[WildlandResult, Optional[Path],  Optional[List[Tuple[Container, Union[Path, str]]]]]:
-        return self.__storage_get_local_path_and_find_usage(name)
+    def storage_get_local_path_and_find_usages(self, name: str) -> Tuple[WildlandResult, Optional[Path],  Optional[List[Tuple[Container, Union[Path, str]]]]]:
+        return self.__storage_get_local_path_and_find_usages(name)
 
     @wildland_result(default_output=None)
-    def __storage_get_local_path_and_find_usage(self, name: str):
+    def __storage_get_local_path_and_find_usages(self, name: str):
         result = WildlandResult()
         try:
             storage = self.client.load_object_from_name(WildlandObject.Type.STORAGE, name)

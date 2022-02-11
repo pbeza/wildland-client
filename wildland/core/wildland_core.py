@@ -500,12 +500,20 @@ class WildlandCore(WildlandCoreUser, WildlandCoreStorage, WildlandCoreApi):
         """
         raise NotImplementedError
 
+    # TODO delete from here after https://gitlab.com/wildland/wildland-client/-/issues/699 is done
     def container_list(self) -> Tuple[WildlandResult, List[WLContainer]]:
         """
         List all known containers.
         :return: WildlandResult, List of WLContainers
         """
-        raise NotImplementedError
+        result = WildlandResult()
+        result_list = []
+        try:
+            for container in self.client.load_all(WildlandObject.Type.CONTAINER):
+                result_list.append(utils.container_to_wlcontainer(container))
+        except Exception as ex:
+            result.errors.append(WLError.from_exception(ex))
+        return result, result_list
 
     def container_delete(self, container_id: str) -> WildlandResult:
         """

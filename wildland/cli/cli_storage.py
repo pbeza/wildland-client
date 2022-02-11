@@ -215,21 +215,27 @@ def list_(obj: ContextObj):
     """
     Display known storages.
     """
-    for storage in obj.client.load_all(WildlandObject.Type.STORAGE):
+    storage_result, storages = obj.wlcore.storage_list()
+    container_result, containers = obj.wlcore.container_list()
+    if not storage_result.success or not container_result.success:
+        raise CliError(f'{str(storage_result) + str(container_result)}')
+
+    for storage in storages:
+        # FIXME Should WLStorage/WLContainer have .local_path ?
         click.echo(storage.local_path)
         click.echo(f'  type: {storage.storage_type}')
         click.echo(f'  backend_id: {storage.backend_id}')
+        # FIXME Should WLStorage have .location ?
         if storage.storage_type in ['local', 'local-cached', 'local-dir-cached']:
-            click.echo(f'  location: {storage.params["location"]}')
+            click.echo(f'  location: {storage.location}')
 
-    for container in obj.client.load_all(WildlandObject.Type.CONTAINER):
-        backends = list(container.get_backends_description(only_inline=True))
-        if not backends:
+    for container in containers:
+        if not container.storage_description:
             continue
 
         click.echo(f'{container.local_path} (inline)')
-        for backend in backends:
-            click.echo(backend)
+        for description in container.storage_description:
+            click.echo(description)
 
 
 @storage_.command('delete', short_help='delete a storage; sync removed storage with the first '
@@ -261,17 +267,17 @@ def delete(obj: ContextObj, names, force: bool, no_cascade: bool, container: Opt
 
 
 def _delete(obj: ContextObj, name: str, force: bool, no_cascade: bool, container: Optional[str]):
-    result, local_path, usages = obj.wlcore.storage_get_local_path_and_find_usage(name)
+    result, local_path, usages = obj.wlcore.storage_get_local_path_and_find_usages(name)
 
     if WLErrorType.MANIFEST_ERROR in [err.error_code for err in result.errors]:
         if force:
             click.echo(f'Failed to load manifest: {str(result)}')
             obj.wlcore.storage_delete_force(name, no_cascade)
+            return
         else:
             click.echo(f'Failed to load manifest, cannot delete: {str(result)}')
             click.echo('Use --force to force deletion.')
             raise CliError(str(result))
-        return
 
     sync_result = obj.wlcore.storage_sync_containers(name, usages, force)
     if not sync_result.success:

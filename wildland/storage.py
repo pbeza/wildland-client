@@ -284,15 +284,3 @@ class Storage(PublishableWildlandObject, obj_type=WildlandObject.Type.STORAGE):
             trusted=self.trusted,
             container=container)
         return new_storage
-
-
-def _get_storage_by_id_or_type(id_or_type: str, storages: List[Storage]) -> Storage:
-    """
-    Helper function to find a storage by listed id or type.
-    """
-    try:
-        return [storage for storage in storages
-                if id_or_type in (storage.backend_id, storage.storage_type)][0]
-    except IndexError:
-        # pylint: disable=raise-missing-from
-        raise WildlandError(f'Storage {id_or_type} not found')
