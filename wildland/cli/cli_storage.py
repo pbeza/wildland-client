@@ -138,7 +138,7 @@ def _do_create(
     data = {param_name_from_cli(key): data[key] for key in data}
 
     storage_params = dict(backend_type=backend.TYPE, backend_params=data,
-                          container_id=core_utils.container_to_wlcontainer(container_obj).id,
+                          container_id=core_utils.container_to_wlcontainer(container_obj, obj.client).id,
                           name=name, trusted=trusted, watcher_interval=watcher_interval,
                           inline=inline, access_users=access, encrypt_manifest=encrypt_manifest)
     result, wl_storage = obj.wlcore.storage_create(**storage_params)
@@ -219,7 +219,6 @@ def list_(obj: ContextObj):
     container_result, containers = obj.wlcore.container_list()
     if not storage_result.success or not container_result.success:
         raise CliError(f'{str(storage_result) + str(container_result)}')
-
     for storage in storages:
         # FIXME Should WLStorage/WLContainer have .local_path ?
         click.echo(storage.local_path)

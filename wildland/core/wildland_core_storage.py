@@ -101,7 +101,7 @@ class WildlandCoreStorage(WildlandCoreApi):
     def __get_container_from_wl_container_id(self, container_id):
         # FIXME:
         for container in self.client.load_all(WildlandObject.Type.CONTAINER):
-            if utils.container_to_wlcontainer(container).id == container_id:
+            if utils.container_to_wlcontainer(container, self.client).id == container_id:
                 return container
 
         raise FileNotFoundError(f'Cannot find container {container_id}')

@@ -76,7 +76,7 @@ class WildlandCore(WildlandCoreUser, WildlandCoreStorage, WildlandCoreApi):
         if isinstance(obj, User):
             return utils.user_to_wluser(obj, self.client)
         if isinstance(obj, Container):
-            return utils.container_to_wlcontainer(obj)
+            return utils.container_to_wlcontainer(obj, self.client)
         if isinstance(obj, Bridge):
             return utils.bridge_to_wl_bridge(obj)
         if isinstance(obj, Storage):
@@ -182,7 +182,7 @@ class WildlandCore(WildlandCoreUser, WildlandCoreStorage, WildlandCoreApi):
         if object_type == WLObjectType.USER:
             return utils.user_to_wluser(wildland_object, self.client)
         if object_type == WLObjectType.CONTAINER:
-            return utils.container_to_wlcontainer(wildland_object)
+            return utils.container_to_wlcontainer(wildland_object, self.client)
         if object_type == WLObjectType.BRIDGE:
             return utils.bridge_to_wl_bridge(wildland_object)
         if object_type == WLObjectType.STORAGE:
@@ -510,7 +510,7 @@ class WildlandCore(WildlandCoreUser, WildlandCoreStorage, WildlandCoreApi):
         result_list = []
         try:
             for container in self.client.load_all(WildlandObject.Type.CONTAINER):
-                result_list.append(utils.container_to_wlcontainer(container))
+                result_list.append(utils.container_to_wlcontainer(container, self.client))
         except Exception as ex:
             result.errors.append(WLError.from_exception(ex))
         return result, result_list
@@ -526,7 +526,7 @@ class WildlandCore(WildlandCoreUser, WildlandCoreStorage, WildlandCoreApi):
     def __container_delete(self, container_id: str):
         found = False
         for container in self.client.load_all(WildlandObject.Type.CONTAINER):
-            if utils.container_to_wlcontainer(container).id == container_id:
+            if utils.container_to_wlcontainer(container, self.client).id == container_id:
                 if not container.local_path:
                     raise FileNotFoundError('Can only delete a local manifest')
                 container.local_path.unlink()

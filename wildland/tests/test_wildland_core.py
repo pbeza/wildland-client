@@ -23,7 +23,7 @@ def wlcore(setup, base_dir):
 
 def test_create_local_storage(wlcore, base_dir):
     container = wlcore.client.load_object_from_name(WildlandObject.Type.CONTAINER, 'Container1')
-    wl_container = core_utils.container_to_wlcontainer(container)
+    wl_container = core_utils.container_to_wlcontainer(container, wlcore.client)
 
     result = wlcore.storage_create('local', {'location': str(base_dir / 'storage1')},
                                    wl_container.id, 'Storage1')
