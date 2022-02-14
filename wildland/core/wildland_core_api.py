@@ -591,11 +591,11 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         """
 
     @abc.abstractmethod
-    def storage_delete(self, storage_id: str, cascade: bool = True,
+    def storage_delete(self, name: str, cascade: bool = True,
                        force: bool = False) -> WildlandResult:
         """
         Delete provided storage.
-        :param storage_id: storage ID
+        :param name: storage name
          (in the form of user_id:/.uuid/container_uuid:/.uuid/storage_uuid)
         :param cascade: remove reference from containers
         :param force: delete even if used by containers or if manifest cannot be loaded

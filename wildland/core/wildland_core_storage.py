@@ -213,21 +213,20 @@ class WildlandCoreStorage(WildlandCoreApi):
         return self.__storage_delete(name, cascade, force)
 
     @wildland_result()
-    def __storage_delete(self, name: str, cascade: bool = True,
-                       force: bool = False):
+    def __storage_delete(self, name: str, cascade: bool, force: bool):
         delete_result = WildlandResult()
         result, local_path, usages = self.storage_get_local_path_and_find_usages(name)
 
         if WLErrorType.MANIFEST_ERROR in [err.error_code for err in result.errors]:
             if force:
-                logger.info(f'Failed to load manifest: {str(result)}')
+                logger.info('Failed to load manifest: %s', str(result))
                 self.__storage_delete_force(name, cascade)
                 return delete_result
-            else:
-                logger.info(f'Failed to load manifest, cannot delete: {str(result)}')
-                logger.info('Use --force to force deletion.')
-                delete_result.errors += result.errors
-                return delete_result
+
+            logger.info('Failed to load manifest, cannot delete: %s', str(result))
+            logger.info('Use --force to force deletion.')
+            delete_result.errors += result.errors
+            return delete_result
 
         self.__storage_sync_containers(name, usages, force)
 
@@ -237,7 +236,7 @@ class WildlandCoreStorage(WildlandCoreApi):
                 delete_result.errors += delete_cascade_result.errors
             else:
                 for container, _ in usages:
-                    logger.info(f'Storage used in container: {container.local_path}')
+                    logger.info('Storage used in container: %s', container.local_path)
 
             if usages and not force and not cascade:
                 delete_result.errors.append(
@@ -246,19 +245,19 @@ class WildlandCoreStorage(WildlandCoreApi):
                                       '(use --force or remove --no-cascade)')))
                 return delete_result
 
-            logger.info(f'Deleting: {local_path}')
+            logger.info('Deleting: %s',local_path)
             local_path.unlink()
             return delete_result
-        else:
-            if not cascade:
-                delete_result.errors.append(WLError.from_exception(
-                    WildlandError(('Inline storage cannot be deleted in --no-cascade mode'))))
-                return delete_result
 
-            delete_cascade_result = self.__storage_delete_cascade(usages)
-            delete_result.errors += delete_cascade_result.errors
-
+        if not cascade:
+            delete_result.errors.append(WLError.from_exception(
+                WildlandError('Inline storage cannot be deleted in --no-cascade mode')))
             return delete_result
+
+        delete_cascade_result = self.__storage_delete_cascade(usages)
+        delete_result.errors += delete_cascade_result.errors
+
+        return delete_result
 
     def storage_get_local_path_and_find_usages(self, name: str) \
             -> Tuple[WildlandResult, Optional[Path],
@@ -289,10 +288,11 @@ class WildlandCoreStorage(WildlandCoreApi):
         used_by = self.client.find_storage_usage(storage.backend_id)
         return result, storage.local_path, used_by
 
-    def storage_get_usages_within_container(self,
-                                            usages: Tuple[Optional[Path], Optional[List[Tuple[Container, Union[Path, str]]]]],
-                                            container_name: str):
-
+    def storage_get_usages_within_container(
+            self,
+            usages: Tuple[Optional[Path], Optional[List[Tuple[Container, Union[Path, str]]]]],
+            container_name: str
+    ):
         container_obj = self.client.load_object_from_name(
             WildlandObject.Type.CONTAINER, container_name)
         usages = [(cont, backend) for (cont, backend) in usages
@@ -304,7 +304,7 @@ class WildlandCoreStorage(WildlandCoreApi):
         try:
             path = self.client.find_local_manifest(WildlandObject.Type.STORAGE, name)
             if path:
-                logger.info(f'Deleting file {path}')
+                logger.info('Deleting file %s', path)
                 path.unlink()
         except ManifestError:
             # already removed
@@ -312,7 +312,10 @@ class WildlandCoreStorage(WildlandCoreApi):
         if cascade:
             logger.warning('Unable to cascade remove: manifest failed to load.')
 
-    def __storage_sync_containers(self, name: str, used_by: List[Tuple[Container, Union[Path, str]]], force: bool):
+    def __storage_sync_containers(self,
+                                  name: str,
+                                  used_by: List[Tuple[Container, Union[Path, str]]],
+                                  force: bool):
         container_to_sync = []
         container_failed_to_sync = []
         for container_obj, _ in used_by:
@@ -321,12 +324,13 @@ class WildlandCoreStorage(WildlandCoreApi):
                 if status is None:
                     container_to_sync.append(container_obj)
                 elif status[0] != SyncState.SYNCED:
-                    logger.info(f"Syncing of {container_obj.uuid} is in progress.")
+                    logger.info('Syncing of %s is in progress.', container_obj.uuid)
                     return
 
         for c in container_to_sync:
-            storage_to_delete = self.client.get_storage_by_id_or_type(name, self.client.all_storages(c))
-            logger.info(f'Outdated storage for container {c.uuid}, attempting to sync storage.')
+            storage_to_delete = self.client.get_storage_by_id_or_type(name,
+                                                                      self.client.all_storages(c))
+            logger.info('Outdated storage for container %s, attempting to sync storage.', c.uuid)
             target = None
             try:
                 target = self.client.get_remote_storage(c, excluded_storage=name)
@@ -337,7 +341,7 @@ class WildlandCoreStorage(WildlandCoreApi):
 
             logger.debug("sync: {%s} -> {%s}", storage_to_delete, target)
             response = self.client.do_sync(c.uuid, c.sync_id, storage_to_delete.params,
-                                          target.params, one_shot=True, unidir=True)
+                                           target.params, one_shot=True, unidir=True)
             logger.debug(response)
             msg, success = self.client.wait_for_sync(c.sync_id)
             logger.info(msg)
@@ -345,19 +349,22 @@ class WildlandCoreStorage(WildlandCoreApi):
                 container_failed_to_sync.append(c.uuid)
 
         if container_failed_to_sync and not force:
-            logger.info(f"Failed to sync storage for containers: {','.join(container_failed_to_sync)}")
+            logger.info('Failed to sync storage for containers: %s',
+                        ','.join(container_failed_to_sync))
 
-    def storage_delete_cascade(self, containers: List[Tuple[Container, Union[Path, str]]]) -> WildlandResult:
+    def storage_delete_cascade(self,
+                               containers: List[Tuple[Container,
+                                                      Union[Path, str]]]) -> WildlandResult:
         return self.__storage_delete_cascade(containers)
 
     @wildland_result()
     def __storage_delete_cascade(self, containers: List[Tuple[Container, Union[Path, str]]]):
         result = WildlandResult()
         for container, backend in containers:
-            logger.info(f'Removing {backend} from {container.local_path}')
+            logger.info('Removing %s from %s', backend, container.local_path)
             container.del_storage(backend)
             try:
-                logger.info(f'Saving: {container.local_path}')
+                logger.info('Saving: %s', container.local_path)
                 self.client.save_object(WildlandObject.Type.CONTAINER, container)
             except ManifestError as ex:
                 result.errors.append(WLError.from_exception(ex))
