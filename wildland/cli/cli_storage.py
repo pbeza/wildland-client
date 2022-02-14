@@ -26,8 +26,8 @@ Storage object
 """
 
 import types
-from typing import Iterable, List, Optional, Sequence, Tuple, Type, Union
-from pathlib import Path, PurePosixPath
+from typing import Iterable, List, Optional, Sequence, Tuple, Type
+from pathlib import PurePosixPath
 import functools
 import click
 
@@ -41,7 +41,6 @@ from .cli_common import sign, verify, edit, modify_manifest, set_fields, \
     add_fields, del_fields, dump, check_if_any_options, check_options_conflict, \
     publish, unpublish, remount_container
 from ..container import Container
-from ..core.wildland_result import WLErrorType
 from ..storage import Storage
 from ..manifest.template import TemplateManager, StorageTemplate
 from ..publish import Publisher
@@ -135,10 +134,11 @@ def _do_create(
     obj: ContextObj = click.get_current_context().obj
 
     container_obj = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, container)
+    container_id = core_utils.container_to_wlcontainer(container_obj, obj.client).id
     data = {param_name_from_cli(key): data[key] for key in data}
 
     storage_params = dict(backend_type=backend.TYPE, backend_params=data,
-                          container_id=core_utils.container_to_wlcontainer(container_obj, obj.client).id,
+                          container_id=container_id,
                           name=name, trusted=trusted, watcher_interval=watcher_interval,
                           inline=inline, access_users=access, encrypt_manifest=encrypt_manifest)
     result, wl_storage = obj.wlcore.storage_create(**storage_params)
@@ -266,39 +266,9 @@ def delete(obj: ContextObj, names, force: bool, no_cascade: bool, container: Opt
 
 
 def _delete(obj: ContextObj, name: str, force: bool, no_cascade: bool, container: Optional[str]):
+    cascade = not no_cascade
     result, local_path, usages = obj.wlcore.storage_get_local_path_and_find_usages(name)
-
-    if WLErrorType.MANIFEST_ERROR in [err.error_code for err in result.errors]:
-        if force:
-            click.echo(f'Failed to load manifest: {str(result)}')
-            obj.wlcore.storage_delete_force(name, no_cascade)
-            return
-        else:
-            click.echo(f'Failed to load manifest, cannot delete: {str(result)}')
-            click.echo('Use --force to force deletion.')
-            raise CliError(str(result))
-
-    sync_result = obj.wlcore.storage_sync_containers(name, usages, force)
-    if not sync_result.success:
-        raise CliError(str(sync_result))
-
-    if local_path:
-        if no_cascade:
-            for container_obj, _ in usages:
-                click.echo(f'Storage used in container: {container_obj.local_path}')
-        else:
-            obj.wlcore.storage_delete_cascade(usages)
-
-        if usages and not force and no_cascade:
-            raise CliError('Storage is still used, not deleting '
-                           '(use --force or remove --no-cascade)')
-
-        click.echo(f'Deleting: {local_path}')
-        local_path.unlink()
-    else:
-        if no_cascade:
-            raise CliError('Inline storage cannot be deleted in --no-cascade mode')
-
+    if not local_path and cascade and usages:
         if len(usages) > 1:
             if container is None:
                 raise CliError(f'Storage {name} is used '
@@ -306,14 +276,22 @@ def _delete(obj: ContextObj, name: str, force: bool, no_cascade: bool, container
                                '(please specify container name with --container)')
 
             usages = obj.wlcore.storage_get_usages_within_container(usages, container)
+            if not result.success:
+                raise CliError(str(result))
 
-        if len(usages) > 1:
-            if not click.confirm('Several matching results have been found: \n'
-                                 f'{usages} \n'
-                                 f'Do you want remove all listed storages?'):
-                return
+            if len(usages) > 1:
+                if not click.confirm('Several matching results have been found: \n'
+                                     f'{usages} \n'
+                                     f'Do you want remove all listed storages?'):
+                    return
 
-        obj.wlcore.storage_delete_cascade(usages)
+            obj.wlcore.storage_delete_cascade(usages)
+            return
+
+    delete_result = obj.wlcore.storage_delete(name, cascade, force)
+
+    if not delete_result.success:
+        raise CliError(str(delete_result))
 
 
 def do_create_storage_from_templates(client: Client, container: Container,
