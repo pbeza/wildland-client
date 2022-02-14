@@ -19,16 +19,16 @@
 """
 Linux implementation of sync manager.
 """
-import ctypes
-import inspect
 import os
+import pickle
+import select
 import signal
 import threading
 from dataclasses import dataclass
 from functools import partial
-from multiprocessing.connection import Listener, Connection
 from pathlib import Path
 from queue import Empty, Queue
+from socket import socket, AF_UNIX, SHUT_RDWR
 from typing import Optional, Tuple, Any
 
 import click
@@ -60,7 +60,7 @@ class WlSyncManagerLinux(WlSyncManager):
     def __init__(self, base_dir: str):
         super().__init__()
 
-        self.listener: Optional[Listener] = None
+        self.listener: Optional[socket] = None
         self.listener_thread: Optional[threading.Thread] = None
 
         config = Config.load(base_dir)
@@ -82,11 +82,22 @@ class WlSyncManagerLinux(WlSyncManager):
             logger.info('manager stopping because of signal')
             self.stop()
 
-    def _client_thread(self, client_id: int, conn: Connection):
+    @staticmethod
+    def _recv_msg(sock: socket) -> Any:
+        """
+        Receives a message from socket (assumes data is available).
+        """
+        data = sock.recv(1024)
+        if len(data) == 0:
+            return None
+
+        return pickle.loads(data)
+
+    def _client_thread(self, client_id: int, conn: socket):
         """
         Communicates with a single client.
         """
-        threading.current_thread().name = 'client'
+        threading.current_thread().name = f'client {client_id}'
         logger.debug('client %d thread started', client_id)
 
         responses: Queue[Tuple[int, Any]] = Queue()
@@ -97,17 +108,28 @@ class WlSyncManagerLinux(WlSyncManager):
             try:
                 try:
                     msg = responses.get(timeout=POLL_TIMEOUT)
-                    conn.send(msg)
+                    if msg is not None:
+                        logger.debug('srv SEND %s', msg)
+                        conn.sendall(pickle.dumps(msg))
+                    else:
+                        logger.warning('srv SEND NONE')
                 except Empty:
                     # nothing to send, try receiving commands
-                    if conn.poll(timeout=POLL_TIMEOUT):
-                        cmd = conn.recv()
-                        logger.debug('client %d: got %s', client_id, cmd)
+                    logger.debug('srv try recv')
+                    rl, _, _ = select.select([conn], [], [], POLL_TIMEOUT)
+                    if len(rl) == 0:
+                        logger.debug('srv try recv = empty')
+                        continue
+                    # TODO show rl
+                    cmd = self._recv_msg(conn)
+                    if cmd is not None:
+                        logger.debug('got %s', cmd)
                         self.requests.put(WlSyncManager.Request(client_id, cmd))
             except Exception:
                 logger.exception('client %d thread:', client_id)
                 break
 
+        conn.shutdown(SHUT_RDWR)
         conn.close()
         with self.responses_lock:
             self.responses[client_id] = None
@@ -123,16 +145,19 @@ class WlSyncManagerLinux(WlSyncManager):
         logger.debug('listener thread started')
         while self.active:
             try:
-                # no way to interrupt accept(): https: // bugs.python.org / issue32244
-                conn = self.listener.accept()
+                logger.debug('srv wait for conn')
+                rl, _, _ = select.select([self.listener], [], [])
+                conn, addr = self.listener.accept()
                 client_id = self.new_client_id()
-                logger.debug('connection accepted from %s, id %d',
-                             self.listener.last_accepted, client_id)
+                logger.debug('connection accepted from %s, id %d', addr, client_id)
                 worker = threading.Thread(target=self._client_thread, args=(client_id, conn))
                 worker.start()
                 # client threads will exit on stop()
+            except OSError as ex:
+                logger.info('listener aborted: %s', ex)
+                break
             except Exception:
-                logger.exception('listener thread:')
+                logger.exception('listener thread exception:')
 
         logger.debug('listener thread finished')
 
@@ -140,10 +165,12 @@ class WlSyncManagerLinux(WlSyncManager):
     def start(self) -> WildlandResult:
         logger.info('starting')
         if self.active:
-            return WildlandResult.error(error_code=WLErrorType.SYNC_MANAGER_ALREADY_ACTIVE,
-                                        error_description="Sync manager already active")
+            return WildlandResult.error(WLErrorType.SYNC_MANAGER_ALREADY_ACTIVE)
 
-        self.listener = Listener(family='AF_UNIX', address=self.socket_path)
+        self.listener = socket(family=AF_UNIX)
+        self.listener.setblocking(False)
+        self.listener.bind(self.socket_path)
+        self.listener.listen()  # TODO 2 backlog
         self.active = True
         self.listener_thread = threading.Thread(target=self._listener_thread)
         self.listener_thread.start()
@@ -154,14 +181,13 @@ class WlSyncManagerLinux(WlSyncManager):
     def stop(self) -> WildlandResult:
         logger.info('stopping')
         if not self.active:
-            return WildlandResult.error(error_code=WLErrorType.SYNC_MANAGER_NOT_ACTIVE,
-                                        error_description="Sync manager not active")
+            return WildlandResult.error(WLErrorType.SYNC_MANAGER_NOT_ACTIVE)
         self.active = False
         assert self.listener
-        self.listener.close()  # TODO aborts the listener thread if in the middle of accept() call
-        # assert self.listener_thread
-        # self.listener_thread.join()
-        self.listener_thread._stop()
+        self.listener.shutdown(SHUT_RDWR)
+        self.listener.close()
+        assert self.listener_thread
+        self.listener_thread.join()
         self.listener_thread = None
         self.listener = None
 
@@ -185,14 +211,12 @@ class WlSyncManagerLinux(WlSyncManager):
                      source_storage_id, target_storage_id)
 
         if not self.active:
-            return WildlandResult.error(error_code=WLErrorType.SYNC_MANAGER_NOT_ACTIVE,
-                                        error_description="Sync manager not active",
+            return WildlandResult.error(WLErrorType.SYNC_MANAGER_NOT_ACTIVE,
                                         diagnostic_info=container_id), None
 
         with self.jobs_lock:
             if container_id in self.jobs.keys():
-                return WildlandResult.error(error_code=WLErrorType.SYNC_FOR_CONTAINER_ALREADY_RUNNING,
-                                            error_description="Sync already running for this container",
+                return WildlandResult.error(WLErrorType.SYNC_FOR_CONTAINER_ALREADY_RUNNING,
                                             diagnostic_info=container_id), None
 
             job = WlSyncManagerLinux.SyncJobLinux()
@@ -210,8 +234,7 @@ class WlSyncManagerLinux(WlSyncManager):
     def cmd_job_stop(self, container_id: str, force: bool) -> Tuple[WildlandResult, None]:
         logger.debug('cmd_job_stop: %s %s', container_id, force)
         if not self.active:
-            return WildlandResult.error(error_code=WLErrorType.SYNC_MANAGER_NOT_ACTIVE,
-                                        error_description="Sync manager not active",
+            return WildlandResult.error(WLErrorType.SYNC_MANAGER_NOT_ACTIVE,
                                         diagnostic_info=container_id), None
 
         # TODO review locking
@@ -226,8 +249,7 @@ class WlSyncManagerLinux(WlSyncManager):
                 self.jobs.pop(container_id)
                 return WildlandResult.OK(), None
             except KeyError:
-                return WildlandResult.error(error_code=WLErrorType.SYNC_FOR_CONTAINER_NOT_RUNNING,
-                                            error_description="Sync not running for this container",
+                return WildlandResult.error(WLErrorType.SYNC_FOR_CONTAINER_NOT_RUNNING,
                                             diagnostic_info=container_id), None
 
 
@@ -254,8 +276,9 @@ def main(base_dir: str, log_path: str):
 
     manager = WlSyncManagerLinux(base_dir)
     manager.start()
-    manager.main()
-    print('END')
+    logger.debug('enter main')
+    x = manager.main()
+    logger.debug('END: %s', x)
 
 
 # pylint: disable=no-value-for-parameter

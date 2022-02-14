@@ -21,11 +21,12 @@ Internal API for Wildland sync operations: sync manager.
 """
 import abc
 import threading
+import time
 from dataclasses import dataclass
-from queue import Queue
+from queue import Queue, Empty
 from typing import Callable, Dict, Any, Tuple, Optional, Set
 
-from wildland.core.sync_internal import WlSyncCommand, WlSyncCommandType
+from wildland.core.sync_internal import WlSyncCommand, WlSyncCommandType, POLL_TIMEOUT
 from wildland.core.wildland_result import WildlandResult, wildland_result, WLError, WLErrorType
 from wildland.core.sync_api import SyncApiFileState, SyncApiEventType
 from wildland.log import get_logger
@@ -108,11 +109,13 @@ class WlSyncManager(metaclass=abc.ABCMeta):
     def get_request(self) -> Tuple[WildlandResult, Optional[Request]]:
         """
         Get a sync command to be executed from internal command queue.
-        Blocks until a command is available.
-        :return: WildlandResult and Request if successful.
+        :return: WildlandResult and Request if one is available, None if request queue is empty.
         """
         assert self.active
-        return WildlandResult.OK(), self.requests.get()
+        try:
+            return WildlandResult.OK(), self.requests.get_nowait()
+        except Empty:
+            return WildlandResult.OK(), None
 
     @wildland_result()
     def queue_response(self, client_id: int, resp_id: int, response: Any) -> WildlandResult:
@@ -120,7 +123,7 @@ class WlSyncManager(metaclass=abc.ABCMeta):
         Queue command reply or event to send to a client.
         :param client_id: client to send the response to
         :param resp_id: command ID if this is a command response, or handler ID if this is an event
-        :param response: data to send
+        :param response: data to send (SyncEvent or tuple (WildlandResult, command data))
         :return: WildlandResult
         """
         with self.responses_lock:
@@ -143,20 +146,29 @@ class WlSyncManager(metaclass=abc.ABCMeta):
         """
         Main loop of the manager. Gets commands and executes them until interrupted by stop().
         """
-        logger.warning('main loop starting')
+        logger.info('main loop starting')
         while self.active:
             result, request = self.get_request()
             if not result.success:
                 return result
 
-            result, response = request.cmd.handle(self, request.client_id)
-            if not result.success:
-                logger.warning('request %s failed: %s', request, result)
-            # TODO send result
+            if request is None:
+                time.sleep(POLL_TIMEOUT)
+                continue
 
-            result = self.queue_response(request.client_id, request.cmd.id, response)
-            if not result.success:
-                return result
+            logger.debug('processing %s', request)
+            try:
+                cmd_result, response = request.cmd.handle(self, request.client_id)
+                if not cmd_result.success:
+                    logger.warning('request %s failed: %s', request, cmd_result)
+
+                result = self.queue_response(request.client_id, request.cmd.id,
+                                             (cmd_result, response))
+                if not result.success:
+                    return result
+            except Exception:
+                logger.exception('WTF')
+
             # responses (and events) should be sent to clients asynchronously by subclass
             # implementations from self.responses
 
@@ -223,8 +235,9 @@ class WlSyncManager(metaclass=abc.ABCMeta):
         """
         Handler for the JOB_PAUSE command. Pauses a sync job.
         """
-        return WildlandResult.error(error_code=WLErrorType.NOT_IMPLEMENTED,
-                                    error_description="NI"), None
+        logger.debug('pause handler: %s', container_id)
+        return WildlandResult.error(WLErrorType.NOT_IMPLEMENTED,
+                                    diagnostic_info=str(container_id)), None
         # raise NotImplementedError  # TODO need base syncer changes
 
     @WlSyncCommand.handler(WlSyncCommandType.JOB_RESUME)
@@ -232,8 +245,7 @@ class WlSyncManager(metaclass=abc.ABCMeta):
         """
         Handler for the JOB_RESUME command. Resumes a sync job.
         """
-        return WildlandResult.error(error_code=WLErrorType.NOT_IMPLEMENTED,
-                                    error_description="NI"), None
+        return WildlandResult.error(WLErrorType.NOT_IMPLEMENTED), None
         # raise NotImplementedError  # TODO need base syncer changes
 
     # TODO handlers returned data should be Optional if failed
@@ -244,8 +256,7 @@ class WlSyncManager(metaclass=abc.ABCMeta):
         Handler for the JOB_STATE command. Returns job's overall state.
         """
         if not self.active:
-            return WildlandResult.error(error_code=WLErrorType.SYNC_MANAGER_NOT_ACTIVE,
-                                        error_description="Sync manager not active",
+            return WildlandResult.error(WLErrorType.SYNC_MANAGER_NOT_ACTIVE,
                                         diagnostic_info=container_id), SyncState.STOPPED
 
         with self.jobs_lock:
@@ -254,8 +265,7 @@ class WlSyncManager(metaclass=abc.ABCMeta):
                 assert job.syncer
                 return WildlandResult.OK(), job.syncer.state
             except KeyError:
-                return WildlandResult.error(error_code=WLErrorType.SYNC_FOR_CONTAINER_NOT_RUNNING,
-                                            error_description="Sync not running for this container",
+                return WildlandResult.error(WLErrorType.SYNC_FOR_CONTAINER_NOT_RUNNING,
                                             diagnostic_info=container_id), SyncState.STOPPED
 
     @WlSyncCommand.handler(WlSyncCommandType.JOB_DETAILS)
@@ -263,8 +273,7 @@ class WlSyncManager(metaclass=abc.ABCMeta):
         """
         Handler for the JOB_DETAILS command. Returns state of all files in the job.
         """
-        return WildlandResult.error(error_code=WLErrorType.NOT_IMPLEMENTED,
-                                    error_description="NI"), None
+        return WildlandResult.error(WLErrorType.NOT_IMPLEMENTED), ()
         # raise NotImplementedError  # TODO need base syncer changes
 
     @WlSyncCommand.handler(WlSyncCommandType.JOB_FILE_DETAILS)
@@ -273,8 +282,7 @@ class WlSyncManager(metaclass=abc.ABCMeta):
         """
         Handler for the JOB_FILE_DETAILS command. Returns state of a particular file in the job.
         """
-        return WildlandResult.error(error_code=WLErrorType.NOT_IMPLEMENTED,
-                                    error_description="NI"), None
+        return WildlandResult.error(WLErrorType.NOT_IMPLEMENTED), ()
         # raise NotImplementedError  # TODO need base syncer changes
 
     @WlSyncCommand.handler(WlSyncCommandType.JOB_SET_CALLBACK, client_id=True)
@@ -303,8 +311,7 @@ class WlSyncManager(metaclass=abc.ABCMeta):
         """
         with self.event_lock:
             if callback_id not in self.event_filters.keys():
-                return WildlandResult.error(error_code=WLErrorType.SYNC_CALLBACK_NOT_FOUND,
-                                            error_description="Event callback not found",
+                return WildlandResult.error(WLErrorType.SYNC_CALLBACK_NOT_FOUND,
                                             diagnostic_info=str(callback_id)), None
             self.event_filters.pop(callback_id)
 
@@ -316,8 +323,7 @@ class WlSyncManager(metaclass=abc.ABCMeta):
         """
         Handler for the FORCE_FILE command. Force sync one file between storages.
         """
-        return WildlandResult.error(error_code=WLErrorType.NOT_IMPLEMENTED,
-                                    error_description="NI"), None
+        return WildlandResult.error(WLErrorType.NOT_IMPLEMENTED), None
         # raise NotImplementedError  # TODO
 
     @WlSyncCommand.handler(WlSyncCommandType.SHUTDOWN)

@@ -103,21 +103,29 @@ class WildlandSync(metaclass=abc.ABCMeta):
         Encapsulates a single client request that should have a response.
         """
         cmd: WlSyncCommand
-        response: Any = None
-        ready = threading.Event()
+        ready: threading.Event
+        response: Optional[Tuple[WildlandResult, Any]] = None
 
     def __init__(self):
         self.cmd_id: int = 0
+
+        # Requests that await processing.
+        # Subclass implementations should asynchronously send requests with IDs in self.to_send
+        # to manager, and fill in the Request.response field with data received from manager.
         self.requests: Dict[int, WildlandSync.Request] = dict()  # cmd_id -> Request
         self.requests_lock = threading.Lock()
-        self.to_send: Queue[int] = Queue()  # cmd_id from requests that await sending to manager
 
-        # events to send to callbacks (handler_id, SyncApiEvent)
-        # should be asynchronously populated by subclass implementations
+        # cmd_id from requests that await processing.
+        # Corresponding requests should be asynchronously sent to manager by subclass
+        # implementations.
+        self.to_send: Queue[int] = Queue()
+
+        # Events to dispatch to callbacks (handler_id, SyncApiEvent).
+        # Should be asynchronously populated by subclass implementations.
         self.event_queue: Queue[Tuple[int, SyncApiEvent]] = Queue()
 
-        # subclass implementations should asynchronously dispatch events from
-        # self.event_queue to these callbacks
+        # Subclass implementations should asynchronously dispatch events from
+        # self.event_queue to these callbacks.
         self.event_callbacks: Dict[int, Callable] = dict()  # handler_id -> callback
         self.event_lock = threading.Lock()
 
@@ -134,18 +142,23 @@ class WildlandSync(metaclass=abc.ABCMeta):
         :return: Tuple containing WildlandResult showing if the command was successful,
                  and data returned by the command handler (can be None).
         """
-        request = WildlandSync.Request(cmd)
+        request = WildlandSync.Request(cmd, threading.Event())
 
+        logger.debug('executing %s', cmd)
         with self.requests_lock:
             self.requests[cmd.id] = request
             self.to_send.put(cmd.id)
 
+        logger.debug('waiting for %s', request)
         request.ready.wait()
 
+        assert request.response is not None
+
+        logger.debug('executed %s', request)
         with self.requests_lock:
             self.requests.pop(cmd.id)
-        # TODO send/recv status result
-        return WildlandResult.OK(), request.response
+
+        return request.response
 
     @abc.abstractmethod
     def syncer_start(self) -> WildlandResult:
@@ -254,8 +267,7 @@ class WildlandSync(metaclass=abc.ABCMeta):
         """
         with self.event_lock:
             if handler_id not in self.event_callbacks.keys():
-                return WildlandResult.error(error_code=WLErrorType.SYNC_CALLBACK_NOT_FOUND,
-                                            error_description="Event handler not found",
+                return WildlandResult.error(WLErrorType.SYNC_CALLBACK_NOT_FOUND,
                                             diagnostic_info=str(handler_id))
 
         cmd = self._new_cmd(WlSyncCommandType.JOB_CLEAR_CALLBACK,
