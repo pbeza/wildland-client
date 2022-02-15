@@ -220,11 +220,8 @@ def list_(obj: ContextObj):
     if not storage_result.success or not container_result.success:
         raise CliError(f'{str(storage_result) + str(container_result)}')
     for storage in storages:
-        # FIXME Should WLStorage/WLContainer have .local_path ?
-        click.echo(storage.local_path)
         click.echo(f'  type: {storage.storage_type}')
         click.echo(f'  backend_id: {storage.backend_id}')
-        # FIXME Should WLStorage have .location ?
         if storage.storage_type in ['local', 'local-cached', 'local-dir-cached']:
             click.echo(f'  location: {storage.location}')
 
@@ -232,7 +229,7 @@ def list_(obj: ContextObj):
         if not container.storage_description:
             continue
 
-        click.echo(f'{container.local_path} (inline)')
+        click.echo(f'container id: {container.id}')
         for description in container.storage_description:
             click.echo(description)
 

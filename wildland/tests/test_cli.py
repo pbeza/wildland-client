@@ -868,7 +868,6 @@ def test_storage_list(cli, base_dir):
     assert backend_id_line
 
     ok = [
-        str(base_dir / 'storage/Storage.storage.yaml'),
         '  type: local',
         backend_id_line,
         '  location: /PATH',

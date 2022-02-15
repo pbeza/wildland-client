@@ -75,7 +75,6 @@ def container_to_wlcontainer(container: Container, client: Client) -> WLContaine
     wl_container = WLContainer(
         owner=container.owner,
         id=get_object_id(container),
-        local_path=container.local_path,
         paths=[str(p) for p in container.paths],
         title=container.title,
         categories=[str(c) for c in container.categories],
@@ -108,7 +107,6 @@ def storage_to_wl_storage(storage: Storage) -> WLStorage:
     wl_storage = WLStorage(
         owner=storage.owner,
         id=get_object_id(storage),
-        local_path=storage.local_path,
         location=storage.params.get('location'),
         storage_type=storage.storage_type,
         container="",  # TODO
