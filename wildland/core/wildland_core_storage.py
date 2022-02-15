@@ -245,7 +245,7 @@ class WildlandCoreStorage(WildlandCoreApi):
                                       '(use --force or remove --no-cascade)')))
                 return delete_result
 
-            logger.info('Deleting: %s',local_path)
+            logger.info('Deleting: %s', local_path)
             local_path.unlink()
             return delete_result
 
