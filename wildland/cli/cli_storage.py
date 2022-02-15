@@ -26,7 +26,7 @@ Storage object
 """
 
 import types
-from typing import Iterable, List, Optional, Sequence, Tuple, Type
+from typing import List, Optional, Sequence, Type
 from pathlib import PurePosixPath
 import functools
 import click
@@ -40,10 +40,7 @@ from ..client import Client
 from .cli_common import sign, verify, edit, modify_manifest, set_fields, \
     add_fields, del_fields, dump, check_if_any_options, check_options_conflict, \
     publish, unpublish, remount_container
-from ..container import Container
 from ..core.wildland_objects_api import WLStorage, WLContainer
-from ..storage import Storage
-from ..manifest.template import TemplateManager, StorageTemplate
 from ..publish import Publisher
 from ..log import get_logger
 from ..storage_backends.base import StorageBackend
@@ -307,63 +304,6 @@ def __check_if_storage_in_use_and_try_to_delete(obj: ContextObj, storage_name: s
             return True
 
 
-def do_create_storage_from_templates(client: Client, container: Container,
-        storage_templates: Iterable[StorageTemplate], local_dir: Optional[str],
-        no_publish: bool = False) -> None:
-    """
-    Create storages for a container from a given list of storage templates.
-    :param client: Wildland client
-    :param container: Wildland container
-    :param storage_templates: list of storage templates
-    :param local_dir: str to be passed to template renderer as a parameter, can be used by template
-        creators
-    :param no_publish: should the container not be published after creation
-    """
-    to_process: List[Tuple[Storage, StorageBackend]] = []
-
-    for template in storage_templates:
-        try:
-            storage = template.get_storage(client, container, local_dir)
-        except ValueError as ex:
-            raise CliError(f'Failed to create storage from storage template: {ex}') from ex
-
-        storage_backend = StorageBackend.from_params(storage.params)
-        to_process.append((storage, storage_backend))
-
-    storages_to_add = []
-    for storage, backend in to_process:
-        if storage.is_writeable:
-            _ensure_backend_location_exists(backend)
-        storages_to_add.append(storage)
-        click.echo(f'Adding storage {storage.backend_id} to container.')
-
-    client.add_storage_to_container(container=container, storages=storages_to_add, inline=True)
-    click.echo(f'Saved container {container.local_path}')
-
-    if not no_publish:
-        try:
-            user = client.load_object_from_name(WildlandObject.Type.USER, container.owner)
-            Publisher(client, user).republish(container)
-        except WildlandError as ex:
-            raise WildlandError(f"Failed to republish container: {ex}") from ex
-
-
-def _ensure_backend_location_exists(backend: StorageBackend) -> None:
-    path = backend.location
-
-    if path is None:
-        return
-    try:
-        with backend:
-            if str(PurePosixPath(backend.location)) != backend.location:
-                raise WildlandError('The `LOCATION_PARAM` of the backend is not a valid path.')
-            backend.mkdir(PurePosixPath(path))
-            click.echo(f'Created base path: {path}')
-    except Exception as ex:
-        logger.warning('Could not create base path %s in a writable storage [%s]. %s',
-                       path, backend.backend_id, ex)
-
-
 @storage_.command('create-from-template', short_help='create a storage from a storage template',
                   alias=['cs'])
 @click.option('--storage-template', '--template', '-t', multiple=False, required=True,
@@ -379,26 +319,13 @@ def create_from_template(obj: ContextObj, cont, storage_template: str, local_dir
     """
     Setup storage for a container from a storage template.
     """
-    container = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, cont)
-    template_manager = TemplateManager(obj.client.dirs[WildlandObject.Type.TEMPLATE])
+    container_result, container = obj.wlcore.object_get(WildlandObject.Type.CONTAINER, cont)
+    if not container_result.success or not container:
+        raise CliError(f'Container not found: {str(container_result)}')
 
-    try:
-        storage_templates = template_manager.get_template_file_by_name(storage_template).templates
-
-        do_create_storage_from_templates(obj.client, container, storage_templates, local_dir,
-                                         no_publish=no_publish)
-    except WildlandError as we:
-        raise CliError(f'Could not create storage from [{storage_template}] template. {we}') from we
-
-
-storage_.add_command(sign)
-storage_.add_command(verify)
-storage_.add_command(edit)
-storage_.add_command(dump)
-storage_.add_command(publish)
-storage_.add_command(unpublish)
-
-_add_create_commands(create)
+    result = obj.wlcore.storage_create_from_template(storage_template, container.id, local_dir, no_publish)
+    if not result.success:
+        raise CliError(str(result))
 
 
 @storage_.command(short_help='modify storage manifest')
@@ -437,3 +364,13 @@ def modify(ctx: click.Context,
                     to_del=to_del,
                     to_set=to_set,
                     logger=logger)
+
+
+storage_.add_command(sign)
+storage_.add_command(verify)
+storage_.add_command(edit)
+storage_.add_command(dump)
+storage_.add_command(publish)
+storage_.add_command(unpublish)
+
+_add_create_commands(create)

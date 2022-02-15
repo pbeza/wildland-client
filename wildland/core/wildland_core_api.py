@@ -574,11 +574,13 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def storage_create_from_template(self, template_name: str, container_id: str,
+                                     no_publish: bool,
                                      local_dir: Optional[str] = None):
         """
         Create storages for a container from a given storage template.
         :param template_name: name of the template
         :param container_id: container this storage is for
+        :param no_publish: flag whether publish template
         :param local_dir: str to be passed to template renderer as a parameter, can be used by
         template creators
         """

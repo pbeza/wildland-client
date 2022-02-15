@@ -49,7 +49,6 @@ from wildland.wildland_object.wildland_object import WildlandObject
 from wildland.fs_client import StorageInfo
 from .cli_base import aliased_group, ContextObj
 from .cli_exc import CliError
-from .cli_storage import do_create_storage_from_templates
 from ..container import Container
 from ..exc import WildlandError
 from ..manifest.manifest import ManifestError
@@ -214,8 +213,11 @@ def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Opt
 
     if storage_templates:
         try:
-            do_create_storage_from_templates(obj.client, container, storage_templates, local_dir,
-                                             no_publish=no_publish)
+            # TODO pass container.id when https://gitlab.com/wildland/wildland-client/-/issues/699 &&
+            # TODO and https://gitlab.com/wildland/wildland-client/-/issues/702 are solved
+            result = obj.wlcore.storage_do_create_from_template(container, storage_templates, local_dir, no_publish)
+            if not result.success:
+                raise CliError(str(result))
         except (WildlandError, ValueError) as ex:
             click.echo(f'Removing container: {container_path}')
             container_path.unlink()
