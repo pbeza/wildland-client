@@ -27,14 +27,14 @@ import errno
 import stat
 
 from pathlib import PurePosixPath, PosixPath
-from typing import Iterable, Tuple, Optional, Callable
+from typing import Iterable, Tuple, Optional, Callable, List
 
 import click
 
 from dropbox import DropboxOAuth2FlowNoRedirect
 from dropbox.files import FileMetadata, FolderMetadata, Metadata
 from dropbox.exceptions import ApiError
-from wildland.storage_backends.base import StorageBackend, Attr
+from wildland.storage_backends.base import StorageBackend, Attr, StorageParam
 from wildland.storage_backends.buffered import FullBufferedFile
 from wildland.storage_backends.cached import DirectoryCachedStorageMixin
 from wildland.storage_backends.file_children import FileChildrenMixin
@@ -163,6 +163,42 @@ class DropboxStorageBackend(FileChildrenMixin, DirectoryCachedStorageMixin, Stor
         dropbox_refresh_token = self.params.get('refresh-token', None)
         self.client = DropboxClient(dropbox_token, dropbox_app_key, dropbox_refresh_token)
         self.root = PosixPath(self.params.get('location', '/')).resolve()
+
+    @classmethod
+    def storage_options(cls) -> List[StorageParam]:
+        opts = super(DropboxStorageBackend, cls).storage_options()
+        opts.extend([
+            StorageParam(
+                'location', display_name='PATH', required=False,
+                default_value='/',
+                description='Absolute path to root directory in your Dropbox account.',
+            ),
+            StorageParam(
+                'token', display_name='STRING', required=False,
+                description="Dropbox OAuth 2.0 access token. You can generate it in Dropbox App "
+                            "Console. Deprecated and will be replaced in favor of App Key and "
+                            "refresh token."
+            ),
+            StorageParam(
+                'app_key', display_name='STRING', required=False,
+                description='Dropbox App Key. You can obtain it in Dropbox App Console.'
+            ),
+            StorageParam(
+                'refresh_token', display_name='STRING', required=False,
+                description="Dropbox OAuth 2.0 refresh token. "
+                            "You can generate it using the following "
+                            "https://www.dropbox.com/developers/documentation/http/documentation"
+                            "at '/oauth2/token' endpoint section. "
+                            "Please note that this is optional as the procedure is performed "
+                            "when a container is created."
+            )
+        ])
+        return opts
+
+    @classmethod
+    def validate_and_parse_params(cls, params):
+        # TODO somehow get rid of dependence of user input from cli_create
+        pass
 
     @classmethod
     def cli_options(cls):

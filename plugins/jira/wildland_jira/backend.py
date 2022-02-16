@@ -34,7 +34,7 @@ import click
 from wildland.container import ContainerStub
 from wildland.log import get_logger
 from wildland.manifest.schema import Schema
-from wildland.storage_backends.base import StorageBackend
+from wildland.storage_backends.base import StorageBackend, StorageParam, StorageParamType
 from wildland.storage_backends.generated import GeneratedStorageMixin, DirEntry, FuncDirEntry
 from .jira_client import CompactIssue, JiraClient
 from .jira_file_entry import JiraFileEntry
@@ -198,6 +198,39 @@ class JiraStorageBackend(GeneratedStorageMixin, StorageBackend):
                 'subdirectory': subcontainer_path
             }]}
         })
+
+    @classmethod
+    def storage_options(cls) -> List[StorageParam]:
+        return [
+            StorageParam('workspace_url', required=True,
+                         description='address of the v2 REST endpoint of your Jira Work Management Cloud site'),
+            StorageParam('username',
+                         description='(optional) Jira username'),
+            StorageParam('personal_token',
+                         description="(optional) personal access token generated for your Attlassian Account"
+                         ),
+            StorageParam('project_name', param_type=StorageParamType.LIST,
+                         description="(optional) (multiple) Jira projects names"
+                         ),
+            StorageParam('limit', default_value=DEFAULT_ISSUES_LIMIT,
+                         description=f'(optional) (default: {DEFAULT_ISSUES_LIMIT}) maximum amount of issues to '
+                                     f'be fetched starting from the most recently updated'
+                         ),
+        ]
+
+    @classmethod
+    def validate_and_parse_params(cls, params):
+        if bool(params['personal_token']) ^ bool(params['username']):
+            raise TypeError('Only one of [token, user] provided. Expected either none or both.')
+        data = {
+            'workspace_url': params['workspace_url'],
+            'username': params['username'],
+            'personal_token': params['personal_token'],
+            'project_name': list(params['project_name']),
+            'limit': params['limit'],
+        }
+        cls.SCHEMA.validate(data)
+        return data
 
     @classmethod
     def cli_options(cls):

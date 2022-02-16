@@ -182,7 +182,7 @@ class StorageParam:
     description: str
     param_type: Optional[StorageParamType] = StorageParamType.SINGLE
     display_name: Optional[str] = None
-    default_value: Union[str, bool, List[str], None] = None
+    default_value: Union[int, str, bool, List[str], None] = None
     private: bool = False
     required: bool = False
 
@@ -306,12 +306,12 @@ class StorageBackend(metaclass=abc.ABCMeta):
         return []
 
     @classmethod
-    def validate_and_parse_params(cls, params) -> Dict[str, Any]:
+    def validate_and_parse_params(cls, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Checks whether provided params match backend requirements. If necessary supplements and
         parses params
         """
-        return params
+        return {}
 
     # TODO: remove when will be ready https://gitlab.com/wildland/wildland-client/-/issues/703
     @classmethod

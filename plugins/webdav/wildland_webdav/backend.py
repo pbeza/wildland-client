@@ -26,7 +26,7 @@ WebDAV storage backend
 """
 
 from pathlib import PurePosixPath
-from typing import Iterable, Tuple
+from typing import Iterable, Tuple, List
 from urllib.parse import urljoin, urlparse, urlunparse, quote, unquote
 import os
 
@@ -36,7 +36,7 @@ import requests.auth
 from lxml import etree
 import click
 
-from wildland.storage_backends.base import StorageBackend, Attr
+from wildland.storage_backends.base import StorageBackend, Attr, StorageParam
 from wildland.storage_backends.buffered import FullBufferedFile, PagedFile
 from wildland.storage_backends.cached import CachedStorageMixin
 from wildland.storage_backends.file_children import FileChildrenMixin
@@ -148,6 +148,39 @@ class WebdavStorageBackend(FileChildrenMixin, CachedStorageMixin, StorageBackend
             self.public_url=urlunparse(parsed_url._replace(path='/'))
 
         self.base_path = PurePosixPath(self.params.get('base_path', urlparse(self.public_url).path))
+
+
+    @classmethod
+    def storage_options(cls) -> List[StorageParam]:
+        opts = super(WebdavStorageBackend, cls).storage_options()
+        opts.extend([
+            StorageParam('url', display_name='URL', required=True,
+                         description='WebDav url'),
+            StorageParam('login', display_name='LOGIN', required=True,
+                         description='Login'),
+            StorageParam('password', display_name='PASSWORD', required=True,
+                         description="Password (omit for a password prompt)", private=True
+                         ),
+        ])
+        return opts
+
+    @classmethod
+    def validate_and_parse_params(cls, params):
+        result = super(WebdavStorageBackend, cls).cli_create(params)
+        base_path = urlparse(params['url']).path
+        url = params['url']
+        if urlparse(url).path != '/' and urlparse(url).path != '':
+            url = urlunparse(urlparse(url)._replace(path='/'))
+        result.update({
+            'url': url,
+            'base_path': base_path,
+            'credentials': {
+                'login': params['login'],
+                'password': params['password'],
+            }
+        })
+        cls.SCHEMA.validate(result)
+        return result
 
     @classmethod
     def cli_options(cls):

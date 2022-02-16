@@ -25,14 +25,14 @@ Redis storage backend
 """
 
 from pathlib import PurePosixPath
-from typing import Iterable, Tuple, Union
+from typing import Iterable, Tuple, Union, List
 
 import click
 from redis import Redis
 
 from wildland.exc import WildlandError
 from wildland.link import Link
-from wildland.storage_backends.base import StorageBackend, Attr, File
+from wildland.storage_backends.base import StorageBackend, Attr, File, StorageParam
 from wildland.storage_backends.buffered import FullBufferedFile
 from wildland.storage_backends.cached import DirectoryCachedStorageMixin
 
@@ -154,6 +154,47 @@ class RedisStorageBackend(FileChildrenMixin, DirectoryCachedStorageMixin, Storag
 
     def unmount(self):
         self.redis.connection_pool.disconnect()
+
+    @classmethod
+    def storage_options(cls) -> List[StorageParam]:
+        opts = super(RedisStorageBackend, cls).storage_options()
+        opts.extend([
+            StorageParam('prefix', display_name='PATH',
+                         description='Redis key prefix as an absolute path, defaults to /'),
+            StorageParam('database', display_name='INTEGER', required=True,
+                         description='Redis DB index'),
+            StorageParam('hostname', required=True, display_name='HOST',
+                         description="Server hostname"
+                         ),
+            StorageParam('port', display_name='INTEGER',
+                         description="Server port (defaults to 6379)"
+                         ),
+            StorageParam('password',
+                         description="Server password"
+                         ),
+            StorageParam('username',
+                         description='Server username (defaults to "default")'
+                         ),
+            StorageParam('tls', display_name='BOOL',
+                         description="Use TLS"
+                         ),
+        ])
+        return opts
+
+    @classmethod
+    def validate_and_parse_params(cls, params):
+        result = super(RedisStorageBackend, cls).validate_and_parse_params(params)
+        result.update({
+            'prefix': params.get('prefix', '/'),
+            'database': int(params.get('database') or 0),
+            'hostname': params.get('hostname'),
+            'port': int(params.get('port') or 6379),
+            'password': params.get('password', None),
+            'tls': params.get('tls', None),
+            'username': params.get('username'),
+        })
+        cls.SCHEMA.validate(result)
+        return result
 
     @classmethod
     def cli_options(cls):

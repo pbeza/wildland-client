@@ -29,12 +29,14 @@ from pathlib import PurePosixPath
 from os import unlink
 from tempfile import mkstemp
 from subprocess import Popen, PIPE, STDOUT, run
+from typing import List
 
 import click
 
 from wildland.fs_client import WildlandFSError
 from wildland.manifest.schema import Schema
 from wildland.log import get_logger
+from wildland.storage_backends.base import StorageParam, StorageParamType
 from .local_proxy import LocalProxy
 
 logger = get_logger('storage-sshfs')
@@ -143,10 +145,59 @@ class SshFsBackend(LocalProxy):
             if self.identity:
                 unlink(ipath)
 
+    @classmethod
+    def storage_options(cls) -> List[StorageParam]:
+        return [
+            StorageParam('sshfs_command', default_value='sshfs', display_name='CMD', required=True,
+                         description='command to mount sshfs filesystem'),
+            StorageParam('host', display_name='HOST', required=True,
+                         description='host to mount'),
+            StorageParam('password', display_name='PASSWORD', private=True,
+                         description='password for authentication'
+                         ),
+            StorageParam('path', default_value='./',
+                         description="path on target host to mount"
+                         ),
+            StorageParam('ssh_user', display_name='USER', default_value=getpass.getuser(),
+                         description='user name to log on to target host'
+                         ),
+            StorageParam('ssh_identity', display_name='PATH',
+                         description='path to private key file to use for authentication'
+                         ),
+            # StorageParam('pwprompt', param_type=StorageParamType.BOOLEAN,
+            #              description='prompt for password that will be used for authentication'
+            #              ),
+            StorageParam('mount_options', display_name='OPT1,OPT2,...',
+                         description="additional options to be passed to sshfs command directly"
+                         ),
+        ]
+
+    @classmethod
+    def validate_and_parse_params(cls, params):
+        if params['ssh_identity'] and params['pwprompt']:
+            raise click.UsageError('pwprompt and ssh-identity are mutually exclusive')
+        data = {
+            'cmd': params['sshfs_command'],
+            'login': params['ssh_user'],
+            'mount_opts': params['mount_options'],
+            'host': params['host'],
+            'path': params['path'],
+            'passwd': params['passwd']
+        }
+
+        # # FiXME get rid of click dependence
+        # if params['pwprompt']:
+        #     data['passwd'] = click.prompt('SSH password',
+        #                                   hide_input=True)
+
+        if params['ssh_identity']:
+            with open(params['ssh_identity']) as f:
+                data['identity'] = '\n'.join([l.rstrip() for l in f])
+        cls.SCHEMA.validate(data)
+        return data
 
     @classmethod
     def cli_create(cls, data):
-
         if data['ssh_identity'] and data['pwprompt']:
             raise click.UsageError('pwprompt and ssh-identity are mutually exclusive')
         conf = {

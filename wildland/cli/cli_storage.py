@@ -40,7 +40,7 @@ from ..client import Client
 from .cli_common import sign, verify, edit, modify_manifest, set_fields, \
     add_fields, del_fields, dump, check_if_any_options, check_options_conflict, \
     publish, unpublish, remount_container
-from ..core.wildland_objects_api import WLStorage, WLContainer
+from ..core.wildland_objects_api import WLStorage, WLContainer, WLObjectType
 from ..publish import Publisher
 from ..log import get_logger
 from ..storage_backends.base import StorageBackend
@@ -319,7 +319,7 @@ def create_from_template(obj: ContextObj, cont, storage_template: str, local_dir
     """
     Setup storage for a container from a storage template.
     """
-    container_result, container = obj.wlcore.object_get(WildlandObject.Type.CONTAINER, cont)
+    container_result, container = obj.wlcore.object_get(WLObjectType.CONTAINER, cont)
     if not container_result.success or not container:
         raise CliError(f'Container not found: {str(container_result)}')
 

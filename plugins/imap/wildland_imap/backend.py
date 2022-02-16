@@ -31,7 +31,7 @@ from datetime import timezone
 import uuid
 import click
 
-from wildland.storage_backends.base import StorageBackend
+from wildland.storage_backends.base import StorageBackend, StorageParam, StorageParamType
 from wildland.storage_backends.watch import SimpleStorageWatcher
 from wildland.storage_backends.generated import \
     GeneratedStorageMixin, StaticFileEntry, FuncDirEntry
@@ -176,6 +176,35 @@ class ImapStorageBackend(GeneratedStorageMixin, StorageBackend):
                 'subdirectory': subcontainer_path
             }]}
         })
+
+    @classmethod
+    def storage_options(cls) -> List[StorageParam]:
+        return [
+            StorageParam('host', display_name='HOST', required=True,
+                         description='imap server host name'),
+            StorageParam('login', display_name='LOGIN', required=True,
+                         description='imap account name / login'),
+            StorageParam('password', display_name='PASSWORD', private=True,
+                         description="imap account password (omit for a password prompt)"),
+            StorageParam('folder', display_name='FOLDER', default_value='INBOX',
+                         description="root folder to expose"),
+            StorageParam('ssl', display_name='SSL', default_value=True,
+                         param_type=StorageParamType.BOOLEAN,
+                         description="use encrypted connection"
+                         ),
+        ]
+
+    @classmethod
+    def validate_and_parse_params(cls, params):
+        data = {
+            'host': params['host'],
+            'login': params['login'],
+            'password': params['password'],
+            'folder': params['folder'],
+            'ssl': params['ssl']
+        }
+        cls.SCHEMA.validate(data)
+        return data
 
     @classmethod
     def cli_options(cls):

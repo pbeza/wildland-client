@@ -33,11 +33,11 @@ from subprocess import Popen, PIPE
 from pathlib import PurePosixPath, Path
 import secrets
 import string
-from typing import Dict, List, Optional, Type
+from typing import Dict, List, Optional, Type, Any
 
 import click
 
-from wildland.storage_backends.base import StorageBackend, File
+from wildland.storage_backends.base import StorageBackend, File, StorageParam
 from wildland.manifest.schema import Schema
 from wildland.storage_backends.local import LocalStorageBackend, LocalFile
 from wildland.fs_client import WildlandFSError
@@ -452,6 +452,34 @@ class EncryptedStorageBackend(StorageBackend):
 
         # The path where it got mounted
         self.ciphertext_path = PurePosixPath(self.params['storage-path'])
+
+    @classmethod
+    def storage_options(cls) -> List[StorageParam]:
+        return [
+            StorageParam('reference_container_url', display_name='URL',
+                         description='URL for inner container manifest',
+                         required=True),
+            StorageParam('engine', display_name='ENGINE',
+                         default_value='gocryptfs',
+                         description='Cryptographic filesystem to use: gocryptfs or encfs.',
+                         required=False),
+        ]
+
+    @classmethod
+    def validate_and_parse_params(cls, params) -> Dict[str, Any]:
+        engine = engines[params['engine']]
+        with tempfile.TemporaryDirectory(prefix='encrypted-temp-dir.') as d:
+            d1 = PurePosixPath(d) / 'encrypted'
+            d2 = PurePosixPath(d) / 'cleartext'
+            Path(d1).mkdir()
+            Path(d2).mkdir()
+            runner = engine.init(PurePosixPath(d), d1, d2)
+        data = {'reference-container': params['reference_container_url'],
+                'symmetrickey': runner.credentials(),
+                'engine': params['engine']
+                }
+        cls.SCHEMA.validate(data)
+        return data
 
     @classmethod
     def cli_options(cls):

@@ -92,7 +92,7 @@ class FileChildrenMixin(StorageBackend):
         return result
 
     @classmethod
-    def validate_and_parse_params(cls, params):
+    def validate_and_parse_params(cls, params: Dict[str, Any]) -> Dict[str, Any]:
         result = super(FileChildrenMixin, cls).validate_and_parse_params(params)
         if params.get('subcontainer_manifest'):
             if params.get('manifest_pattern'):
@@ -107,7 +107,6 @@ class FileChildrenMixin(StorageBackend):
                 'type': 'glob',
                 'path': params['manifest_pattern']
             }
-        cls.SCHEMA.validate(result)
         return result
 
     @classmethod
