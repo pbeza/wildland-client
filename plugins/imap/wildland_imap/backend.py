@@ -199,7 +199,6 @@ class ImapStorageBackend(GeneratedStorageMixin, StorageBackend):
                          display_name='FOLDER',
                          default_value='INBOX',
                          description="root folder to expose"),
-            # FIXME cli option was '--ssl/--no-ssl' will it be correct?
             StorageParam('ssl/no_ssl',
                          display_name='SSL',
                          default_value=True,

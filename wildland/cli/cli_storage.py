@@ -93,8 +93,6 @@ def _make_create_command(backend: Type[StorageBackend]):
                           'this option is present or not.'),
         click.Argument(['name'], metavar='NAME', required=False),
     ]
-    import pydevd_pycharm
-    pydevd_pycharm.settrace('192.168.0.189', port=12345, stdoutToServer=True, stderrToServer=True)
     params.extend(parse_storage_cli_options(backend.storage_options()))
     callback = functools.partial(_do_create, backend=backend)
 

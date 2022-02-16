@@ -6,6 +6,8 @@ from wildland.storage_backends.base import StorageParam, StorageParamType
 
 
 def param_name_to_cli(name: str) -> str:
+    if '/' in name:
+        name = name.replace('/', '/--')
     if len(name) == 1:
         return f'-{name}'
     return f'--{name.replace("_", "-")}'

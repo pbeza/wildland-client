@@ -234,9 +234,9 @@ class JiraStorageBackend(GeneratedStorageMixin, StorageBackend):
             'project_name': list(params['project_name']),
             'limit': params['limit'],
         }
-        cls.SCHEMA.validate(data)
         data = cls.remove_non_required_params(data)
 
+        cls.SCHEMA.validate(data)
         return data
 
     @classmethod
