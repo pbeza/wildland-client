@@ -502,6 +502,32 @@ def create(ctx: click.Context,
     _bootstrap_forest(ctx, owner, storage_template, manifest_local_dir, access_list)
 
 
+def get_user_manifests_catalog(obj, catalog_container):
+    """
+    Builds the 'manifests-catalog' property for the user manifest based on the catalog container.
+    """
+    manifests_catalog = []
+    for storage in obj.client.all_storages(container=catalog_container):
+        storage_backend = StorageBackend.from_params(storage.params)
+        assert isinstance(storage_backend, FileChildrenMixin), \
+            'Unsupported catalog storage type.'
+        rel_path = storage_backend.get_relpaths(
+            catalog_container.get_primary_publish_path(),
+            catalog_container.get_publish_paths())
+
+        link_obj: Dict[str, Any] = {'object': 'link', 'file': f'/{list(rel_path)[0]}'}
+
+        fields = storage.to_manifest_fields(inline=True)
+        if not storage.access:
+            fields['access'] = catalog_container.access
+
+        link_obj['storage'] = fields
+        if storage.owner != catalog_container.owner:
+            link_obj['storage-owner'] = storage.owner
+        manifests_catalog.append(link_obj)
+    return manifests_catalog
+
+
 def _bootstrap_forest(ctx: click.Context, user: str, manifest_storage_template_name: str,
                       manifest_local_dir: str = '/', access: List[Dict] = None):
 
@@ -580,27 +606,9 @@ def _bootstrap_forest(ctx: click.Context, user: str, manifest_storage_template_n
                                                       predicate=lambda x: x.is_writeable)
         manifests_backend = StorageBackend.from_params(manifests_storage.params)
 
-        for storage in obj.client.all_storages(container=catalog_container):
-            storage_backend = StorageBackend.from_params(storage.params)
-            assert isinstance(storage_backend, FileChildrenMixin), \
-                'Unsupported catalog storage type.'
-            rel_path = storage_backend.get_relpaths(
-                catalog_container.get_primary_publish_path(),
-                catalog_container.get_publish_paths())
-
-            link_obj: Dict[str, Any] = {'object': 'link', 'file': f'/{list(rel_path)[0]}'}
-
-            fields = storage.to_manifest_fields(inline=True)
-            if not storage.access:
-                fields['access'] = obj.client.load_pubkeys_from_field(
-                    access_list, forest_owner.owner)
-
-            link_obj['storage'] = fields
-            if storage.owner != forest_owner.owner:
-                link_obj['storage-owner'] = storage.owner
-
-            modify_manifest(ctx, str(forest_owner.local_path), edit_funcs=[add_fields],
-                            to_add={'manifests-catalog': [link_obj]})
+        user_manifests_catalog = get_user_manifests_catalog(obj, catalog_container)
+        modify_manifest(ctx, str(forest_owner.local_path), edit_funcs=[add_fields],
+                        to_add={'manifests-catalog': user_manifests_catalog})
 
         # Refresh user's manifests catalog
         obj.client.recognize_users_and_bridges()
