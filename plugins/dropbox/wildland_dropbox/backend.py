@@ -197,8 +197,46 @@ class DropboxStorageBackend(FileChildrenMixin, DirectoryCachedStorageMixin, Stor
 
     @classmethod
     def validate_and_parse_params(cls, params):
-        # TODO somehow get rid of dependence of user input from cli_create
-        pass
+        # FIXME we should get rid of click dependence here I guess - how
+        token = params.get("token", None)
+        app_key = params.get("app_key", None)
+        refresh_token = params.get("refresh_token", None)
+
+        if token and app_key:
+            raise CliError('--token and --app-key are mutually exclusive')
+
+        if app_key and not refresh_token:
+            auth_flow = DropboxOAuth2FlowNoRedirect(
+                app_key, use_pkce=True, token_access_type='offline')
+
+            authorize_url = auth_flow.start()
+            msg = f"""
+        1. Go to: {authorize_url}
+        2. Click \"Allow\" (you might have to log in first).
+        3. Copy the authorization code."""
+            print(msg)
+
+            err_msg = "Cannot get refresh token"
+            for i in range(0, 3):
+                try:
+                    auth_code = click.prompt("4. Enter the authorization code here")
+                    oauth_result = auth_flow.finish(auth_code.strip())
+                    refresh_token = oauth_result.refresh_token
+                except Exception as e:
+                    if i != 2 and click.confirm("Do you want to retry?"):
+                        continue
+                    err_msg = f"Cannot get refresh token: {str(e)}"
+                break
+            if not refresh_token:
+                raise ValueError(err_msg)
+
+        result = super(DropboxStorageBackend, cls).validate_and_parse_params(params)
+        result.update({"location": params["location"]})
+        if token:
+            result.update({"token": token})
+        if app_key:
+            result.update({"app-key": app_key, "refresh-token": refresh_token})
+        return result
 
     @classmethod
     def cli_options(cls):

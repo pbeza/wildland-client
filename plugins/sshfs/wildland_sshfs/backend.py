@@ -33,10 +33,11 @@ from typing import List
 
 import click
 
+from wildland.exc import WildlandError
 from wildland.fs_client import WildlandFSError
 from wildland.manifest.schema import Schema
 from wildland.log import get_logger
-from wildland.storage_backends.base import StorageParam, StorageParamType
+from wildland.storage_backends.base import StorageParam
 from .local_proxy import LocalProxy
 
 logger = get_logger('storage-sshfs')
@@ -159,7 +160,8 @@ class SshFsBackend(LocalProxy):
                          required=True,
                          description='host to mount'
                          ),
-            StorageParam('password',
+            # FIXME can we keep option like passwd instead of pwprompt?
+            StorageParam('passwd',
                          display_name='PASSWORD',
                          private=True,
                          description='password for authentication'
@@ -188,8 +190,11 @@ class SshFsBackend(LocalProxy):
 
     @classmethod
     def validate_and_parse_params(cls, params):
-        if params['ssh_identity'] and params['pwprompt']:
-            raise click.UsageError('pwprompt and ssh-identity are mutually exclusive')
+        # FIXME can we replace pwprompt with passwd option? (in order to get rid of click dependence)
+        # if params['ssh_identity'] and params['pwprompt']:
+        #     raise click.UsageError('pwprompt and ssh-identity are mutually exclusive')
+        if params['ssh_identity'] and params['passwd']:
+            raise WildlandError('passwd and ssh-identity are mutually exclusive')
         data = {
             'cmd': params['sshfs_command'],
             'login': params['ssh_user'],
@@ -199,7 +204,6 @@ class SshFsBackend(LocalProxy):
             'passwd': params['passwd']
         }
 
-        # # FiXME can we replace pwprompt with password option? (in order to get rid of click dependence)
         # if params['pwprompt']:
         #     data['passwd'] = click.prompt('SSH password',
         #                                   hide_input=True)
