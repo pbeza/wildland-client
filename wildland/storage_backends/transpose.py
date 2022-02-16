@@ -186,18 +186,24 @@ class TransposeStorageBackend(StorageBackend):
     def storage_options(cls) -> List[StorageParam]:
         return [
             StorageParam('reference_container_url',
-                         description='URL for inner container manifest', required=True,
-                         display_name='URL'),
+                         display_name='URL',
+                         required=True,
+                         description='URL for inner container manifest',
+                         ),
             StorageParam('conflict',
+                         default_value='first-apply',
+                         required=True,
                          description='''Explanation of what to do in case the given rules
                                  are conflicting (first-apply/last-apply/all-apply)''',
-                         required=True, default_value='first-apply'),
+                         ),
             StorageParam('rules',
+                         required=True,
+                         param_type=StorageParamType.LIST,
                          description="""The rules to follow when modifying the initial categories. 
                          Each to be passed as a dictionary enclosed in single quotes, 
                          e.g.: '{"match-with": "/1", "replace-with": "/2"}' 
                          Can be repeated.""",
-                         required=True, param_type=StorageParamType.LIST),
+                         ),
         ]
 
     @classmethod
@@ -210,13 +216,15 @@ class TransposeStorageBackend(StorageBackend):
             raise WildlandError('Could not parse rules: '+repr(error)
                                 + '\nExamples of syntatically correct rules can be found'
                                   ' in the Wildland documentation.') from error
-        opts = {
+        data = {
             'reference-container': params['reference_container_url'],
             'conflict': params['conflict'],
             'rules': rules,
         }
-        cls.SCHEMA.validate(opts)
-        return opts
+        data = cls.remove_non_required_params(data)
+
+        cls.SCHEMA.validate(data)
+        return data
 
     def mount(self) -> None:
         self.reference.request_mount()

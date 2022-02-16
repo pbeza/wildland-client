@@ -85,12 +85,15 @@ class DelegateProxyStorageBackend(StorageBackend):
     @classmethod
     def storage_options(cls) -> List[StorageParam]:
         return [
-            StorageParam('reference_container_url', display_name='URL',
+            StorageParam('reference_container_url',
+                         display_name='URL',
+                         required=True,
                          description='URL for reference container manifest',
-                         required=True),
-            StorageParam('subdirectory', display_name='SUBDIRECTORY',
+                         ),
+            StorageParam('subdirectory',
+                         display_name='SUBDIRECTORY',
                          description='Subdirectory of reference-container to be exposed',
-                         required=False),
+                         ),
         ]
 
     @classmethod
@@ -100,12 +103,16 @@ class DelegateProxyStorageBackend(StorageBackend):
             wl_path = WildlandPath.from_str(params['reference_container_url'])
             if not wl_path.has_explicit_or_default_owner():
                 raise CliError("reference container URL must contain explicit or default owner")
-        opts = {'reference-container': params['reference_container_url']}
+        data = {
+            'reference-container': params['reference_container_url']
+        }
         if 'subdirectory' in params:
-            opts['subdirectory'] = params['subdirectory']
+            data['subdirectory'] = params['subdirectory']
 
-        cls.SCHEMA.validate(opts)
-        return opts
+        data = cls.remove_non_required_params(data)
+
+        cls.SCHEMA.validate(data)
+        return data
 
     @classmethod
     def cli_options(cls):

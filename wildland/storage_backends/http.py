@@ -114,18 +114,24 @@ class HttpStorageBackend(FileChildrenMixin, DirectoryCachedStorageMixin, Storage
     def storage_options(cls) -> List[StorageParam]:
         opts = super(HttpStorageBackend, cls).storage_options()
         opts.extend([
-            StorageParam('url', display_name='URL', description='url', required=True),
+            StorageParam('url',
+                         display_name='URL',
+                         required=True,
+                         description='url'
+                         ),
         ])
         return opts
 
     @classmethod
     def validate_and_parse_params(cls, params):
-        result = super(HttpStorageBackend, cls).validate_and_parse_params(params)
-        result.update({
+        data = super(HttpStorageBackend, cls).validate_and_parse_params(params)
+        data.update({
             'url': params['url'],
         })
+        data = cls.remove_non_required_params(data)
+
         cls.SCHEMA.validate(params)
-        return result
+        return data
 
     @classmethod
     def cli_options(cls):

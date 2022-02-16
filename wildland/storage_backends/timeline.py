@@ -104,22 +104,27 @@ class TimelineStorageBackend(CachedStorageMixin, StorageBackend):
     @classmethod
     def storage_options(cls) -> List[StorageParam]:
         return [
-            StorageParam('reference_container_url', display_name='URL',
+            StorageParam('reference_container_url',
+                         display_name='URL',
+                         required=True,
                          description='URL for inner container manifest',
-                         required=True),
-            StorageParam('timeline_root', required=False,
+                         ),
+            StorageParam('timeline_root',
                          default_value='/timeline',
-                         description='The name of the root of the timeline tree'),
+                         description='The name of the root of the timeline tree'
+                         ),
         ]
 
     @classmethod
     def validate_and_parse_params(cls, params) -> Dict[str, Any]:
-        result = {
+        data = {
             'reference-container': params['reference_container_url'],
             'timeline-root': params['timeline_root']
         }
-        cls.SCHEMA.validate(result)
-        return result
+        data = cls.remove_non_required_params(data)
+
+        cls.SCHEMA.validate(data)
+        return data
 
     def mount(self):
         self.inner.request_mount()

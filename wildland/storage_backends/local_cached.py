@@ -122,16 +122,22 @@ class BaseCached(StorageBackend):
     @classmethod
     def storage_options(cls) -> List[StorageParam]:
         return [
-            StorageParam('location', display_name='PATH',
-                         description='path in local filesystem',
-                         required=True)
+            StorageParam('location',
+                         display_name='PATH',
+                         required=True,
+                         description='path in local filesystem'
+                         )
         ]
 
     @classmethod
     def validate_and_parse_params(cls, params) -> Dict[str, Any]:
-        result = {'location': params['location']}
-        cls.SCHEMA.validate(result)
-        return result
+        data = {
+            'location': params['location']
+        }
+        data = cls.remove_non_required_params(data)
+
+        cls.SCHEMA.validate(data)
+        return data
 
     @staticmethod
     def _stat(st: os.stat_result) -> Attr:

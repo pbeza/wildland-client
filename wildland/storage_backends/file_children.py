@@ -82,32 +82,39 @@ class FileChildrenMixin(StorageBackend):
     def storage_options(cls) -> List[StorageParam]:
         result = super(FileChildrenMixin, cls).storage_options()
         result.append(
-            StorageParam('subcontainer_manifest', display_name='PATH', param_type=StorageParamType.LIST,
+            StorageParam('subcontainer_manifest',
+                         display_name='PATH',
+                         param_type=StorageParamType.LIST,
                          description='Relative path to a child manifest (can be repeated), '
-                                     'cannot be used together with manifest_pattern'))
+                                     'cannot be used together with manifest_pattern'
+                         )
+        )
         result.append(
-            StorageParam('manifest_pattern', display_name='GLOB',
+            StorageParam('manifest_pattern',
+                         display_name='GLOB',
                          description='Set the manifest pattern for storage, cannot be used '
-                                     'together with subcontainer_manifest'))
+                                     'together with subcontainer_manifest'
+                         )
+        )
         return result
 
     @classmethod
     def validate_and_parse_params(cls, params: Dict[str, Any]) -> Dict[str, Any]:
-        result = super(FileChildrenMixin, cls).validate_and_parse_params(params)
+        data = super(FileChildrenMixin, cls).validate_and_parse_params(params)
         if params.get('subcontainer_manifest'):
             if params.get('manifest_pattern'):
                 raise WildlandError('--subcontainer-manifest and --manifest-pattern '
                                     'are mutually exclusive.')
-            result['manifest-pattern'] = {
+            data['manifest-pattern'] = {
                 'type': 'list',
                 'paths': list(params['subcontainer_manifest'])
             }
         elif params.get('manifest_pattern'):
-            result['manifest-pattern'] = {
+            data['manifest-pattern'] = {
                 'type': 'glob',
                 'path': params['manifest_pattern']
             }
-        return result
+        return data
 
     @classmethod
     def cli_options(cls) -> List[click.Option]:

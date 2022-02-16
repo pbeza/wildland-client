@@ -104,14 +104,20 @@ class StaticStorageBackend(GeneratedStorageMixin, StorageBackend):
             for part in path_parts[:-1]:
                 content_place = content_place.setdefault(part, {})
             content_place[path_parts[-1]] = data
-        data = {'content': content}
+        data = {
+            'content': content
+        }
+        data = cls.remove_non_required_params(data)
+
         cls.SCHEMA.validate(data)
         return data
 
     @classmethod
     def storage_options(cls) -> List[StorageParam]:
         return [
-            StorageParam('file', display_name='PATH=CONTENT',
+            StorageParam('file',
+                         display_name='PATH=CONTENT',
+                         param_type=StorageParamType.LIST,
                          description='File to be placed in the storage',
-                         param_type=StorageParamType.LIST),
+                         ),
         ]

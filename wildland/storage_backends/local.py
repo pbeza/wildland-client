@@ -164,16 +164,23 @@ class LocalStorageBackend(FileChildrenMixin, StorageBackend):
     @classmethod
     def storage_options(cls) -> List[StorageParam]:
         opts = super(LocalStorageBackend, cls).storage_options()
-        opts.append(StorageParam('location', display_name='PATH',
-                                 description='path in local filesystem', required=True))
+        opts.append(
+            StorageParam('location',
+                         display_name='PATH',
+                         required=True,
+                         description='path in local filesystem'
+                         )
+        )
         return opts
 
     @classmethod
     def validate_and_parse_params(cls, params):
-        result = super(LocalStorageBackend, cls).cli_create(params)
-        result['location'] = params['location']
-        cls.SCHEMA.validate(result)
-        return result
+        data = super(LocalStorageBackend, cls).cli_create(params)
+        data['location'] = params['location']
+        data = cls.remove_non_required_params(data)
+
+        cls.SCHEMA.validate(data)
+        return data
 
     def _path(self, path: PurePosixPath) -> Path:
         """Given path inside filesystem, calculate path on disk, relative to
