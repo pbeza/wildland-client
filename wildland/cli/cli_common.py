@@ -369,11 +369,11 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
         assert edited_s
         data = edited_s.encode()
 
-        _sync_removed_storages(obj, manifest_type, original_data, edited_s, path)
-
         if original_data == data:
             click.echo('No changes detected, not saving.')
             return False
+
+        _sync_removed_storages(obj, manifest_type, original_data, edited_s, path)
 
         try:
             new_manifest = Manifest.from_unsigned_bytes(data, obj.client.session.sig)
@@ -412,7 +412,7 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
 
 def _sync_removed_storages(obj, manifest_type, original_data, edited_s, path):
     #check whether it was container edit and if there were any changes
-    if manifest_type != 'container' and original_data == edited_s.encode():
+    if manifest_type != 'container' or original_data == edited_s.encode():
         return
 
     #check if container isn't already syncing
@@ -421,7 +421,7 @@ def _sync_removed_storages(obj, manifest_type, original_data, edited_s, path):
 
     if status is None:
         try:
-            storages = yaml.safe_load(edited_s)['backends']['storage']
+            new_storages = yaml.safe_load(edited_s)['backends']['storage']
         except Exception as error:
             click.echo(error)
             return
@@ -430,15 +430,41 @@ def _sync_removed_storages(obj, manifest_type, original_data, edited_s, path):
         return
 
     #check if new manifest has at least one storage to sync to
-    if len(storages) == 0:
+    if len(new_storages) == 0:
+        return
+    #check new manifest's list of storage ids
+    new_storage_ids = []
+    for storage in new_storages:
+        #handle either backend_id or url
+        if isinstance(storage, dict):
+            new_storage_ids.append(storage['backend-id'])
+        else:
+            owner = yaml.safe_load(edited_s)['owner']
+            found_storage = obj.client.load_object_from_url_or_dict(
+                WildlandObject.Type.STORAGE, storage, owner, container=container)
+            new_storage_ids.append(found_storage.backend_id)
+
+
+    #check old manifest's list of storage ids
+    old_storage_ids = []
+    try:
+        old_storages = yaml.safe_load(original_data)['backends']['storage']
+    except Exception as error:
+        click.echo(error)
         return
 
-    #check new manifest's list of storage ids
-    new_storage_ids = [storage['backend-id'] for storage in storages]
+    for storage in old_storages:
+        #handle either backend_id or url
+        if isinstance(storage, dict):
+            old_storage_ids.append(storage['backend-id'])
+        else:
+            owner = yaml.safe_load(edited_s)['owner']
+            found_storage = obj.client.load_object_from_url_or_dict(
+                WildlandObject.Type.STORAGE, storage, owner, container=container)
+            old_storage_ids.append(found_storage.backend_id)
 
     #if any old storage not on the new list, synchronize
-    for storage in yaml.safe_load(original_data)['backends']['storage']:
-        storage_id = storage['backend-id']
+    for storage_id in old_storage_ids:
         if storage_id not in new_storage_ids:
             storage_to_delete = _get_storage_by_id_or_type(storage_id,
                                                            obj.client.all_storages(container))
