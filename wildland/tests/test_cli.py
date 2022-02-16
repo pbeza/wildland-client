@@ -149,6 +149,9 @@ def test_edit(cli, cli_fail, base_dir):
     cli_fail('user', 'edit', storage_path, '--editor', editor)
     cli_fail('user', 'edit', container_path, '--editor', editor)
 
+    #remove Standalone.storage.yaml line to test storage sync
+    editor = r'sed -i 16d'
+    cli('edit', container_path, '--editor', editor)
 
 # Users
 
