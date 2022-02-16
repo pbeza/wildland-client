@@ -245,8 +245,11 @@ class BearDBStorageBackend(GeneratedStorageMixin, StorageBackend):
     @classmethod
     def storage_options(cls) -> List[StorageParam]:
         return [
-            StorageParam('path', display_name='PATH',
-                         description='Path to the SQLite database', required=True),
+            StorageParam('path',
+                         display_name='PATH',
+                         required=True,
+                         description='Path to the SQLite database'
+                         ),
         ]
 
     @classmethod
@@ -256,6 +259,8 @@ class BearDBStorageBackend(GeneratedStorageMixin, StorageBackend):
             'trusted': True,
             'manifest_pattern': {'type': 'glob', 'path': '/*/container.yaml'},
         }
+        data = cls.remove_non_required_params(data)
+
         cls.SCHEMA.validate(data)
         return data
 

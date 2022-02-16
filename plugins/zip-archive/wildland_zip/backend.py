@@ -110,14 +110,21 @@ class ZipArchiveStorageBackend(CachedStorageMixin, StorageBackend):
     @classmethod
     def storage_options(cls) -> List[StorageParam]:
         return [
-            StorageParam('location', display_name='PATH',
+            StorageParam('location',
+                         display_name='PATH',
+                         required=True,
                          description='Location of the ZIP file (filesystem path)',
-                         required=True),
+                         ),
         ]
 
     @classmethod
     def validate_and_parse_params(cls, params) -> Dict[str, Any]:
-        data = {'location': params['location']}
+        data = {
+            'location': params['location']
+        }
+
+        data = cls.remove_non_required_params(data)
+
         cls.SCHEMA.validate(data)
         return data
 

@@ -143,31 +143,35 @@ class GitStorageBackend(DirectoryCachedStorageMixin, StorageBackend):
     def storage_options(cls) -> List[StorageParam]:
         opts = super(GitStorageBackend, cls).storage_options()
         opts.extend([
-            StorageParam(
-                'url', display_name='URL', required=True,
-                description='Git url leading to the repo',
-            ),
-            StorageParam(
-                'username', required=False,
-                description='The git username - used for authorization purposes'
-            ),
-            StorageParam(
-                'password', required=False,
-                description='The git password/personal access token. Necessary for authorization'
-                            'purposes')
+            StorageParam('url',
+                         display_name='URL',
+                         required=True,
+                         description='Git url leading to the repo',
+                         ),
+            StorageParam('username',
+                         required=False,
+                         description='The git username - used for authorization purposes'
+                         ),
+            StorageParam('password',
+                         required=False,
+                         description='The git password/personal access token. Necessary for authorization'
+                                     'purposes'
+                         )
         ])
         return opts
 
     @classmethod
     def validate_and_parse_params(cls, params) -> Dict[str, Any]:
-        result = super(GitStorageBackend, cls).validate_and_parse_params(params)
-        result.update({
+        data = super(GitStorageBackend, cls).validate_and_parse_params(params)
+        data.update({
             'url': params['url'],
             'username': params['username'],
             'password': params['password']
         })
-        cls.SCHEMA.validate(result)
-        return result
+        data = cls.remove_non_required_params(data)
+
+        cls.SCHEMA.validate(data)
+        return data
 
     def mount(self) -> None:
         self.client.connect()

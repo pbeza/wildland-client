@@ -148,26 +148,40 @@ class SshFsBackend(LocalProxy):
     @classmethod
     def storage_options(cls) -> List[StorageParam]:
         return [
-            StorageParam('sshfs_command', default_value='sshfs', display_name='CMD', required=True,
-                         description='command to mount sshfs filesystem'),
-            StorageParam('host', display_name='HOST', required=True,
-                         description='host to mount'),
-            StorageParam('password', display_name='PASSWORD', private=True,
+            StorageParam('sshfs_command',
+                         display_name='CMD',
+                         default_value='sshfs',
+                         required=True,
+                         description='command to mount sshfs filesystem'
+                         ),
+            StorageParam('host',
+                         display_name='HOST',
+                         required=True,
+                         description='host to mount'
+                         ),
+            StorageParam('password',
+                         display_name='PASSWORD',
+                         private=True,
                          description='password for authentication'
                          ),
-            StorageParam('path', default_value='./',
+            StorageParam('path',
+                         default_value='./',
                          description="path on target host to mount"
                          ),
-            StorageParam('ssh_user', display_name='USER', default_value=getpass.getuser(),
+            StorageParam('ssh_user',
+                         display_name='USER',
+                         default_value=getpass.getuser(),
                          description='user name to log on to target host'
                          ),
-            StorageParam('ssh_identity', display_name='PATH',
+            StorageParam('ssh_identity',
+                         display_name='PATH',
                          description='path to private key file to use for authentication'
                          ),
             # StorageParam('pwprompt', param_type=StorageParamType.BOOLEAN,
             #              description='prompt for password that will be used for authentication'
             #              ),
-            StorageParam('mount_options', display_name='OPT1,OPT2,...',
+            StorageParam('mount_options',
+                         display_name='OPT1,OPT2,...',
                          description="additional options to be passed to sshfs command directly"
                          ),
         ]
@@ -185,7 +199,7 @@ class SshFsBackend(LocalProxy):
             'passwd': params['passwd']
         }
 
-        # # FiXME get rid of click dependence
+        # # FiXME can we replace pwprompt with password option? (in order to get rid of click dependence)
         # if params['pwprompt']:
         #     data['passwd'] = click.prompt('SSH password',
         #                                   hide_input=True)
@@ -193,6 +207,9 @@ class SshFsBackend(LocalProxy):
         if params['ssh_identity']:
             with open(params['ssh_identity']) as f:
                 data['identity'] = '\n'.join([l.rstrip() for l in f])
+
+        data = cls.remove_non_required_params(data)
+
         cls.SCHEMA.validate(data)
         return data
 

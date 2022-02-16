@@ -111,13 +111,18 @@ class IPFSStorageBackend(DirectoryCachedStorageMixin, StorageBackend):
     @classmethod
     def storage_options(cls) -> List[StorageParam]:
         return [
-            StorageParam('ipfs_hash', display_name='URL', required=True,
+            StorageParam('ipfs_hash',
+                         display_name='URL',
+                         required=True,
                          description='IPFS CID or IPNS name to access the '
-                         'resource in /ipfs/CID or /ipns/name format'),
-            StorageParam('endpoint_addr', display_name='MULTIADDRESS',
+                         'resource in /ipfs/CID or /ipns/name format'
+                         ),
+            StorageParam('endpoint_addr',
+                         display_name='MULTIADDRESS',
                          default_value='/ip4/127.0.0.1/tcp/8080/http',
                          description='Override default IPFS gateway address '
-                         '(/ip4/127.0.0.1/tcp/8080/http) with the given address.'),
+                         '(/ip4/127.0.0.1/tcp/8080/http) with the given address.'
+                         ),
         ]
 
     @classmethod
@@ -126,6 +131,8 @@ class IPFSStorageBackend(DirectoryCachedStorageMixin, StorageBackend):
             'ipfs_hash': params['ipfs_hash'],
             'endpoint_addr': params['endpoint_addr'],
         }
+        data = cls.remove_non_required_params(data)
+
         cls.SCHEMA.validate(data)
         return data
 

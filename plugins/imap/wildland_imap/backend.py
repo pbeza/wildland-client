@@ -180,15 +180,29 @@ class ImapStorageBackend(GeneratedStorageMixin, StorageBackend):
     @classmethod
     def storage_options(cls) -> List[StorageParam]:
         return [
-            StorageParam('host', display_name='HOST', required=True,
-                         description='imap server host name'),
-            StorageParam('login', display_name='LOGIN', required=True,
-                         description='imap account name / login'),
-            StorageParam('password', display_name='PASSWORD', private=True,
-                         description="imap account password (omit for a password prompt)"),
-            StorageParam('folder', display_name='FOLDER', default_value='INBOX',
+            StorageParam('host',
+                         display_name='HOST',
+                         required=True,
+                         description='imap server host name'
+                         ),
+            StorageParam('login',
+                         display_name='LOGIN',
+                         required=True,
+                         description='imap account name / login'
+                         ),
+            StorageParam('password',
+                         display_name='PASSWORD',
+                         private=True,
+                         description="imap account password (omit for a password prompt)"
+                         ),
+            StorageParam('folder',
+                         display_name='FOLDER',
+                         default_value='INBOX',
                          description="root folder to expose"),
-            StorageParam('ssl', display_name='SSL', default_value=True,
+            # FIXME cli option was '--ssl/--no-ssl' will it be correct?
+            StorageParam('ssl',
+                         display_name='SSL',
+                         default_value=True,
                          param_type=StorageParamType.BOOLEAN,
                          description="use encrypted connection"
                          ),
@@ -203,6 +217,8 @@ class ImapStorageBackend(GeneratedStorageMixin, StorageBackend):
             'folder': params['folder'],
             'ssl': params['ssl']
         }
+        data = cls.remove_non_required_params(data)
+
         cls.SCHEMA.validate(data)
         return data
 

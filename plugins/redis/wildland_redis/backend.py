@@ -159,14 +159,22 @@ class RedisStorageBackend(FileChildrenMixin, DirectoryCachedStorageMixin, Storag
     def storage_options(cls) -> List[StorageParam]:
         opts = super(RedisStorageBackend, cls).storage_options()
         opts.extend([
-            StorageParam('prefix', display_name='PATH',
-                         description='Redis key prefix as an absolute path, defaults to /'),
-            StorageParam('database', display_name='INTEGER', required=True,
-                         description='Redis DB index'),
-            StorageParam('hostname', required=True, display_name='HOST',
+            StorageParam('prefix',
+                         display_name='PATH',
+                         description='Redis key prefix as an absolute path, defaults to /'
+                         ),
+            StorageParam('database',
+                         display_name='INTEGER',
+                         required=True,
+                         description='Redis DB index'
+                         ),
+            StorageParam('hostname',
+                         required=True,
+                         display_name='HOST',
                          description="Server hostname"
                          ),
-            StorageParam('port', display_name='INTEGER',
+            StorageParam('port',
+                         display_name='INTEGER',
                          description="Server port (defaults to 6379)"
                          ),
             StorageParam('password',
@@ -175,7 +183,8 @@ class RedisStorageBackend(FileChildrenMixin, DirectoryCachedStorageMixin, Storag
             StorageParam('username',
                          description='Server username (defaults to "default")'
                          ),
-            StorageParam('tls', display_name='BOOL',
+            StorageParam('tls',
+                         display_name='BOOL',
                          description="Use TLS"
                          ),
         ])
@@ -183,8 +192,8 @@ class RedisStorageBackend(FileChildrenMixin, DirectoryCachedStorageMixin, Storag
 
     @classmethod
     def validate_and_parse_params(cls, params):
-        result = super(RedisStorageBackend, cls).validate_and_parse_params(params)
-        result.update({
+        data = super(RedisStorageBackend, cls).validate_and_parse_params(params)
+        data.update({
             'prefix': params.get('prefix', '/'),
             'database': int(params.get('database') or 0),
             'hostname': params.get('hostname'),
@@ -193,8 +202,10 @@ class RedisStorageBackend(FileChildrenMixin, DirectoryCachedStorageMixin, Storag
             'tls': params.get('tls', None),
             'username': params.get('username'),
         })
-        cls.SCHEMA.validate(result)
-        return result
+        data = cls.remove_non_required_params(data)
+
+        cls.SCHEMA.validate(data)
+        return data
 
     @classmethod
     def cli_options(cls):

@@ -456,13 +456,16 @@ class EncryptedStorageBackend(StorageBackend):
     @classmethod
     def storage_options(cls) -> List[StorageParam]:
         return [
-            StorageParam('reference_container_url', display_name='URL',
+            StorageParam('reference_container_url',
+                         display_name='URL',
+                         required=True,
                          description='URL for inner container manifest',
-                         required=True),
-            StorageParam('engine', display_name='ENGINE',
+                         ),
+            StorageParam('engine',
+                         display_name='ENGINE',
                          default_value='gocryptfs',
                          description='Cryptographic filesystem to use: gocryptfs or encfs.',
-                         required=False),
+                         ),
         ]
 
     @classmethod
@@ -478,6 +481,8 @@ class EncryptedStorageBackend(StorageBackend):
                 'symmetrickey': runner.credentials(),
                 'engine': params['engine']
                 }
+        data = cls.remove_non_required_params(data)
+
         cls.SCHEMA.validate(data)
         return data
 

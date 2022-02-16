@@ -202,17 +202,22 @@ class JiraStorageBackend(GeneratedStorageMixin, StorageBackend):
     @classmethod
     def storage_options(cls) -> List[StorageParam]:
         return [
-            StorageParam('workspace_url', required=True,
-                         description='address of the v2 REST endpoint of your Jira Work Management Cloud site'),
+            StorageParam('workspace_url',
+                         required=True,
+                         description='address of the v2 REST endpoint of your Jira Work Management Cloud site'
+                         ),
             StorageParam('username',
-                         description='(optional) Jira username'),
+                         description='(optional) Jira username'
+                         ),
             StorageParam('personal_token',
                          description="(optional) personal access token generated for your Attlassian Account"
                          ),
-            StorageParam('project_name', param_type=StorageParamType.LIST,
+            StorageParam('project_name',
+                         param_type=StorageParamType.LIST,
                          description="(optional) (multiple) Jira projects names"
                          ),
-            StorageParam('limit', default_value=DEFAULT_ISSUES_LIMIT,
+            StorageParam('limit',
+                         default_value=DEFAULT_ISSUES_LIMIT,
                          description=f'(optional) (default: {DEFAULT_ISSUES_LIMIT}) maximum amount of issues to '
                                      f'be fetched starting from the most recently updated'
                          ),
@@ -230,6 +235,8 @@ class JiraStorageBackend(GeneratedStorageMixin, StorageBackend):
             'limit': params['limit'],
         }
         cls.SCHEMA.validate(data)
+        data = cls.remove_non_required_params(data)
+
         return data
 
     @classmethod

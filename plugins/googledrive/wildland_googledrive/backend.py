@@ -157,13 +157,21 @@ class DriveStorageBackend(
     def storage_options(cls) -> List[StorageParam]:
         opts = super(DriveStorageBackend, cls).storage_options()
         opts.extend([
-            StorageParam('location', display_name='PATH', default_value='/',
-                         description='Absolute path to root directory in your Google Drive account.'),
-            StorageParam('credentials', display_name='CREDENTIALS', required=True,
-                         description='Google Drive Client Configuration Object'),
-            StorageParam('skip_interaction', param_type=StorageParamType.BOOLEAN, default_value=False,
+            StorageParam('location',
+                         display_name='PATH',
+                         default_value='/',
+                         description='Absolute path to root directory in your Google Drive account.'
+                         ),
+            StorageParam('credentials',
+                         display_name='CREDENTIALS',
+                         required=True,
+                         description='Google Drive Client Configuration Object'
+                         ),
+            StorageParam('skip_interaction',
+                         param_type=StorageParamType.BOOLEAN,
+                         default_value=False,
                          description="Pass pre-generated refresh token as credential"
-                                     "and pass this flag to skip interaction"
+                                     " and pass this flag to skip interaction"
                          ),
         ])
         return opts
@@ -178,9 +186,14 @@ class DriveStorageBackend(
             credentials = flow.run_console()
             credentials = json.loads(credentials.to_json())
 
-        result = super(DriveStorageBackend, cls).validate_and_parse_params(params)
-        result.update({"location": params["location"], "credentials": credentials})
-        return result
+        data = super(DriveStorageBackend, cls).validate_and_parse_params(params)
+        data.update({
+            "location": params["location"],
+            "credentials": credentials
+        })
+        data = cls.remove_non_required_params(data)
+
+        return data
 
     @classmethod
     def cli_options(cls):

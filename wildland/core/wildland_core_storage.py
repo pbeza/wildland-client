@@ -123,11 +123,6 @@ class WildlandCoreStorage(WildlandCoreApi):
                     str(container_mount_path))
         backend = get_backend(backend_type)
 
-        # remove default, non-required values
-        for param, value in list(backend_params.items()):
-            if value is None or value == []:
-                del backend_params[param]
-
         backend_params = backend.validate_and_parse_params(backend_params)
 
         if watcher_interval:

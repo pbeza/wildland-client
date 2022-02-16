@@ -313,6 +313,13 @@ class StorageBackend(metaclass=abc.ABCMeta):
         """
         return {}
 
+    @classmethod
+    def remove_non_required_params(cls, params: Dict[str, Any]) -> Dict[str, Any]:
+        for param, value in list(params.items()):
+            if value is None or value == []:
+                del params[param]
+        return params
+
     # TODO: remove when will be ready https://gitlab.com/wildland/wildland-client/-/issues/703
     @classmethod
     def cli_options(cls) -> List[click.Option]:

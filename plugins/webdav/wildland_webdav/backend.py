@@ -154,24 +154,33 @@ class WebdavStorageBackend(FileChildrenMixin, CachedStorageMixin, StorageBackend
     def storage_options(cls) -> List[StorageParam]:
         opts = super(WebdavStorageBackend, cls).storage_options()
         opts.extend([
-            StorageParam('url', display_name='URL', required=True,
-                         description='WebDav url'),
-            StorageParam('login', display_name='LOGIN', required=True,
-                         description='Login'),
-            StorageParam('password', display_name='PASSWORD', required=True,
-                         description="Password (omit for a password prompt)", private=True
+            StorageParam('url',
+                         display_name='URL',
+                         required=True,
+                         description='WebDav url'
+                         ),
+            StorageParam('login',
+                         display_name='LOGIN',
+                         required=True,
+                         description='Login'
+                         ),
+            StorageParam('password',
+                         display_name='PASSWORD',
+                         required=True,
+                         private=True,
+                         description="Password (omit for a password prompt)"
                          ),
         ])
         return opts
 
     @classmethod
     def validate_and_parse_params(cls, params):
-        result = super(WebdavStorageBackend, cls).cli_create(params)
+        data = super(WebdavStorageBackend, cls).cli_create(params)
         base_path = urlparse(params['url']).path
         url = params['url']
         if urlparse(url).path != '/' and urlparse(url).path != '':
             url = urlunparse(urlparse(url)._replace(path='/'))
-        result.update({
+        data.update({
             'url': url,
             'base_path': base_path,
             'credentials': {
@@ -179,8 +188,10 @@ class WebdavStorageBackend(FileChildrenMixin, CachedStorageMixin, StorageBackend
                 'password': params['password'],
             }
         })
-        cls.SCHEMA.validate(result)
-        return result
+        data = cls.remove_non_required_params(data)
+
+        cls.SCHEMA.validate(data)
+        return data
 
     @classmethod
     def cli_options(cls):
