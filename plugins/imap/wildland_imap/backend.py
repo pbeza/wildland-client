@@ -218,7 +218,6 @@ class ImapStorageBackend(GeneratedStorageMixin, StorageBackend):
         }
         data = cls.remove_non_required_params(data)
 
-        cls.SCHEMA.validate(data)
         return data
 
     @classmethod

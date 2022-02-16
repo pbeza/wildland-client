@@ -130,7 +130,7 @@ class HttpStorageBackend(FileChildrenMixin, DirectoryCachedStorageMixin, Storage
         })
         data = cls.remove_non_required_params(data)
 
-        cls.SCHEMA.validate(params)
+        cls.SCHEMA.validate(data)
         return data
 
     @classmethod
