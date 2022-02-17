@@ -128,6 +128,7 @@ class WildlandCoreStorage(WildlandCoreApi):
                          watcher_interval: Optional[int] = 0, inline: bool = True,
                          access_users: Optional[List[str]] = None, encrypt_manifest: bool = True):
 
+        # TODO change this after #699 is resolved and use container_find_by_id from wl_core_api
         container = self.__get_container_from_wl_container_id(container_id)
         if not container.local_path:
             raise WildlandError('Need a local container')
@@ -183,7 +184,6 @@ class WildlandCoreStorage(WildlandCoreApi):
         return utils.storage_to_wl_storage(storage)
 
     def __get_container_from_wl_container_id(self, container_id):
-        # FIXME:
         for container in self.client.load_all(WildlandObject.Type.CONTAINER):
             if utils.container_to_wlcontainer(container, self.client).id == container_id:
                 return container
@@ -191,23 +191,22 @@ class WildlandCoreStorage(WildlandCoreApi):
         raise FileNotFoundError(f'Cannot find container {container_id}')
 
     def storage_create_from_template(self, template_name: str,
-                                     container_id: str, no_publish: bool,
+                                     container_id: str,
                                      local_dir: Optional[str] = None) -> WildlandResult:
         """
         Create storages for a container from a given storage template.
         :param template_name: name of the template
         :param container_id: container this storage is for
-        :param no_publish: flag whether publish template
         :param local_dir: str to be passed to template renderer as a parameter, can be used by
         template creators
         """
         return self.__storage_create_from_template(
-            template_name, container_id, local_dir, no_publish
+            template_name, container_id, local_dir
         )
 
     @wildland_result()
     def __storage_create_from_template(self, template_name: str, container_id: str,
-                                       local_dir: Optional[str], no_publish: bool):
+                                       local_dir: Optional[str]):
         # TODO change this after #699 is resolved and use container_find_by_id from wl_core_api
         container = None
         for _container in self.client.load_all(WildlandObject.Type.CONTAINER):
@@ -220,35 +219,34 @@ class WildlandCoreStorage(WildlandCoreApi):
         template_manager = TemplateManager(self.client.dirs[WildlandObject.Type.TEMPLATE])
         storage_templates = template_manager.get_template_file_by_name(template_name).templates
         result = self.storage_do_create_from_template(
-            container, storage_templates, local_dir, no_publish
+            container, storage_templates, local_dir
         )
         return result
 
     # TODO change container: Container to container_id: str and adjust code, after
-    # TODO https://gitlab.com/wildland/wildland-client/-/issues/699 &&
-    # TODO and https://gitlab.com/wildland/wildland-client/-/issues/702 are solved
+    #  https://gitlab.com/wildland/wildland-client/-/issues/699 &&
+    #  and https://gitlab.com/wildland/wildland-client/-/issues/702 are solved
     def storage_do_create_from_template(self, container: Container,
                                         storage_templates: Iterable[StorageTemplate],
-                                        local_dir: Optional[str],
-                                        no_publish: bool = False) -> WildlandResult:
+                                        local_dir: Optional[str]
+                                        ) -> WildlandResult:
         """
         Create storage from template if storage_templates are known
         i.e. while creating container or forest.
         :param container: container
         :param storage_templates: list of storage templates
         :param local_dir: directory of local storages
-        :param no_publish: flag whether container should be published
         :return: WildlandResult
         """
         return self.__storage_do_create_from_template(
-            container, storage_templates, local_dir, no_publish
+            container, storage_templates, local_dir
         )
 
     @wildland_result()
     def __storage_do_create_from_template(self, container: Container,
                                           storage_templates: Iterable[StorageTemplate],
-                                          local_dir: Optional[str],
-                                          no_publish: bool = False):
+                                          local_dir: Optional[str]
+                                          ):
         result = WildlandResult()
 
         to_process: List[Tuple[Storage, StorageBackend]] = []
@@ -274,17 +272,6 @@ class WildlandCoreStorage(WildlandCoreApi):
             container=container, storages=storages_to_add, inline=True
         )
         logger.info('Saved container %s', container.local_path)
-
-        if not no_publish:
-            try:
-                user = self.client.load_object_from_name(WildlandObject.Type.USER, container.owner)
-                Publisher(self.client, user).republish(container)
-            except WildlandError as ex:
-                result.errors.append(
-                    WLError.from_exception(
-                        WildlandError(f"Failed to republish container: {ex}")
-                    )
-                )
 
         return result
 

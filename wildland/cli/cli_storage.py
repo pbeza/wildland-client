@@ -324,10 +324,21 @@ def create_from_template(obj: ContextObj, cont, storage_template: str, local_dir
         raise CliError(f'Container not found: {str(container_result)}')
 
     result = obj.wlcore.storage_create_from_template(
-        storage_template, container.id, local_dir, no_publish
+        storage_template, container.id, local_dir
     )
     if not result.success:
         raise CliError(str(result))
+
+    # TODO replace by obj.wlcore.container_publish(container_id)
+    #  when https://gitlab.com/wildland/wildland-client/-/issues/699 is ready
+    if not no_publish:
+        try:
+            user = obj.client.load_object_from_name(WildlandObject.Type.USER, container.owner)
+            Publisher(obj.client, user).republish(container)
+        except WildlandError as ex:
+            raise WildlandError(f"Failed to republish container: {ex}") from ex
+
+
 
 
 @storage_.command(short_help='modify storage manifest')

@@ -216,7 +216,7 @@ def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Opt
             # TODO pass container.id when https://gitlab.com/wildland/wildland-client/-/issues/699
             # TODO && https://gitlab.com/wildland/wildland-client/-/issues/702 are solved
             result = obj.wlcore.storage_do_create_from_template(
-                container, storage_templates, local_dir, no_publish
+                container, storage_templates, local_dir
             )
             if not result.success:
                 raise CliError(str(result))
