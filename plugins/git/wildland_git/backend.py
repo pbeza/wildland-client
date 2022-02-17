@@ -154,8 +154,8 @@ class GitStorageBackend(DirectoryCachedStorageMixin, StorageBackend):
                          ),
             StorageParam('password',
                          required=False,
-                         description='The git password/personal access token. Necessary for authorization'
-                                     'purposes'
+                         description='The git password/personal access token. '
+                                     'Necessary for authorization purposes'
                          )
         ])
         return opts

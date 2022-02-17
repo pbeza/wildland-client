@@ -35,8 +35,8 @@ import click
 from wildland.manifest.schema import Schema
 from wildland.storage_backends.cached import CachedStorageMixin
 from wildland.storage_backends.buffered import FullBufferedFile
-from wildland.storage_backends.base import StorageBackend, Attr, verify_local_access, StorageError, \
-    StorageParam
+from wildland.storage_backends.base import StorageBackend, Attr, \
+    verify_local_access, StorageError, StorageParam
 from wildland.storage_backends.watch import SimpleStorageWatcher
 from wildland.log import get_logger
 

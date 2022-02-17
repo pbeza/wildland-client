@@ -70,10 +70,10 @@ def parse_storage_cli_options(storage_options: List[StorageParam]) -> List[click
         name = [param_name_to_cli(option.name)]
 
         click_option: ClickOption = {
-            'multiple': True if option.param_type == StorageParamType.LIST else False,
+            'multiple': option.param_type == StorageParamType.LIST,
             'is_flag': True if option.param_type == StorageParamType.BOOLEAN else None,
-            'prompt': True if option.private else False,
-            'hide_input': True if option.private else False,
+            'prompt': bool(option.private),
+            'hide_input': bool(option.private),
             'metavar': option.display_name,
             'default': option.default_value,
             'help': option.description,

@@ -6488,7 +6488,7 @@ def test_storage_s3_params(cli, base_dir):
     assert storage['endpoint_url'] == 'http://foo-location.com'
     assert storage['credentials']['access-key'] == 'foo-access-key'
     assert storage['credentials']['secret-key'] == 'foo-secret-key'
-    assert not storage['with-index']
+    assert not storage.get('with-index')
     assert storage['manifest-pattern']['type'] == 'glob'
     assert storage['manifest-pattern']['path'] == '/*.{object-type}.yaml'
 

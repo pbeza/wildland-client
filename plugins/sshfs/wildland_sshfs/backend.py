@@ -189,7 +189,8 @@ class SshFsBackend(LocalProxy):
 
     @classmethod
     def validate_and_parse_params(cls, params):
-        # FIXME can we replace pwprompt with passwd option? (in order to get rid of click dependence)
+        # FIXME can we replace pwprompt with passwd option?
+        #  (in order to get rid of click dependence)
         if params['ssh_identity'] and params['pwprompt']:
             raise click.UsageError('pwprompt and ssh-identity are mutually exclusive')
         # if params['ssh_identity'] and params['passwd']:

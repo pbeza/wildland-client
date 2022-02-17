@@ -204,13 +204,15 @@ class JiraStorageBackend(GeneratedStorageMixin, StorageBackend):
         return [
             StorageParam('workspace_url',
                          required=True,
-                         description='address of the v2 REST endpoint of your Jira Work Management Cloud site'
+                         description='address of the v2 REST endpoint of your '
+                                     'Jira Work Management Cloud site'
                          ),
             StorageParam('username',
                          description='(optional) Jira username'
                          ),
             StorageParam('personal_token',
-                         description="(optional) personal access token generated for your Attlassian Account"
+                         description="(optional) personal access token "
+                                     "generated for your Attlassian Account"
                          ),
             StorageParam('project_name',
                          param_type=StorageParamType.LIST,
@@ -218,7 +220,8 @@ class JiraStorageBackend(GeneratedStorageMixin, StorageBackend):
                          ),
             StorageParam('limit',
                          default_value=DEFAULT_ISSUES_LIMIT,
-                         description=f'(optional) (default: {DEFAULT_ISSUES_LIMIT}) maximum amount of issues to '
+                         description=f'(optional) (default: {DEFAULT_ISSUES_LIMIT}) '
+                                     f'maximum amount of issues to '
                                      f'be fetched starting from the most recently updated'
                          ),
         ]

@@ -35,8 +35,9 @@ def setup(cli):
     cli('container', 'create', 'Container1', '--path', '/path')
 
 
+# pylint: disable=unused-argument
 @pytest.fixture
-def wlcore(base_dir):
+def wlcore(setup, base_dir):
     _client = Client(base_dir=base_dir)
     return WildlandCore(_client)
 
