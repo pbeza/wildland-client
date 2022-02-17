@@ -906,6 +906,18 @@ class Client:
         final_order = dependencies_first + final_order
         return final_order, exc_msg
 
+    def is_container_mounted(self, container: Container):
+        if not self.fs_client.is_running():
+            return False
+
+        mounted_storages = self.fs_client.get_info().values()
+        for storage in mounted_storages:
+            for path in storage.paths:
+                if path == container.paths[0]:
+                    return True
+
+        return False
+
     @functools.lru_cache
     def get_bridge_paths_for_user(self, user: Union[User, str], owner: Optional[User] = None) \
             -> Iterable[Iterable[PurePosixPath]]:

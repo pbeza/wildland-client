@@ -75,7 +75,7 @@ class WildlandCoreStorage(WildlandCoreApi):
     def storage_create(self, backend_type: str, backend_params: Dict[str, Any],
                        container_id: str, name: Optional[str], trusted: bool = False,
                        watcher_interval: Optional[int] = 0, inline: bool = True,
-                       access_users: Optional[list[str]] = None, encrypt_manifest: bool = True) -> \
+                       access_users: Optional[List[str]] = None, encrypt_manifest: bool = True) -> \
             Tuple[WildlandResult, Optional[WLStorage]]:
         """
         Create a storage.
@@ -100,19 +100,11 @@ class WildlandCoreStorage(WildlandCoreApi):
         return self.__storage_create(backend_type, backend_params, container_id, name, trusted,
                                      watcher_interval, inline, access_users, encrypt_manifest)
 
-    def __get_container_from_wl_container_id(self, container_id):
-        # FIXME:
-        for container in self.client.load_all(WildlandObject.Type.CONTAINER):
-            if utils.container_to_wlcontainer(container, self.client).id == container_id:
-                return container
-
-        raise FileNotFoundError(f'Cannot find container {container_id}')
-
     @wildland_result(default_output=None)
     def __storage_create(self, backend_type: str, backend_params: Dict[str, Any],
                          container_id: str, name: Optional[str], trusted: bool = False,
                          watcher_interval: Optional[int] = 0, inline: bool = True,
-                         access_users: Optional[list[str]] = None, encrypt_manifest: bool = True):
+                         access_users: Optional[List[str]] = None, encrypt_manifest: bool = True):
 
         container = self.__get_container_from_wl_container_id(container_id)
         if not container.local_path:
@@ -168,6 +160,14 @@ class WildlandCoreStorage(WildlandCoreApi):
 
         return utils.storage_to_wl_storage(storage)
 
+    def __get_container_from_wl_container_id(self, container_id):
+        # FIXME:
+        for container in self.client.load_all(WildlandObject.Type.CONTAINER):
+            if utils.container_to_wlcontainer(container, self.client).id == container_id:
+                return container
+
+        raise FileNotFoundError(f'Cannot find container {container_id}')
+
     def storage_create_from_template(self, template_name: str,
                                      container_id: str, no_publish: bool,
                                      local_dir: Optional[str] = None) -> WildlandResult:
@@ -198,7 +198,7 @@ class WildlandCoreStorage(WildlandCoreApi):
         result = self.storage_do_create_from_template(container, storage_templates, local_dir, no_publish)
         return result
 
-    # TODO change container: Container to container_id: str and adjust code after
+    # TODO change container: Container to container_id: str and adjust code, after
     # TODO https://gitlab.com/wildland/wildland-client/-/issues/699 &&
     # TODO and https://gitlab.com/wildland/wildland-client/-/issues/702 are solved
     def storage_do_create_from_template(self, container: Container,

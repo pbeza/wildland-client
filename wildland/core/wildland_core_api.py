@@ -549,7 +549,7 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
     def storage_create(self, backend_type: str, backend_params: Dict[str, Any],
                        container_id: str, name: Optional[str], trusted: bool = False,
                        watcher_interval: Optional[int] = 0, inline: bool = True,
-                       access_users: Optional[list[str]] = None, encrypt_manifest: bool = True) -> \
+                       access_users: Optional[List[str]] = None, encrypt_manifest: bool = True) -> \
             Tuple[WildlandResult, Optional[WLStorage]]:
         """
         Create a storage.
@@ -669,7 +669,7 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
     def template_add_storage(self, backend_type: str, backend_params: Dict[str, str],
                              template_name: str, read_only: bool = False,
                              default_cache: bool = False, watcher_interval: Optional[int] = 0,
-                             access_users: Optional[list[str]] = None,
+                             access_users: Optional[List[str]] = None,
                              encrypt_manifest: bool = True) -> \
             Tuple[WildlandResult, Optional[WLTemplateFile]]:
         """

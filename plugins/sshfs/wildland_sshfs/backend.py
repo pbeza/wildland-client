@@ -33,11 +33,10 @@ from typing import List
 
 import click
 
-from wildland.exc import WildlandError
 from wildland.fs_client import WildlandFSError
 from wildland.manifest.schema import Schema
 from wildland.log import get_logger
-from wildland.storage_backends.base import StorageParam
+from wildland.storage_backends.base import StorageParam, StorageParamType
 from .local_proxy import LocalProxy
 
 logger = get_logger('storage-sshfs')
@@ -161,11 +160,11 @@ class SshFsBackend(LocalProxy):
                          description='host to mount'
                          ),
             # FIXME can we keep option like passwd instead of pwprompt?
-            StorageParam('passwd',
-                         display_name='PASSWORD',
-                         private=True,
-                         description='password for authentication'
-                         ),
+            # StorageParam('passwd',
+            #              display_name='PASSWORD',
+            #              private=True,
+            #              description='password for authentication'
+            #              ),
             StorageParam('path',
                          default_value='./',
                          description="path on target host to mount"
@@ -179,9 +178,9 @@ class SshFsBackend(LocalProxy):
                          display_name='PATH',
                          description='path to private key file to use for authentication'
                          ),
-            # StorageParam('pwprompt', param_type=StorageParamType.BOOLEAN,
-            #              description='prompt for password that will be used for authentication'
-            #              ),
+            StorageParam('pwprompt', param_type=StorageParamType.BOOLEAN,
+                         description='prompt for password that will be used for authentication'
+                         ),
             StorageParam('mount_options',
                          display_name='OPT1,OPT2,...',
                          description="additional options to be passed to sshfs command directly"
@@ -191,22 +190,22 @@ class SshFsBackend(LocalProxy):
     @classmethod
     def validate_and_parse_params(cls, params):
         # FIXME can we replace pwprompt with passwd option? (in order to get rid of click dependence)
-        # if params['ssh_identity'] and params['pwprompt']:
-        #     raise click.UsageError('pwprompt and ssh-identity are mutually exclusive')
-        if params['ssh_identity'] and params['passwd']:
-            raise WildlandError('passwd and ssh-identity are mutually exclusive')
+        if params['ssh_identity'] and params['pwprompt']:
+            raise click.UsageError('pwprompt and ssh-identity are mutually exclusive')
+        # if params['ssh_identity'] and params['passwd']:
+        #     raise WildlandError('passwd and ssh-identity are mutually exclusive')
         data = {
             'cmd': params['sshfs_command'],
             'login': params['ssh_user'],
             'mount_opts': params['mount_options'],
             'host': params['host'],
             'path': params['path'],
-            'passwd': params['passwd']
+            # 'passwd': params['passwd']
         }
 
-        # if params['pwprompt']:
-        #     data['passwd'] = click.prompt('SSH password',
-        #                                   hide_input=True)
+        if params['pwprompt']:
+            data['passwd'] = click.prompt('SSH password',
+                                          hide_input=True)
 
         if params['ssh_identity']:
             with open(params['ssh_identity']) as f:
