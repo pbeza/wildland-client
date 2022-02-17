@@ -42,7 +42,6 @@ from ..cli.cli_common import del_nested_fields, resolve_object
 from ..cli.cli_exc import CliError
 from ..client import Client
 from ..exc import WildlandError
-from ..manifest.manifest import ManifestError
 from ..storage_backends.file_children import FileChildrenMixin
 from ..utils import yaml_parser
 from ..wildland_object.wildland_object import WildlandObject

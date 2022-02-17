@@ -29,7 +29,6 @@ from __future__ import annotations
 import abc
 import hashlib
 import itertools
-import click as click
 import json
 import os
 import stat
@@ -38,6 +37,8 @@ from enum import Enum, auto
 from pathlib import PurePosixPath, Path
 from uuid import UUID
 from typing import Optional, Dict, Type, Any, Iterable, Tuple, Union, TYPE_CHECKING, List
+
+import click
 
 import wildland
 from wildland.wildland_object.wildland_object import PublishableWildlandObject
@@ -171,6 +172,9 @@ class File(metaclass=abc.ABCMeta):
 
 
 class StorageParamType(Enum):
+    """
+    Enum for storage param type
+    """
     SINGLE = auto()
     LIST = auto()
     BOOLEAN = auto()
@@ -178,6 +182,9 @@ class StorageParamType(Enum):
 
 @dataclass
 class StorageParam:
+    """
+    Dataclass for storage params
+    """
     name: str
     description: str
     param_type: Optional[StorageParamType] = StorageParamType.SINGLE
@@ -311,10 +318,14 @@ class StorageBackend(metaclass=abc.ABCMeta):
         Checks whether provided params match backend requirements. If necessary supplements and
         parses params
         """
+        # pylint: disable=unused-argument
         return {}
 
     @classmethod
     def remove_non_required_params(cls, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Remove empty params - not required
+        """
         for param, value in list(params.items()):
             if value is None or value == []:
                 del params[param]

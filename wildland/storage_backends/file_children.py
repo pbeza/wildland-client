@@ -63,17 +63,18 @@ class FileChildrenMixin(StorageBackend):
                  params: Optional[Dict[str, Any]] = None,
                  read_only: bool = False,
                  **_kwds):
-        if params.get('subcontainer_manifest'):
-            params['manifest_pattern'] = {
-                'type': 'list',
-                'paths': list(params['subcontainer_manifest'])
-            }
-            del params['subcontainer_manifest']
-        elif params.get('manifest_pattern') and type(params['manifest_pattern']):
-            params['manifest_pattern'] = {
-                'type': 'glob',
-                'path': params['manifest_pattern']
-            }
+        if params:
+            if params.get('subcontainer_manifest'):
+                params['manifest_pattern'] = {
+                    'type': 'list',
+                    'paths': list(params['subcontainer_manifest'])
+                }
+                del params['subcontainer_manifest']
+            elif params.get('manifest_pattern') and type(params['manifest_pattern']):
+                params['manifest_pattern'] = {
+                    'type': 'glob',
+                    'path': params['manifest_pattern']
+                }
         super().__init__(params=params, read_only=read_only, **_kwds)
 
     DEFAULT_MANIFEST_PATTERN = {'type': 'glob', 'path': '/*.{object-type}.yaml'}

@@ -110,6 +110,13 @@ class Storage(PublishableWildlandObject, obj_type=WildlandObject.Type.STORAGE):
         return self.params['backend-id']
 
     @property
+    def location(self):
+        """
+        Returns location param.
+        """
+        return self.params.get('location')
+
+    @property
     def is_writeable(self) -> bool:
         """
         Returns False if read-only param was set to True.

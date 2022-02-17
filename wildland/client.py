@@ -906,7 +906,10 @@ class Client:
         final_order = dependencies_first + final_order
         return final_order, exc_msg
 
-    def is_container_mounted(self, container: Container):
+    def is_container_mounted(self, container: Container) -> bool:
+        """
+        Check if given container path is among mounted storages
+        """
         if not self.fs_client.is_running():
             return False
 
@@ -1346,7 +1349,7 @@ class Client:
         return path
 
     def get_all_storages(self, container: Container, excluded_storage: Optional[str] = None,
-                         only_writable: bool = False):
+                         only_writable: bool = False) -> List[Storage]:
         """
         List of all storages (including cache storages) for the provided container.
 

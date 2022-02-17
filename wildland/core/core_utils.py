@@ -79,7 +79,8 @@ def container_to_wlcontainer(container: Container, client: Client) -> WLContaine
         title=container.title,
         categories=[str(c) for c in container.categories],
         access_ids=[],  # TODO
-        storage_ids=client.get_all_storages(container),
+        storage_ids=[storage_to_wl_storage(storage).id
+                     for storage in client.get_all_storages(container)],
         storage_description=list(container.get_backends_description(only_inline=True))
     )
     return wl_container
@@ -107,7 +108,7 @@ def storage_to_wl_storage(storage: Storage) -> WLStorage:
     wl_storage = WLStorage(
         owner=storage.owner,
         id=get_object_id(storage),
-        location=storage.params.get('location'),
+        location=storage.location,
         storage_type=storage.storage_type,
         container="",  # TODO
         backend_id=storage.backend_id,

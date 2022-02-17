@@ -22,7 +22,7 @@ Wildland core implementation - storage-related functions
 """
 import uuid
 from pathlib import Path, PurePosixPath
-from typing import List, Tuple, Optional, Dict, Type, Any, Union, Iterable
+from typing import List, Tuple, Optional, Dict, Type, Any, Union, Iterable, Sequence
 
 import wildland.core.core_utils as utils
 from wildland.log import get_logger
@@ -47,12 +47,34 @@ logger = get_logger('core-storage')
 
 
 def get_backend(backend_type: str) -> Type[StorageBackend]:
+    """
+    Search for backend from existing backends. Throw an error if backend not found.
+    """
     backends = get_storage_backends()
     backend = backends.get(backend_type)
     if backend is None:
         raise FileNotFoundError(f'[{backend_type}] cannot be matched with any known storage '
                                 f'configuration')
     return backend
+
+
+def ensure_backend_location_exists(backend: StorageBackend) -> None:
+    """
+    Check if location of given backend exists.
+    """
+    path = backend.location
+
+    if path is None:
+        return
+    try:
+        with backend:
+            if str(PurePosixPath(backend.location)) != backend.location:
+                raise WildlandError('The `LOCATION_PARAM` of the backend is not a valid path.')
+            backend.mkdir(PurePosixPath(path))
+            logger.info('Created base path: %s', path)
+    except Exception as ex:
+        logger.warning('Could not create base path %s in a writable storage [%s]. %s',
+                       path, backend.backend_id, ex)
 
 
 class WildlandCoreStorage(WildlandCoreApi):
@@ -179,12 +201,14 @@ class WildlandCoreStorage(WildlandCoreApi):
         :param local_dir: str to be passed to template renderer as a parameter, can be used by
         template creators
         """
-        return self.__storage_create_from_template(template_name, container_id, local_dir, no_publish)
+        return self.__storage_create_from_template(
+            template_name, container_id, local_dir, no_publish
+        )
 
     @wildland_result()
     def __storage_create_from_template(self, template_name: str, container_id: str,
                                        local_dir: Optional[str], no_publish: bool):
-        # TODO change this block after #699 is resolved and use container_find_by_id from wl_core_api
+        # TODO change this after #699 is resolved and use container_find_by_id from wl_core_api
         container = None
         for _container in self.client.load_all(WildlandObject.Type.CONTAINER):
             if utils.container_to_wlcontainer(_container, self.client).id == container_id:
@@ -195,7 +219,9 @@ class WildlandCoreStorage(WildlandCoreApi):
             return WildlandResult()
         template_manager = TemplateManager(self.client.dirs[WildlandObject.Type.TEMPLATE])
         storage_templates = template_manager.get_template_file_by_name(template_name).templates
-        result = self.storage_do_create_from_template(container, storage_templates, local_dir, no_publish)
+        result = self.storage_do_create_from_template(
+            container, storage_templates, local_dir, no_publish
+        )
         return result
 
     # TODO change container: Container to container_id: str and adjust code, after
@@ -205,7 +231,18 @@ class WildlandCoreStorage(WildlandCoreApi):
                                         storage_templates: Iterable[StorageTemplate],
                                         local_dir: Optional[str],
                                         no_publish: bool = False) -> WildlandResult:
-        return self.__storage_do_create_from_template(container, storage_templates, local_dir, no_publish)
+        """
+        Create storage from template if storage_templates are known
+        i.e. while creating container or forest.
+        :param container: container
+        :param storage_templates: list of storage templates
+        :param local_dir: directory of local storages
+        :param no_publish: flag whether container should be published
+        :return: WildlandResult
+        """
+        return self.__storage_do_create_from_template(
+            container, storage_templates, local_dir, no_publish
+        )
 
     @wildland_result()
     def __storage_do_create_from_template(self, container: Container,
@@ -213,7 +250,7 @@ class WildlandCoreStorage(WildlandCoreApi):
                                           local_dir: Optional[str],
                                           no_publish: bool = False):
         result = WildlandResult()
-        
+
         to_process: List[Tuple[Storage, StorageBackend]] = []
 
         for template in storage_templates:
@@ -229,37 +266,28 @@ class WildlandCoreStorage(WildlandCoreApi):
         storages_to_add = []
         for storage, backend in to_process:
             if storage.is_writeable:
-                self.__ensure_backend_location_exists(backend)
+                ensure_backend_location_exists(backend)
             storages_to_add.append(storage)
-            logger.info(f'Adding storage {storage.backend_id} to container.')
+            logger.info('Adding storage %s to container.', storage.backend_id)
 
-        self.client.add_storage_to_container(container=container, storages=storages_to_add, inline=True)
-        logger.info(f'Saved container {container.local_path}')
+        self.client.add_storage_to_container(
+            container=container, storages=storages_to_add, inline=True
+        )
+        logger.info('Saved container %s', container.local_path)
 
         if not no_publish:
             try:
                 user = self.client.load_object_from_name(WildlandObject.Type.USER, container.owner)
                 Publisher(self.client, user).republish(container)
             except WildlandError as ex:
-                result.errors.append(WLError.from_exception(WildlandError(f"Failed to republish container: {ex}")))
+                result.errors.append(
+                    WLError.from_exception(
+                        WildlandError(f"Failed to republish container: {ex}")
+                    )
+                )
 
         return result
 
-    def __ensure_backend_location_exists(self, backend: StorageBackend) -> None:
-        path = backend.location
-
-        if path is None:
-            return
-        try:
-            with backend:
-                if str(PurePosixPath(backend.location)) != backend.location:
-                    raise WildlandError('The `LOCATION_PARAM` of the backend is not a valid path.')
-                backend.mkdir(PurePosixPath(path))
-                logger.info(f'Created base path: {path}')
-        except Exception as ex:
-            logger.warning('Could not create base path %s in a writable storage [%s]. %s',
-                           path, backend.backend_id, ex)
-    
     def storage_list(self) -> Tuple[WildlandResult, List[WLStorage]]:
         """
         List all known storages.
@@ -306,26 +334,27 @@ class WildlandCoreStorage(WildlandCoreApi):
             delete_result.errors += result.errors
             return delete_result
 
-        self.__storage_sync_containers(name, usages, force)
+        if usages:
+            self.__storage_sync_containers(name, usages, force)
 
-        if local_path:
-            if cascade:
-                delete_cascade_result = self.__storage_delete_cascade(usages)
-                delete_result.errors += delete_cascade_result.errors
-            else:
-                for container, _ in usages:
-                    logger.info('Storage used in container: %s', container.local_path)
+            if local_path:
+                if cascade:
+                    delete_cascade_result = self.__storage_delete_cascade(usages)
+                    delete_result.errors += delete_cascade_result.errors
+                else:
+                    for container, _ in usages:
+                        logger.info('Storage used in container: %s', container.local_path)
 
-            if usages and not force and not cascade:
-                delete_result.errors.append(
-                    WLError.from_exception(
-                        WildlandError('Storage is still used, not deleting '
-                                      '(use --force or remove --no-cascade)')))
+                if usages and not force and not cascade:
+                    delete_result.errors.append(
+                        WLError.from_exception(
+                            WildlandError('Storage is still used, not deleting '
+                                          '(use --force or remove --no-cascade)')))
+                    return delete_result
+
+                logger.info('Deleting: %s', local_path)
+                local_path.unlink()
                 return delete_result
-
-            logger.info('Deleting: %s', local_path)
-            local_path.unlink()
-            return delete_result
 
         if not cascade:
             delete_result.errors.append(WLError.from_exception(
@@ -339,7 +368,13 @@ class WildlandCoreStorage(WildlandCoreApi):
 
     def storage_get_local_path_and_find_usages(self, name: str) \
             -> Tuple[WildlandResult, Optional[Path],
-                     Optional[List[Tuple[Container, Union[Path, str]]]]]:
+                     Optional[Sequence[Tuple[Container, Union[Path, str]]]]]:
+        """
+        Get local path of storage and find its usages.
+        :param name: storage name
+        :return: WildlandResult, local_path - if there is one
+        and list of tuples (container, storage_url_or_dict) - if storage is in use
+        """
         return self.__storage_get_local_path_and_find_usages(name)
 
     @wildland_result(default_output=None)
@@ -368,9 +403,15 @@ class WildlandCoreStorage(WildlandCoreApi):
 
     def storage_get_usages_within_container(
             self,
-            usages: Tuple[Optional[Path], Optional[List[Tuple[Container, Union[Path, str]]]]],
+            usages: Sequence[Tuple[Container, Union[Path, str]]],
             container_name: str
-    ):
+    ) -> Optional[Sequence[Tuple[Container, Union[Path, str]]]]:
+        """
+        Get usages within given container
+        :param usages: list of tuples (container, storage_url_or_dict)
+        :param container_name: container name
+        :return: list of tuples (container, storage_url_or_dict)
+        """
         container_obj = self.client.load_object_from_name(
             WildlandObject.Type.CONTAINER, container_name)
         usages = [(cont, backend) for (cont, backend) in usages
@@ -392,7 +433,7 @@ class WildlandCoreStorage(WildlandCoreApi):
 
     def __storage_sync_containers(self,
                                   name: str,
-                                  used_by: List[Tuple[Container, Union[Path, str]]],
+                                  used_by: Sequence[Tuple[Container, Union[Path, str]]],
                                   force: bool):
         container_to_sync = []
         container_failed_to_sync = []
@@ -431,12 +472,18 @@ class WildlandCoreStorage(WildlandCoreApi):
                         ','.join(container_failed_to_sync))
 
     def storage_delete_cascade(self,
-                               containers: List[Tuple[Container,
-                                                      Union[Path, str]]]) -> WildlandResult:
+                               containers:
+                               Optional[Sequence[Tuple[Container, Union[Path, str]]]]
+                               ) -> WildlandResult:
+        """
+        Delete storages cascade
+        :param containers: optionally list of tuples (container, storage_url_or_dict)
+        :return: WildlandResult
+        """
         return self.__storage_delete_cascade(containers)
 
     @wildland_result()
-    def __storage_delete_cascade(self, containers: List[Tuple[Container, Union[Path, str]]]):
+    def __storage_delete_cascade(self, containers: Sequence[Tuple[Container, Union[Path, str]]]):
         result = WildlandResult()
         for container, backend in containers:
             logger.info('Removing %s from %s', backend, container.local_path)

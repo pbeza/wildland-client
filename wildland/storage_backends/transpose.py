@@ -199,7 +199,7 @@ class TransposeStorageBackend(StorageBackend):
             StorageParam('rules',
                          required=True,
                          param_type=StorageParamType.LIST,
-                         description="""The rules to follow when modifying the initial categories. 
+                         description="""The rules to follow when modifying the initial categories.
                          Each to be passed as a dictionary enclosed in single quotes, 
                          e.g.: '{"match-with": "/1", "replace-with": "/2"}' 
                          Can be repeated.""",
