@@ -130,6 +130,61 @@ class WildlandCoreContainer(WildlandCoreApi):
             result.errors.append(WLError.from_exception(ex))
         return result, result_list
 
+    @wildland_result()
+    def container_storage_unmount(self, storage_id: str):
+        self.client.fs_client.unmount_storage(storage_id)
+
+    def find_container_storage_ids(self, container_id: str) -> Tuple[WildlandResult, List[str]]:
+        """
+        Unmount container's storages if they are mounted
+        """
+        result, container = self.container_find_by_id(container_id)
+        storage_ids = []
+        if not result.success or not container:
+            return result, storage_ids
+        try:
+            for mount_path in self.client.fs_client.get_unique_storage_paths(container):
+                storage_id = self.client.fs_client.find_storage_id_by_path(mount_path)
+
+                if storage_id:
+                    storage_ids.append(storage_id)
+
+                for storage_id in self.client.fs_client.find_all_subcontainers_storage_ids(
+                        container):
+                    storage_ids.append(storage_id)
+        except ControlClientUnableToConnectError:
+            pass
+        except Exception as e:
+            result = WildlandResult()
+            result.errors.append(WLError.from_exception(e))
+            return result, storage_ids
+        finally:
+            return WildlandResult(), storage_ids
+
+    def container_find_backends_usages(self, container_id: str) ->\
+            Tuple[WildlandResult, Optional[List[Path]]]:
+        result, container = self.container_find_by_id(container_id)
+        if not result.success or not container:
+            return result, None
+
+        storage_paths = []
+        for backend in container.load_raw_backends(include_inline=False):
+            path = self.client.parse_file_url(backend, container.owner)
+            if not path or not path.exists():
+                continue
+            storage_paths.append(path)
+
+        return WildlandResult(), storage_paths
+
+    def container_has_user_catalog_entries(self, container_id: str) -> \
+            Tuple[WildlandResult, Optional[bool]]:
+        container_result, container = self.container_find_by_id(container_id)
+        if not container_result.success or not container:
+            return container_result, None
+        user = self.client.load_object_from_name(WildlandObject.Type.USER, container.owner)
+        has_catalog_entry = user.has_catalog_entry(self.client.local_url(container.local_path))
+        return WildlandResult(), has_catalog_entry
+
     def container_delete(self, container_id: str, cascade: bool = False,
                          force: bool = False, no_unpublish: bool = False) -> WildlandResult:
         """
@@ -143,45 +198,8 @@ class WildlandCoreContainer(WildlandCoreApi):
         # TODO: also consider detecting user-container link (i.e. user's main container).
         return self.__container_delete(container_id, cascade, force, no_unpublish)
 
-    @wildland_result()
-    def __unmount_container_storages(self, container: Container):
-        """
-        Unmount container's storages if they are mounted
-        """
-        try:
-            for mount_path in self.client.fs_client.get_unique_storage_paths(container):
-                storage_id = self.client.fs_client.find_storage_id_by_path(mount_path)
-
-                if storage_id:
-                    self.client.fs_client.unmount_storage(storage_id)
-
-                for storage_id in self.client.fs_client.find_all_subcontainers_storage_ids(
-                        container):
-                    self.client.fs_client.unmount_storage(storage_id)
-        except ControlClientUnableToConnectError:
-            pass
-
-    @wildland_result()
-    def __delete_container_storages(self, container: Container, cascade: bool, force: bool):
-        has_local = False
-
-        for backend in container.load_raw_backends(include_inline=False):
-            path = self.client.parse_file_url(backend, container.owner)
-            if path and path.exists():
-                if cascade:
-                    logger.debug('Deleting storage: %s', path)
-                    path.unlink()
-                else:
-                    logger.debug('Container refers to a local manifest: %s', path)
-                    has_local = True
-
-        if has_local and not force:
-            raise FileExistsError('Container refers to local manifests, not deleting. (use force='
-                                  'True or cascade=True)')
-
     @wildland_result(default_output=())
-    def __container_delete(self, container_id: str, cascade: bool = False,
-                           force: bool = False, no_unpublish: bool = False):
+    def __container_delete(self, container_id: str, force: bool = False):
         container_result, container = self.container_find_by_id(container_id)
         if not container_result.success or not container:
             return container_result
@@ -190,31 +208,6 @@ class WildlandCoreContainer(WildlandCoreApi):
             raise FileNotFoundError('Can only delete a local manifest.')
 
         user = self.client.load_object_from_name(WildlandObject.Type.USER, container.owner)
-        has_catalog_entry = user.has_catalog_entry(self.client.local_url(container.local_path))
-
-        if has_catalog_entry and not cascade and not force:
-            logger.debug('Use cascade=True to delete all content associated with this container or '
-                         'force=True to force deletion')
-            raise FileExistsError('User has catalog entry associated with this container.')
-
-        result = self.__unmount_container_storages(container)
-        if not result.success:
-            return result
-
-        result = self.__delete_container_storages(container, cascade, force)
-        if not result.success:
-            return result
-
-        # TODO: replace with self.container_unpublish()
-        if not no_unpublish:
-            try:
-                logger.debug('Unpublishing container: [%s]', container.get_primary_publish_path())
-                Publisher(self.client, user).unpublish(container)
-            except WildlandError:
-                # not published
-                pass
-
-        # TODO: replace with self.container_delete_cache (I think)
         try:
             Publisher(self.client, user).remove_from_cache(container)
         except WildlandError as e:
@@ -222,17 +215,6 @@ class WildlandCoreContainer(WildlandCoreApi):
             if not force:
                 logger.debug('Cannot remove container. Set force=True to force deletion.')
             raise e
-
-        if cascade:
-            try:
-                if container.local_path:
-                    user.remove_catalog_entry(self.client.local_url(container.local_path))
-                    self.client.save_object(WildlandObject.Type.USER, user)
-            except WildlandError as e:
-                logger.warning('Failed to remove catalog entry: %s', e)
-                if not force:
-                    logger.debug('Cannot remove container. ')
-                raise e
 
         logger.debug('Deleting: %s', container.local_path)
         container.local_path.unlink()
@@ -342,7 +324,22 @@ class WildlandCoreContainer(WildlandCoreApi):
         :param container_id: id of the container to be unpublished (user_id:/.uuid/container_uuid)
         :return: WildlandResult
         """
-        raise NotImplementedError
+        return self.__container_unpublish(container_id)
+
+    @wildland_result()
+    def __container_unpublish(self, container_id):
+        result, container = self.container_find_by_id(container_id)
+        if not result.success or not container:
+            raise FileNotFoundError(f'Cannot find container {container_id}')
+
+        try:
+            owner_user = self.client.load_object_from_name(WildlandObject.Type.USER,
+                                                           container.owner)
+            logger.info('Unpublishing container: [%s]', container.get_primary_publish_path())
+            publisher = Publisher(self.client, owner_user)
+            publisher.unpublish(container)
+        except WildlandError as ex:
+            raise WildlandError(f"Failed to unpublish container: {ex}") from ex
 
     def container_find_by_path(self, path: str) -> \
             Tuple[WildlandResult, List[Tuple[WLContainer, WLStorage]]]:
@@ -403,9 +400,8 @@ class WildlandCoreContainer(WildlandCoreApi):
         """
         Find container by id.
         :param container_id: id of the container to be found (user_id:/.uuid/container_uuid)
-        :return: tuple of WildlandResult and, if successful, the WLContainer
+        :return: tuple of WildlandResult and, if successful, the Container
         """
-        # TODO: return WLContainer instead of Container
         result = WildlandResult()
 
         for container in self.client.load_all(WildlandObject.Type.CONTAINER):

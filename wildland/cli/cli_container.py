@@ -184,6 +184,7 @@ def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Opt
     click.echo(f'Created: {container_path}')
 
     # TODO: replace with core.storage_create_from_template
+    #  Issue: https://gitlab.com/wildland/wildland-client/-/issues/700
     storage_templates = []
 
     if storage_template:
@@ -194,7 +195,6 @@ def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Opt
         except WildlandError as we:
             raise CliError(f'Could not load [{storage_template}] storage template. {we}') from we
 
-    # TODO: _container is WildlandContainer not WLContainer
     result, _container = obj.wlcore.container_find_by_id(container.id)
     if not result.success or not _container:
         raise CliError(str(result))
@@ -254,7 +254,10 @@ def update(obj: ContextObj, storage, cont):
     obj.client.save_object(WildlandObject.Type.CONTAINER, container)
 
 
-def _container_info(client, container, users_and_bridge_paths):
+def _container_info(client, wl_container, users_and_bridge_paths):
+    container_result, container = client.wlcore.container_find_by_id(wl_container.id)
+    if not container_result.success or not container:
+        raise WildlandError(str(container_result))
     container_fields = container.to_repr_fields(include_sensitive=False)
     bridge_paths = []
     try:
@@ -317,11 +320,7 @@ def list_(obj: ContextObj):
             users_and_bridge_paths[user.owner] = bridge_paths
 
     for container in containers:
-        # TODO: that's an ugly workaround which only partially works
-        #  to be replaced when _container_info will be ready to accept WLContainer
-        _container_result, _container = obj.wlcore.container_find_by_id(container.id)
-        if _container_result.success:
-            _container_info(obj.client, _container, users_and_bridge_paths)
+        _container_info(obj.client, container, users_and_bridge_paths)
 
 
 @container_.command(short_help='show container summary')
@@ -356,7 +355,9 @@ def info(obj: ContextObj, name):
         if bridge_paths:
             users_and_bridge_paths[user.owner] = bridge_paths
 
-    container = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, name)
+    container_result, container = obj.wlcore.object_get(WLObjectType.CONTAINER, name)
+    if not container_result.success or not container:
+        raise WildlandError(str(container_result))
     _container_info(obj.client, container, users_and_bridge_paths)
 
 
@@ -386,10 +387,10 @@ def delete(obj: ContextObj, names, force: bool, cascade: bool, no_unpublish: boo
 
 
 def _delete(obj: ContextObj, name: str, force: bool, cascade: bool, no_unpublish: bool):
-    container_result, container = obj.wlcore.object_get(WLObjectType.CONTAINER, name)
-    if not container_result.success or not container:
+    result, container = obj.wlcore.object_get(WLObjectType.CONTAINER, name)
+    if not result.success or not container:
         if force:
-            logger.warning('Failed to load manifest: %s', container_result)
+            logger.warning('Failed to load manifest: %s', str(result))
             try:
                 path = obj.client.find_local_manifest(WildlandObject.Type.CONTAINER, name)
                 if path:
@@ -401,20 +402,68 @@ def _delete(obj: ContextObj, name: str, force: bool, cascade: bool, no_unpublish
             if cascade:
                 logger.warning('Unable to cascade remove: manifest failed to load.')
             return
-        logger.warning('Failed to load manifest, cannot delete: %s', container_result)
+        logger.warning('Failed to load manifest, cannot delete: %s', result)
         click.echo('Use --force to force deletion.')
         return
 
+    result, _container = obj.wlcore.container_find_by_id(container.id)
+    if not result.success or not _container:
+        raise WildlandError(str(result))
+
+    if not _container.local_path:
+        raise FileNotFoundError('Can only delete a local manifest.')
+
+    result, has_user_catalog_entry = obj.wlcore.container_has_user_catalog_entries(container.id)
+    if not result.success or has_user_catalog_entry is None:
+        raise WildlandError(str(result))
+
+    if has_user_catalog_entry and not cascade and not force:
+        logger.warning('User has catalog entry associated with this container.')
+        click.echo('Use --cascade to delete all content associated with this container or --force '
+                   'to force deletion')
+        return
+
+    result, storage_ids = obj.wlcore.find_container_storage_ids(container.id)
+    if isinstance(storage_ids, list):
+        for storage_id in storage_ids:
+            result = obj.wlcore.container_storage_unmount(storage_id)
+            if not result.success:
+                raise CliError(str(result))
+
+    result, backend_paths = obj.wlcore.container_find_backends_usages(container.id)
+    if not result.success or not backend_paths:
+        raise WildlandError(str(result))
+    has_local = False
+    for path in backend_paths:
+        if cascade:
+            click.echo('Deleting storage: {}'.format(path))
+            path.unlink()
+        else:
+            click.echo('Container refers to a local manifest: {}'.format(path))
+            has_local = True
+
+    if has_local and not force:
+        raise CliError('Container refers to local manifests, not deleting '
+                       '(use --force or --cascade)')
+
+    if not no_unpublish:
+        obj.wlcore.container_unpublish(container.id)
+
+    if cascade:
+        try:
+            user = obj.client.load_object_from_name(WildlandObject.Type.USER, _container.owner)
+            user.remove_catalog_entry(obj.client.local_url(_container.local_path))
+            obj.client.save_object(WildlandObject.Type.USER, user)
+        except WildlandError as e:
+            logger.warning('Failed to remove catalog entry: %s', e)
+            if not force:
+                logger.debug('Cannot remove container. ')
+            raise e
+
     delete_result = obj.wlcore.container_delete(container.id, cascade, force, no_unpublish)
 
-    usage_cascade = '' if cascade else '--cascade to delete all content associated with this ' \
-                                       'container'
-    usage_force = '' if force else '--force to force deletion'
-    usage = ' or '.join(filter(None, [usage_cascade, usage_force]))
-    usage = f'\nUse {usage}' if usage != '' else usage
-
     if not delete_result.success:
-        raise CliError(f'{delete_result}{usage}')
+        raise CliError(str(delete_result))
 
 
 container_.add_command(cli_common.sign)
