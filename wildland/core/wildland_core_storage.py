@@ -34,7 +34,6 @@ from ..container import Container
 from ..exc import WildlandError
 from ..manifest.manifest import ManifestError
 from ..manifest.template import StorageTemplate, TemplateManager
-from ..publish import Publisher
 from ..storage import Storage
 from ..storage_backends.base import StorageBackend
 from ..storage_backends.dispatch import get_storage_backends
@@ -343,13 +342,13 @@ class WildlandCoreStorage(WildlandCoreApi):
                 local_path.unlink()
                 return delete_result
 
-        if not cascade:
-            delete_result.errors.append(WLError.from_exception(
-                WildlandError('Inline storage cannot be deleted in --no-cascade mode')))
-            return delete_result
+            if not cascade:
+                delete_result.errors.append(WLError.from_exception(
+                    WildlandError('Inline storage cannot be deleted in --no-cascade mode')))
+                return delete_result
 
-        delete_cascade_result = self.__storage_delete_cascade(usages)
-        delete_result.errors += delete_cascade_result.errors
+            delete_cascade_result = self.__storage_delete_cascade(usages)
+            delete_result.errors += delete_cascade_result.errors
 
         return delete_result
 

@@ -305,7 +305,7 @@ class StorageBackend(metaclass=abc.ABCMeta):
         return self.params.get(self.LOCATION_PARAM)
 
     @classmethod
-    def storage_options(cls) -> List[StorageParam]:
+    def storage_options(cls):
         """
         Provide a list of parameters needed to create this storage. If using mixins,
         check if a super() call is needed.

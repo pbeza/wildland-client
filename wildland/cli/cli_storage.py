@@ -298,7 +298,9 @@ def __check_if_storage_in_use_and_try_to_delete(
                                          f'Do you want remove all listed storages?'):
                         return False
 
-                obj.wlcore.storage_delete_cascade(usages)
+                result = obj.wlcore.storage_delete_cascade(usages)
+                if not result.success:
+                    raise CliError(str(result))
                 return True
 
     return False
@@ -333,12 +335,11 @@ def create_from_template(obj: ContextObj, cont, storage_template: str, local_dir
     #  when https://gitlab.com/wildland/wildland-client/-/issues/699 is ready
     if not no_publish:
         try:
+            container_obj = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, cont)
             user = obj.client.load_object_from_name(WildlandObject.Type.USER, container.owner)
-            Publisher(obj.client, user).republish(container)
+            Publisher(obj.client, user).republish(container_obj)
         except WildlandError as ex:
             raise WildlandError(f"Failed to republish container: {ex}") from ex
-
-
 
 
 @storage_.command(short_help='modify storage manifest')
