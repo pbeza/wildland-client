@@ -131,15 +131,18 @@ class WildlandCoreContainer(WildlandCoreApi):
         return result, result_list
 
     @wildland_result()
-    def container_storage_unmount(self, storage_id: str):
+    def container_storage_unmount(self, storage_id: int):
+        """
+        Unmount a storage with given storage id.
+        """
         self.client.fs_client.unmount_storage(storage_id)
 
-    def find_container_storage_ids(self, container_id: str) -> Tuple[WildlandResult, List[str]]:
+    def find_container_storage_ids(self, container_id: str) -> Tuple[WildlandResult, List[int]]:
         """
         Unmount container's storages if they are mounted
         """
         result, container = self.container_find_by_id(container_id)
-        storage_ids = []
+        storage_ids: List[int] = []
         if not result.success or not container:
             return result, storage_ids
         try:
@@ -158,11 +161,13 @@ class WildlandCoreContainer(WildlandCoreApi):
             result = WildlandResult()
             result.errors.append(WLError.from_exception(e))
             return result, storage_ids
-        finally:
-            return WildlandResult(), storage_ids
+        return WildlandResult(), storage_ids
 
     def container_find_backends_usages(self, container_id: str) ->\
             Tuple[WildlandResult, Optional[List[Path]]]:
+        """
+        Find paths of all container backends
+        """
         result, container = self.container_find_by_id(container_id)
         if not result.success or not container:
             return result, None
@@ -178,6 +183,9 @@ class WildlandCoreContainer(WildlandCoreApi):
 
     def container_has_user_catalog_entries(self, container_id: str) -> \
             Tuple[WildlandResult, Optional[bool]]:
+        """
+        Check if catalog entry is present in container owner user's manifest
+        """
         container_result, container = self.container_find_by_id(container_id)
         if not container_result.success or not container:
             return container_result, None
@@ -185,18 +193,15 @@ class WildlandCoreContainer(WildlandCoreApi):
         has_catalog_entry = user.has_catalog_entry(self.client.local_url(container.local_path))
         return WildlandResult(), has_catalog_entry
 
-    def container_delete(self, container_id: str, cascade: bool = False,
-                         force: bool = False, no_unpublish: bool = False) -> WildlandResult:
+    def container_delete(self, container_id: str, force: bool = False) -> WildlandResult:
         """
         Delete provided container.
         :param container_id: container ID (in the form of user_id:/.uuid/container_uuid)
-        :param cascade: also delete local storage manifests
         :param force: delete even when using local storage manifests; ignore errors on parse
-        :param no_unpublish: do not attempt to unpublish the container before deleting it
         :return: WildlandResult
         """
         # TODO: also consider detecting user-container link (i.e. user's main container).
-        return self.__container_delete(container_id, cascade, force, no_unpublish)
+        return self.__container_delete(container_id, force)
 
     @wildland_result(default_output=())
     def __container_delete(self, container_id: str, force: bool = False):

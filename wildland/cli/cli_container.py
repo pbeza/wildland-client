@@ -254,8 +254,8 @@ def update(obj: ContextObj, storage, cont):
     obj.client.save_object(WildlandObject.Type.CONTAINER, container)
 
 
-def _container_info(client, wl_container, users_and_bridge_paths):
-    container_result, container = client.wlcore.container_find_by_id(wl_container.id)
+def _container_info(obj, wl_container, users_and_bridge_paths):
+    container_result, container = obj.wlcore.container_find_by_id(wl_container.id)
     if not container_result.success or not container:
         raise WildlandError(str(container_result))
     container_fields = container.to_repr_fields(include_sensitive=False)
@@ -268,7 +268,7 @@ def _container_info(client, wl_container, users_and_bridge_paths):
     if bridge_paths:
         container_fields['bridge-paths-to-owner'] = bridge_paths
 
-    cache = client.cache_storage(container)
+    cache = obj.client.cache_storage(container)
     if cache:
         storage_type = cache.params['type']
         result = {
@@ -320,7 +320,7 @@ def list_(obj: ContextObj):
             users_and_bridge_paths[user.owner] = bridge_paths
 
     for container in containers:
-        _container_info(obj.client, container, users_and_bridge_paths)
+        _container_info(obj, container, users_and_bridge_paths)
 
 
 @container_.command(short_help='show container summary')
@@ -358,7 +358,7 @@ def info(obj: ContextObj, name):
     container_result, container = obj.wlcore.object_get(WLObjectType.CONTAINER, name)
     if not container_result.success or not container:
         raise WildlandError(str(container_result))
-    _container_info(obj.client, container, users_and_bridge_paths)
+    _container_info(obj, container, users_and_bridge_paths)
 
 
 @container_.command('delete', short_help='delete a container', alias=['rm', 'remove'])
@@ -431,7 +431,7 @@ def _delete(obj: ContextObj, name: str, force: bool, cascade: bool, no_unpublish
                 raise CliError(str(result))
 
     result, backend_paths = obj.wlcore.container_find_backends_usages(container.id)
-    if not result.success or not backend_paths:
+    if not result.success or backend_paths is None:
         raise WildlandError(str(result))
     has_local = False
     for path in backend_paths:
@@ -460,7 +460,7 @@ def _delete(obj: ContextObj, name: str, force: bool, cascade: bool, no_unpublish
                 logger.debug('Cannot remove container. ')
             raise e
 
-    delete_result = obj.wlcore.container_delete(container.id, cascade, force, no_unpublish)
+    delete_result = obj.wlcore.container_delete(container.id, force)
 
     if not delete_result.success:
         raise CliError(str(delete_result))
