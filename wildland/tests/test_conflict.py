@@ -327,12 +327,12 @@ def test_readdir_merged_writable():
     assert fs.mode('/mount1/mount2/file2') == stat.S_IFREG | 0o0644
 
     assert fs.getattr_extended(PurePosixPath('/mount1/mount2/dir1'))[1] == \
-        Resolved(ident=0, relpath=PurePosixPath('dir1'))
+        Resolved(ident=0, relpath=PurePosixPath('dir1'), subcontainers_source=None)
 
     assert fs.getattr_extended(PurePosixPath('/mount1/mount2/dir2'))[1] == \
-        Resolved(ident=0, relpath=PurePosixPath('dir2'))
+        Resolved(ident=0, relpath=PurePosixPath('dir2'), subcontainers_source=None)
 
     assert fs.getattr_extended(PurePosixPath('/mount1/mount2/dir3'))[1] == \
-        Resolved(ident=1, relpath=PurePosixPath('dir3'))
+        Resolved(ident=1, relpath=PurePosixPath('dir3'), subcontainers_source=None)
 
     assert fs.getattr_extended(PurePosixPath('/mount1/mount2'))[1] is None

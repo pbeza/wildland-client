@@ -125,8 +125,17 @@ class WildlandFSBase:
             self.storage_extra[ident] = extra or {}
             self.storage_paths[ident] = paths
             self.main_paths[main_path] = ident
+
+            sub_paths = self.storage_extra[ident].get('subcontainer_paths', ())
+            origin_id = self.storage_extra[ident].get('origin_id', None)
+
             for path in paths:
                 self.resolver.mount(path, ident)
+                if origin_id:
+                    self.resolver.remove_subcontainer_placeholder(path, origin_id)
+            for sub_path in sub_paths:
+                # TODO move PurePosixPath upper, similar to paths
+                self.resolver.place_subcontainer_placeholder(PurePosixPath(sub_path), ident)
 
         if not lazy or storage.MOUNT_REFERENCE_CONTAINER:
             # request mount of storage backends
@@ -144,12 +153,14 @@ class WildlandFSBase:
         assert storage_id in self.storage_paths
         paths = self.storage_paths[storage_id]
 
-        # TODO check open files?
         del self.storages[storage_id]
         del self.storage_paths[storage_id]
         del self.main_paths[paths[0]]
         for path in paths:
             self.resolver.unmount(path, storage_id)
+        sub_paths = self.storage_extra[storage_id].get('subcontainer_paths', ())
+        for sub_path in sub_paths:
+            self.resolver.remove_subcontainer_placeholder(PurePosixPath(sub_path), storage_id)
 
     # pylint: disable=missing-docstring
 
@@ -255,6 +266,7 @@ class WildlandFSBase:
     def control_dirinfo(self, _handler, path: str):
         result = []
 
+        # TODO
         for storage_id in self.resolver.find_storage_ids(PurePosixPath(path)):
             storage_params = self.storages.get_params(storage_id)
 
@@ -274,6 +286,7 @@ class WildlandFSBase:
     @control_command('fileinfo')
     def control_fileinfo(self, _handler, path: str):
         try:
+            self.lazy_mount(path)
             st, resolved = self.resolver.getattr_extended(PurePosixPath(path))
         except FileNotFoundError:
             return {}
@@ -332,7 +345,6 @@ class WildlandFSBase:
     @control_command('breakpoint')
     def control_breakpoint(self, _handler):
         # Disabled in main() unless an option is given.
-        # (TODO: not necessary with socket server?)
         # pylint: disable=method-hidden
         breakpoint()
 
@@ -361,6 +373,7 @@ class WildlandFSBase:
     def _resolve_path(self, path: PurePosixPath, parent: bool) -> Resolved:
         path = path.parent if parent else path
 
+        self.lazy_mount(path)
         _, res = self.resolver.getattr_extended(path)
 
         if not res:
@@ -443,6 +456,7 @@ class WildlandFSBase:
         return obj
 
     def getattr(self, path):
+        self.lazy_mount(path)
         attr, res = self.resolver.getattr_extended(PurePosixPath(path))
         if not res:
             return self._stat(attr)
@@ -452,6 +466,7 @@ class WildlandFSBase:
         return self._stat(attr)
 
     def readdir(self, path: str, _offset: int) -> Iterable[str]:
+        self.lazy_mount(path)
         return ['.', '..'] + self.resolver.readdir(PurePosixPath(path))
 
     # pylint: disable=unused-argument
@@ -477,7 +492,17 @@ class WildlandFSBase:
     def flush(self, *args) -> None:
         return self.proxy('flush', *args)
 
+    def lazy_mount(self, path):
+        pass
+        # resolved = self.resolver.resolve_containers_to_mount(PurePosixPath(path))
+        # for r in resolved:
+        #     self.children_watchers.notify_storage_watches(
+        #         FileEventType.CREATE, r.relpath, r.subcontainers_source, force=True)
+        # while self.resolver.resolve_containers_to_mount(PurePosixPath(path)):
+        #     pass
+
     def fgetattr(self, path, *args):
+        self.lazy_mount(path)
         _st, res = self.resolver.getattr_extended(PurePosixPath(path))
         if not res:
             raise IOError(errno.EACCES, str(path))

@@ -72,6 +72,7 @@ class WatchEvent:
 
     event_type: FileEventType
     path: PurePosixPath  # absolute path in Wildland namespace
+    storage_id: Optional[int]
 
 
 @dataclasses.dataclass
@@ -92,6 +93,20 @@ class SubcontainerWatchEvent(WatchEvent):
     container: Container
     storage: Storage
     subcontainer: Optional[Union[Link, ContainerStub]]
+
+
+@dataclasses.dataclass
+class MountParams:
+    """
+    A container class for mount parameters for Wildland FS client.
+    """
+
+    container: Container
+    storages: List[Storage]
+    user_paths: Iterable[Iterable[PurePosixPath]]
+    subcontainer_of: Optional[Container] = None
+    sub_paths: Iterable[PurePosixPath] = ()
+    origin_id: Optional[int] = None
 
 
 class WildlandFSError(WildlandError):
@@ -289,13 +304,15 @@ class WildlandFSClient:
         Mount a container, assuming a storage has been already selected.
         """
 
-        self.mount_multiple_containers([(container, storages, user_paths, subcontainer_of)],
-                                       remount=remount, lazy=lazy)
+        self.mount_multiple_containers(
+            [MountParams(container, storages, user_paths, subcontainer_of, [], None)],  # TODO
+            remount=remount,
+            lazy=lazy
+        )
 
     def mount_multiple_containers(
             self,
-            params: Iterable[Tuple[Container, Iterable[Storage], Iterable[Iterable[PurePosixPath]],
-                                   Optional[Container]]],
+            params: Iterable[MountParams],
             remount: bool = False,
             unique_path_only: bool = False,
             lazy: bool = True
@@ -316,27 +333,22 @@ class WildlandFSClient:
 
         self.run_control_command('mount', items=commands, lazy=lazy)
 
-    def _generate_command_for_mount_container(self,
-                                              params: Iterable[Tuple[
-                                                  Container, Iterable[Storage], Iterable[
-                                                      Iterable[PurePosixPath]],
-                                                  Optional[Container]]],
-                                              remount: bool = False,
-                                              unique_path_only: bool = False) -> List[Dict]:
+    def _generate_command_for_mount_container(
+            self,
+            params: Iterable[MountParams],
+            remount: bool = False,
+            unique_path_only: bool = False) -> List[Dict]:
 
-        identity_storage_generator = lambda _, storage: storage
         commands = self._get_commands_for_mount_containers(
-            params, remount, unique_path_only, False, identity_storage_generator)
+            params, remount, unique_path_only, False, storage_generator=lambda _, storage: storage)
 
         return commands
 
-    def _generate_command_for_mount_pseudomanifest_container(self,
-                                                             params: Iterable[Tuple[
-                                                                 Container, Iterable[Storage],
-                                                                 Iterable[Iterable[PurePosixPath]],
-                                                                 Optional[Container]]],
-                                                             remount: bool = False,
-                                                             unique_path_only: bool = False) -> \
+    def _generate_command_for_mount_pseudomanifest_container(
+            self,
+            params: Iterable[MountParams],
+            remount: bool = False,
+            unique_path_only: bool = False) -> \
             List[Dict]:
 
         pseudomanifest_commands = self._get_commands_for_mount_containers(
@@ -346,8 +358,7 @@ class WildlandFSClient:
 
     def _get_commands_for_mount_containers(
             self,
-            params: Iterable[Tuple[Container, Iterable[Storage], Iterable[Iterable[PurePosixPath]],
-                                   Optional[Container]]],
+            params: Iterable[MountParams],
             remount: bool,
             unique_path_only: bool,
             is_hidden: bool,
@@ -356,11 +367,11 @@ class WildlandFSClient:
 
         return [
             self.get_command_for_mount_container(
-                container, storage_generator(container, storage), user_paths, remount=remount,
-                subcontainer_of=subcontainer_of, unique_path_only=unique_path_only,
-                is_hidden=is_hidden)
-            for container, storages, user_paths, subcontainer_of in params
-            for storage in storages
+                p.container, storage_generator(p.container, storage), p.user_paths, remount=remount,
+                subcontainer_of=p.subcontainer_of, unique_path_only=unique_path_only,
+                is_hidden=is_hidden, sub_paths=p.sub_paths, origin_id=p.origin_id)
+            for p in params
+            for storage in p.storages
         ]
 
     def _generate_pseudomanifest_storage(self, container: Container, storage: Storage) -> Storage:
@@ -443,7 +454,7 @@ class WildlandFSClient:
 
         return storage_id, pm_id
 
-    def find_all_storage_ids_by_path(self, path: PurePosixPath) -> List[int]:
+    def find_all_storage_ids_by_path(self, path: PurePosixPath) -> List[int]:  # TODO name collision with `find_all_storage_ids_for_path`
         """
         Find all storage (and respective pseudomanifest storage) IDs for a given mount path
         (either absolute or relative with respect to the mount directory). This method is similar
@@ -544,7 +555,7 @@ class WildlandFSClient:
                         recursive=recursive)
 
     def find_all_storage_ids_for_path(self, path: PurePosixPath) \
-            -> Iterable[Tuple[int, PurePosixPath, PurePosixPath]]:
+            -> Iterable[Tuple[int, PurePosixPath, PurePosixPath]]:  # TODO name collision with `find_all_storage_ids_for_path`
         """
         Given a path, retrieve all mounted storages this path is inside.
 
@@ -766,6 +777,8 @@ class WildlandFSClient:
             storage: Storage,
             user_paths: Iterable[Iterable[PurePosixPath]],
             subcontainer_of: Optional[Container],
+            sub_paths: Iterable[PurePosixPath],
+            origin_id: Optional[int],
             unique_path_only: bool = False,
             remount: bool = False,
             is_hidden: bool = False
@@ -810,6 +823,8 @@ class WildlandFSClient:
                                     if subcontainer_of else None),
                 'title': container.title,
                 'categories': [str(p) for p in container.categories],
+                'subcontainer_paths': [str(p) for p in sub_paths],  # TODO
+                'origin_id': origin_id,
                 'hidden': is_hidden,
             },
             'remount': remount,
@@ -978,10 +993,11 @@ class WildlandFSClient:
         initial = []
         for pattern in patterns:
             local_path = self.mount_dir / (PurePosixPath(pattern).relative_to('/'))
+            # storage_ids = self.find_all_storage_ids_by_path(local_path)  # TODO
             for file_path in glob.glob(str(local_path)):
                 fs_path = PurePosixPath('/') / Path(file_path).relative_to(
                     self.mount_dir)
-                initial.append(PatternWatchEvent(FileEventType.CREATE, fs_path, pattern))
+                initial.append(PatternWatchEvent(FileEventType.CREATE, fs_path, None, pattern))
         return initial
 
     @staticmethod
@@ -990,7 +1006,8 @@ class WildlandFSClient:
         storage_path, pattern = watches[watch_id]
         event_type = FileEventType[event['type']]
         path = PurePosixPath(event['path'])
-        return PatternWatchEvent(event_type, storage_path / path, pattern)
+        storage_id = event.get('storage-id', None)
+        return PatternWatchEvent(event_type, storage_path / path, storage_id, pattern)
 
     @staticmethod
     def _iterate_initial_subcontainer_events(
@@ -1001,8 +1018,9 @@ class WildlandFSClient:
             sb = StorageBackend.from_params(params, deduplicate=True)
             all_children = list(sb.get_children(wl_client))
             for sub_path, sub in all_children:
+                # TODO storage id
                 initial.append(SubcontainerWatchEvent(
-                    FileEventType.CREATE, sub_path, container, storage, sub))
+                    FileEventType.CREATE, sub_path, None, container, storage, sub))
         return initial
 
     @staticmethod
@@ -1013,6 +1031,7 @@ class WildlandFSClient:
         params = storage.params
         sb = StorageBackend.from_params(params, deduplicate=True)
         path = PurePosixPath(event['path'])
+        storage_id = event.get('storage-id', None)
         subcontainer = None
         with sb:
             for sub_path, sub in sb.get_children(wl_client):
@@ -1022,4 +1041,5 @@ class WildlandFSClient:
                     break
             else:
                 logger.error('Subcontainer path not found: %s', path)
-        return SubcontainerWatchEvent(event_type, path, container, storage, subcontainer)
+        return SubcontainerWatchEvent(
+            event_type, path, storage_id, container, storage, subcontainer)

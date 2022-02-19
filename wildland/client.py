@@ -664,7 +664,7 @@ class Client:
     def load_containers_from(self, name: Union[str, WildlandPath],
                              aliases: Optional[dict] = None,
                              bridge_placeholders: bool = True,
-                             include_manifests_catalog: bool = False,
+                             include_manifests_catalog: bool = False
                              ) -> Iterator[Container]:
         """
         Load a list of containers. Currently, supports WL paths, glob patterns (*) and
@@ -673,6 +673,7 @@ class Client:
         :param name: containers to load - can be a local path (including glob) or a Wildland path
         :param aliases: aliases to use when resolving a Wildland path
         :param bridge_placeholders: include bridges as placeholder containers
+        :param include_manifests_catalog: include manifest catalogs
         """
         wlpath = None
         if isinstance(name, WildlandPath):
@@ -1186,25 +1187,27 @@ class Client:
 
         return None
 
-    def all_subcontainers(self, container: Container) -> Iterator[Union[Container, Bridge]]:
+    def all_subcontainers(self, container: Container, paths_only: bool = False) \
+            -> Iterator[Tuple[PurePosixPath, Union[Container, Bridge, None]]]:
         """
         List subcontainers of this container.
 
         This takes only the first backend that is capable of sub-containers functionality.
-        :param container:
-        :return:
         """
         storage = self.get_subcontainer_storage(container)
         if storage:
             with StorageBackend.from_params(storage.params, deduplicate=True) as backend:
-                for _, subcontainer in backend.get_children(self):
-                    assert subcontainer is not None
-                    try:
-                        yield self.load_subcontainer_object(container, storage, subcontainer)
-                    except (WildlandError, ManifestError) as ex:
-                        logger.warning('Container %s: cannot load subcontainer: %s',
-                                       container.uuid, str(ex))
-
+                for sub_path, subcontainer in backend.get_children(self, paths_only=paths_only):
+                    if paths_only:
+                        yield sub_path, None
+                    else:
+                        assert subcontainer is not None
+                        try:
+                            yield sub_path, \
+                                  self.load_subcontainer_object(container, storage, subcontainer)
+                        except (WildlandError, ManifestError) as ex:
+                            logger.warning('Container %s: cannot load subcontainer: %s',
+                                           container.uuid, str(ex))
 
     @staticmethod
     def is_url(s: str):
@@ -1217,7 +1220,7 @@ class Client:
     @staticmethod
     def is_local_storage(storage: Union[StorageBackend, Storage, str]):
         """
-        Check if the given storage is local. Currently checks for TYPE matching local, local-cached
+        Check if the given storage is local. Currently, checks for TYPE matching local, local-cached
         or local-dir-cached.
         """
 

@@ -1080,20 +1080,20 @@ def test_get_watch_params_not_mounted(control_client, client2):
         ('0xbbb', '00000000-2222-0000-0000-000000000000'),
         ('0xbbb', '00000000-2222-1111-0000-000000000000'),
     ]
-    sort_key = lambda cmd: f'{cmd[0].owner}:{cmd[0].paths[0]}'
+    sort_key = lambda cmd: f'{cmd.container.owner}:{cmd.container.paths[0]}'
     sorted_commands = sorted(mount_cmds, key=sort_key)
     # generator here would make failure message much less useful
     # pylint: disable=use-a-generator
     assert all([
-        (c[0].owner == e[0] and c[0].uuid == e[1]  # container
-         and len(c[1]) == 1  # storage
-         and c[2] == []  # paths
-         and c[3] is None)  # subcontainer_of
+        (c.container.owner == e[0] and c.container.uuid == e[1]
+         and len(c.storages) == 1
+         and c.user_paths == []
+         and c.subcontainer_of is None)
         for e, c in zip(expected_mounts, sorted_commands)
     ]), f'{sorted_commands} does not match {expected_mounts}'
 
 
-def test_get_watch_params_mounted1_pattern_path(control_client, client2):
+def test_get_watch_params_mounted_pattern_path(control_client, client2):
     control_client.expect('status', {})
     search = Search(client2,
         WildlandPath.from_str(':/users/User2:/containers/c1:'),
@@ -1113,8 +1113,8 @@ def test_get_watch_params_mounted1_pattern_path(control_client, client2):
         str_re(r'^/.users/0xbbb:/.backends/00000000-2222-0000-.*/containers/c1.{object-type}.yaml'),
     ]
     assert sorted(patterns) == expected_patterns_re
-    assert mount_cmds[0][0].owner == '0xbbb'
-    assert mount_cmds[0][0].uuid == '00000000-2222-0000-0000-000000000000'
+    assert mount_cmds[0].container.owner == '0xbbb'
+    assert mount_cmds[0].container.uuid == '00000000-2222-0000-0000-000000000000'
 
 
 def test_get_watch_params_pattern_star(control_client, client2):

@@ -27,7 +27,7 @@ Manage containers
 """
 from itertools import combinations
 from pathlib import PurePosixPath, Path
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Iterable, List, Optional, Sequence, Tuple, Generator
 import os
 import sys
 import re
@@ -46,7 +46,7 @@ import wildland.cli.cli_common as cli_common
 from wildland.client import Client
 from wildland.control_client import ControlClientUnableToConnectError
 from wildland.wildland_object.wildland_object import WildlandObject
-from wildland.fs_client import StorageInfo
+from wildland.fs_client import StorageInfo, MountParams
 from .cli_base import aliased_group, ContextObj
 from .cli_exc import CliError
 from .cli_storage import do_create_storage_from_templates
@@ -653,7 +653,9 @@ def prepare_mount(obj: ContextObj,
                   with_subcontainers: bool,
                   subcontainer_of: Optional[Container],
                   verbose: bool,
-                  only_subcontainers: bool):
+                  only_subcontainers: bool,
+                  lazy_subcontainers: bool
+    ) -> Generator[MountParams, None, None]:
     """
     Prepare 'params' argument for WildlandFSClient.mount_multiple_containers() to mount selected
         container and its subcontainers (depending on options).
@@ -667,14 +669,25 @@ def prepare_mount(obj: ContextObj,
     :param subcontainer_of: it is a subcontainer
     :param verbose: print all messages
     :param only_subcontainers: only mount subcontainers
+    :param lazy_subcontainers: do not mount subcontainers TODO
     :return: combined 'params' argument
     """
 
     # avoid iterating manifests catalog recursively, again
     if with_subcontainers and not container.is_manifests_catalog:
-        subcontainers = list(obj.client.all_subcontainers(container))
+        paths_subcontainers = tuple(
+            obj.client.all_subcontainers(container, paths_only=lazy_subcontainers))
+        if paths_subcontainers:
+            # tuple-zip magic to separate paths and subcontainers
+            subcontainer_paths, subcontainers = tuple(zip(*paths_subcontainers))
+            if not lazy_subcontainers:
+                subcontainer_paths = ()
+        else:
+            subcontainer_paths = ()
+            subcontainers = ()
     else:
-        subcontainers = []
+        subcontainer_paths = ()
+        subcontainers = ()
 
     if not subcontainers or not only_subcontainers:
         storages: List[Storage] = obj.client.get_storages_to_mount(container)
@@ -684,7 +697,8 @@ def prepare_mount(obj: ContextObj,
             if verbose:
                 click.echo(f'new: {container_name}')
             _cache_sync(obj.client, container, storages, verbose, user_paths)
-            yield container, storages, user_paths, subcontainer_of
+            yield MountParams(
+                container, storages, user_paths, subcontainer_of, subcontainer_paths, None)
         elif remount:
             to_remount, to_unmount = cli_common.prepare_remount(
                 obj, container, storages, user_paths)
@@ -692,11 +706,12 @@ def prepare_mount(obj: ContextObj,
                 obj.fs_client.unmount_storage(storage_id)
 
             _cache_sync(obj.client, container, storages, verbose, user_paths)
-            yield container, to_remount, user_paths, subcontainer_of
+            yield MountParams(
+                container, to_remount, user_paths, subcontainer_of, subcontainer_paths, None)
         else:
             raise WildlandError(f'Already mounted: {container.local_path}')
 
-    if with_subcontainers and subcontainers:
+    if with_subcontainers and subcontainers and not lazy_subcontainers:
         # keep the parent container mounted, when touching its subcontainers -
         # if they all point to the parent, this will avoid mounting and
         # unmounting it each time
@@ -711,7 +726,7 @@ def prepare_mount(obj: ContextObj,
                     yield from prepare_mount(obj, subcontainer,
                                              f'{container_name}:{subcontainer.paths[0]}',
                                              user_paths, remount, with_subcontainers, container,
-                                             verbose, only_subcontainers)
+                                             verbose, only_subcontainers, lazy_subcontainers)
 
 
 def _create_cache(client: Client, container: Container, template_name: str,
@@ -843,7 +858,7 @@ def _mount(obj: ContextObj, container_names: Sequence[str],
            remount: bool = True, lazy: bool = True, save: bool = True, import_users: bool = True,
            with_subcontainers: bool = True, only_subcontainers: bool = False,
            list_all: bool = True, manifests_catalog: bool = False,
-           cache_template: str = None) -> None:
+           cache_template: str = None, lazy_subcontainers: bool = False) -> None:
 
     obj.fs_client.ensure_mounted()
     client = obj.client
@@ -851,15 +866,14 @@ def _mount(obj: ContextObj, container_names: Sequence[str],
     if import_users:
         client.auto_import_users = True
 
-    params: List[Tuple[Container, List[Storage], List[Iterable[PurePosixPath]], Container]] = []
+    params: List[MountParams] = []
     successfully_loaded_container_names: List[str] = []
     fails: List[str] = []
     warnings: List[str] = []
     storages_count = 0
 
     for container_name in container_names:
-        current_params: List[Tuple[Container, List[Storage],
-                                   List[Iterable[PurePosixPath]], Container]] = []
+        current_params: List[MountParams] = []
 
         counter = get_counter(f"Loading containers (from '{container_name}')")
         containers = counter(client.load_containers_from(
@@ -886,9 +900,10 @@ def _mount(obj: ContextObj, container_names: Sequence[str],
                 user_paths = client.get_bridge_paths_for_user(container.owner)
                 mount_params_generator = prepare_mount(
                     obj, container, str(container), user_paths,
-                    remount, with_subcontainers, None, list_all, only_subcontainers)
+                    remount, with_subcontainers, None,
+                    list_all, only_subcontainers, lazy_subcontainers)
                 mount_params = list(mount_params_generator)
-                storages_count += sum(len(params[1]) for params in mount_params)
+                storages_count += sum(len(params.storages) for params in mount_params)
                 current_params.extend(mount_params)
             except WildlandError as ex:
                 warnings.append(f'Cannot mount container: {container}: {str(ex)}')

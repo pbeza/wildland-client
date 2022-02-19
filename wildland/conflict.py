@@ -47,7 +47,10 @@ class Resolved:
     """
 
     # Storage ID
-    ident: int
+    ident: Optional[int]
+
+    # ID of storage with subcontainers
+    subcontainers_source: Optional[int]
 
     # Relative path inside (if inside), or relative path of the mount path (if not inside)
     relpath: PurePosixPath
@@ -60,6 +63,7 @@ class MountDir:
 
     def __init__(self):
         self.storage_ids: Set[int] = set()
+        self.subcontainers_sources: Set[int] = set()
         self.children: Dict[str, 'MountDir'] = {}
 
     def is_empty(self):
@@ -67,9 +71,11 @@ class MountDir:
         Is this node ready for deletion (i.e. no storages left)?
         """
 
-        return len(self.children) == 0 and len(self.storage_ids) == 0
+        return len(self.children) == 0 \
+               and len(self.storage_ids) == 0 \
+               and len(self.subcontainers_sources) == 0
 
-    def mount(self, path: PurePosixPath, storage_id: int):
+    def mount(self, path: PurePosixPath, storage_id: int, lazy: bool = False):
         """
         Add a storage under the given path.
         """
@@ -84,7 +90,16 @@ class MountDir:
             path = path.relative_to(first)
 
         assert str(path) == '.' or str(path) == ''
-        mount_dir.storage_ids.add(storage_id)
+        if lazy:
+            mount_dir.subcontainers_sources.add(storage_id)
+        else:
+            mount_dir.storage_ids.add(storage_id)
+
+    def lazy_mount(self, path: PurePosixPath, sub_source_storage_id: int):
+        """
+        Add a subcontainer source under the given path to mount storages from it later.
+        """
+        self.mount(path, sub_source_storage_id, lazy=True)
 
     def unmount(self, path: PurePosixPath, storage_id: int):
         """
@@ -99,6 +114,23 @@ class MountDir:
         rest = path.relative_to(first)
         assert first in self.children
         self.children[first].unmount(rest, storage_id)
+        if self.children[first].is_empty():
+            del self.children[first]
+
+    def unmount_lazy_subcontainer(self, path: PurePosixPath, sub_source_storage_id: int):
+        """
+        Remove a storage from the given path.
+        """
+
+        if not path.parts:
+            if sub_source_storage_id in self.subcontainers_sources:
+                self.subcontainers_sources.remove(sub_source_storage_id)
+            return
+
+        first = path.parts[0]
+        rest = path.relative_to(first)
+        assert first in self.children
+        self.children[first].unmount_lazy_subcontainer(rest, sub_source_storage_id)
         if self.children[first].is_empty():
             del self.children[first]
 
@@ -122,6 +154,9 @@ class MountDir:
                 return False
             mount_dir = mount_dir.children[first]
             path = path.relative_to(first)
+
+        if mount_dir.subcontainers_sources:
+            raise ValueError("Path should be resolved first.")  # TODO
 
         return len(mount_dir.children) != 0 or len(mount_dir.storage_ids) != 1
 
@@ -150,7 +185,10 @@ class MountDir:
         """
 
         for storage_id in self.storage_ids:
-            yield Resolved(storage_id, path)
+            yield Resolved(storage_id, None, path)
+
+        # for storage_id in self.subcontainers_sources:
+        #     yield Resolved(None, storage_id, path)
 
         if path.parts:
             first = path.parts[0]
@@ -158,7 +196,7 @@ class MountDir:
                 rest = path.relative_to(first)
                 yield from self.children[first].resolve(rest)
 
-    def relative_storage_ids(self) -> Iterable[int]:
+    def relative_storage_ids(self) -> Iterable[int]:  # TODO append lazy storages
         """
         Return storage ids relative to itself.
         """
@@ -166,7 +204,7 @@ class MountDir:
         for storage_id in self.storage_ids:
             yield storage_id
 
-        for _, child in self.children.items():
+        for child in self.children.values():
             if isinstance(child, MountDir):
                 for storage_id in child.relative_storage_ids():
                     yield storage_id
@@ -206,12 +244,28 @@ class ConflictResolver(metaclass=abc.ABCMeta):
         self.root.mount(path, storage_id)
         self._resolve.cache_clear()
 
+    def place_subcontainer_placeholder(self, path: PurePosixPath, sub_source_storage_id: int):
+        """
+        TODO: Add information about a mounted storage.
+        """
+
+        self.root.lazy_mount(path, sub_source_storage_id)
+        self._resolve.cache_clear()
+
     def unmount(self, path: PurePosixPath, storage_id: int):
         """
         Remove information about a mounted storage.
         """
 
         self.root.unmount(path, storage_id)
+        self._resolve.cache_clear()
+
+    def remove_subcontainer_placeholder(self, path: PurePosixPath, sub_source_storage_id: int):
+        """
+        TODO: Remove information about a mounted storage.
+        """
+
+        self.root.unmount_lazy_subcontainer(path, sub_source_storage_id)
         self._resolve.cache_clear()
 
     @abc.abstractmethod
@@ -257,6 +311,7 @@ class ConflictResolver(metaclass=abc.ABCMeta):
         # Note that this is the only case where we do NOT call
         # handle_io_error(), but allow the error to fall through.
         if len(resolved) == 1 and not result:
+            assert resolved[0].ident is not None
             names = self.storage_readdir(resolved[0].ident, resolved[0].relpath)
             result.update(names or [])
             return sorted(result)
@@ -379,6 +434,7 @@ class ConflictResolver(metaclass=abc.ABCMeta):
             # can be propagated to caller.
 
             res = resolved[0]
+            assert res.ident is not None
             st = self.storage_getattr(res.ident, res.relpath)
             return st, res
 
@@ -441,7 +497,7 @@ class ConflictResolver(metaclass=abc.ABCMeta):
         for part in path.parts:
             if part in start_from.children:
                 if not isinstance(start_from.children[part], MountDir):
-                    # we've hit an actual, physical directory but we haven't traversed through
+                    # we've hit an actual, physical directory, but we haven't traversed through
                     # all parts
                     return real_storages
 
@@ -459,6 +515,11 @@ class ConflictResolver(metaclass=abc.ABCMeta):
     @functools.lru_cache(500)
     def _resolve(self, real_path: PurePosixPath) -> List[Resolved]:
         return list(self.root.resolve(real_path))
+
+    def resolve_containers_to_mount(self, path):
+        resolved = self._resolve(PurePosixPath(path))
+        to_mount = [r for r in resolved if r.subcontainers_source is not None]
+        return to_mount
 
 
 def handle_io_error(func, *args):

@@ -27,14 +27,13 @@ Monitor container manifests for changes and remount if necessary
 
 import os
 from pathlib import PurePosixPath, Path
-from typing import List, Optional, Tuple, Iterable, Dict, Set
+from typing import List, Optional, Tuple, Dict, Set
 
 from wildland.client import Client
 from wildland.container import Container
 from wildland.exc import WildlandError
 from wildland.fs_client import WildlandFSClient, WatchEvent, PatternWatchEvent, \
-    SubcontainerWatchEvent
-from wildland.storage import Storage
+    SubcontainerWatchEvent, MountParams
 from wildland.storage_backends.base import StorageBackend
 from wildland.storage_backends.watch import FileEventType
 from wildland.wildland_object.wildland_object import WildlandObject
@@ -73,15 +72,13 @@ class Remounter:
     """
 
     def __init__(self, client: Client, fs_client: WildlandFSClient, container_names: List[str],
-                 with_subcontainers=True, additional_patterns: Optional[List[str]] = None):
+                 with_subcontainers: bool = True, lazy: bool = False,
+                 additional_patterns: Optional[List[str]] = None):
         self.client = client
         self.fs_client = fs_client
 
         # Queued operations
-        self.to_mount: List[Tuple[Container,
-                                  Iterable[Storage],
-                                  Iterable[Iterable[PurePosixPath]],
-                                  Optional[Container]]] = []
+        self.to_mount: List[MountParams] = []
         self.to_unmount: List[int] = []
 
         # manifest path -> main container path
@@ -113,6 +110,7 @@ class Remounter:
             self.outside_containers.extend(self.client.load_containers_from(name))
 
         self.with_subcontainers = with_subcontainers
+        self.lazy = lazy
 
         # wlpath -> resolved containers (stored as its main path)
         self.wlpath_main_paths: Dict[WildlandPath, Set[PurePosixPath]] = {}
@@ -135,7 +133,7 @@ class Remounter:
                     patterns=patterns,
                     wl_client=self.client,
                     containers=containers,
-                    with_initial=True
+                    with_initial=not self.lazy
             ):
                 any_wlpath_changed, container_changed = self.handle_events(events)
 
@@ -162,7 +160,7 @@ class Remounter:
         if self.with_subcontainers:
             # (re)mounting containers from "outside" the wildland file system
             for container in self.outside_containers:
-                self.handle_changed_container(container)
+                self.handle_changed_container(container, None)
             self.mount_pending()
 
         patterns: Dict[str, List[WildlandPath]] = {}
@@ -230,7 +228,7 @@ class Remounter:
             for container in search.read_container():
                 main_path = self.fs_client.get_user_container_path(
                     container.owner, container.paths[0])
-                self.handle_changed_container(container)
+                self.handle_changed_container(container, event.storage_id)
                 new_main_paths.add(main_path)
 
             for main_path in self.wlpath_main_paths.get(wlpath, set()).difference(new_main_paths):
@@ -261,8 +259,6 @@ class Remounter:
 
         if event.event_type == FileEventType.DELETE:
             # Find out if we've already seen the file, and can match it to an mounted storage.
-            storage_id: Optional[int] = None
-            pseudo_storage_id: Optional[int] = None
 
             if event.path in self.main_paths:
                 storage_id, pseudo_storage_id = self.fs_client.find_storage_id_by_path(
@@ -305,11 +301,11 @@ class Remounter:
             # Start tracking the file
             self.main_paths[event.path] = self.fs_client.get_user_container_path(
                 container.owner, container.paths[0])
-            self.handle_changed_container(container)
+            self.handle_changed_container(container, event.storage_id)
 
         return container_with_children_changed
 
-    def load_container(self, event):
+    def load_container(self, event):  # TODO subcontainer_of
         """
         Loads container from file.
         """
@@ -318,7 +314,7 @@ class Remounter:
             WildlandObject.Type.CONTAINER, local_path)
         return container
 
-    def load_subcontainer(self, event):
+    def load_subcontainer(self, event):  # TODO subcontainer_of
         """
         Loads subcontainers.
         """
@@ -328,19 +324,20 @@ class Remounter:
         assert isinstance(container, Container)
         return container
 
-    def handle_changed_container(self, container: Container):
+    def handle_changed_container(self, container: Container, origin_id: Optional[int]):
         """
         Queue mount/remount of a container. This considers both new containers and
         already mounted containers, including changes in storages
 
         :param container: container to (re)mount
+        :param origin_id: TODO
         :return:
         """
         user_paths = self.client.get_bridge_paths_for_user(container.owner)
         storages = self.client.get_storages_to_mount(container)
         if self.fs_client.find_primary_storage_id(container) is None:
             logger.info('  new: %s', str(container))
-            self.to_mount.append((container, storages, user_paths, None))
+            self.to_mount.append(MountParams(container, storages, user_paths, None, [], origin_id))
         else:
             storages_to_remount = []
 
@@ -359,7 +356,8 @@ class Remounter:
                     logger.info('  (not changed: %s)', storage.backend_id)
 
             if storages_to_remount:
-                self.to_mount.append((container, storages_to_remount, user_paths, None))
+                self.to_mount.append(
+                    MountParams(container, storages_to_remount, user_paths, None, [], origin_id))
 
     def unmount_pending(self):
         """

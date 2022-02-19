@@ -196,7 +196,7 @@ def test_timeline_subcontainers(base_dir, container, data_dir):
     client = Client(base_dir)
 
     container = client.load_object_from_name(WildlandObject.Type.CONTAINER, container)
-    subcontainers = list(client.all_subcontainers(container))
+    subcontainers = [sub for _, sub in client.all_subcontainers(container)]
     assert len(subcontainers) == 2
     assert subcontainers[0].paths[1:] == [PurePosixPath('/timeline/2008/02/03')]
     assert subcontainers[0]._storage_cache[0].storage == {
@@ -228,7 +228,7 @@ def test_timeline_subcontainers_fuse(base_dir, env, container, data_dir):
     client = Client(base_dir)
 
     container = client.load_object_from_name(WildlandObject.Type.CONTAINER, container)
-    for subcontainer in client.all_subcontainers(container):
+    for _, subcontainer in client.all_subcontainers(container):
         env.mount_storage(subcontainer.paths[1:], client.select_storage(subcontainer).params)
 
     assert treewalk.walk_all(env.mnt_dir) == [

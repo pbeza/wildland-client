@@ -34,7 +34,7 @@ import click
 
 from wildland.control_client import ControlClientError
 from wildland.exc import WildlandError
-from wildland.fs_client import StorageInfo
+from wildland.fs_client import StorageInfo, MountParams
 from wildland.manifest.template import TemplateManager
 from wildland.wildland_object.wildland_object import WildlandObject
 from .cli_base import (
@@ -136,7 +136,7 @@ def _do_mount_containers(obj: ContextObj, to_mount, lazy: bool = True):
 
     fs_client = obj.fs_client
     failed = []
-    commands = []
+    commands: List[MountParams] = []
     for name in to_mount:
         click.echo(f'Resolving containers: {name}')
         containers = obj.client.load_containers_from(name)
@@ -150,7 +150,7 @@ def _do_mount_containers(obj: ContextObj, to_mount, lazy: bool = True):
                 commands.extend(cli_container.prepare_mount(
                     obj, container, str(container.local_path), user_paths,
                     remount=False, with_subcontainers=True, subcontainer_of=None, verbose=False,
-                    only_subcontainers=False))
+                    only_subcontainers=False, lazy_subcontainers=False))
             except WildlandError as we:
                 failed.append(
                     f'Container {container} (expanded from {name}) cannot be mounted: {we}')

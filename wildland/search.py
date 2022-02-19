@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING
 
 import wildland
 from wildland.wildland_object.wildland_object import WildlandObject
-from .fs_client import WildlandFSClient
+from .fs_client import WildlandFSClient, MountParams
 from .storage_driver import StorageDriver
 from .user import User
 from .container import Container
@@ -232,12 +232,7 @@ class Search:
         """
         cls._resolve_cache.clear()
 
-    def _get_params_for_mount_step(self, step: Step) -> \
-            Tuple[PurePosixPath,
-                  Optional[Tuple[Container,
-                                 Iterable[Storage],
-                                 Iterable[PurePosixPath],
-                                 Optional[Container]]]]:
+    def _get_params_for_mount_step(self, step: Step) -> Tuple[PurePosixPath, Optional[MountParams]]:
         """
         Return a FUSE mount command for a container for given step (if not mounted already).
 
@@ -251,10 +246,7 @@ class Search:
         if list(self.fs_client.find_all_storage_ids_for_path(fuse_path)):
             # already mounted
             return fuse_path, None
-        mount_params: Tuple[Container,
-                            Iterable[Storage],
-                            Iterable[PurePosixPath],
-                            Optional[Container]] = (step.container, [storage], [], None)
+        mount_params = MountParams(step.container, [storage], [], None, [], None)
         return fuse_path, mount_params
 
     def get_watch_params(self) -> Tuple[List, Set[PurePosixPath]]:

@@ -37,6 +37,7 @@ from wildland.wildland_object.wildland_object import WildlandObject
 from ..client import Client
 from ..container import Container
 from ..control_client import ControlClientError
+from ..fs_client import MountParams
 from ..manifest.manifest import ManifestError
 
 DUMMY_BACKEND_UUID0 = '00000000-0000-0000-000000000000'
@@ -182,14 +183,14 @@ class RemounterWrapper(Remounter):
         # TODO: sort
         for expected, actual in zip(to_mount, self.to_mount):
             # container
-            assert expected.owner == actual[0].owner
-            assert expected.paths == actual[0].paths
+            assert expected.owner == actual.container.owner
+            assert expected.paths == actual.container.paths
             # backends
-            assert len(expected.backends) == len(actual[1])
+            assert len(expected.backends) == len(actual.storages)
             storage_id = None
             for expected_b, actual_b in zip(
                     sorted(expected.backends.items()),
-                    sorted(actual[1], key=lambda s: s.backend_id)):
+                    sorted(actual.storages, key=lambda s: s.backend_id)):
                 assert expected_b[0] == actual_b.backend_id
                 if actual_b.is_primary:
                     storage_id = expected_b[1]
@@ -202,8 +203,8 @@ class RemounterWrapper(Remounter):
                 )
 
                 # calculate storage tag, so params/paths change will be detected
-                mount_paths = self.fs_client.get_storage_mount_paths(actual[0], actual_b,
-                                                                     actual[2])
+                mount_paths = self.fs_client.get_storage_mount_paths(actual.container, actual_b,
+                                                                     actual.user_paths)
                 tag = self.fs_client.get_storage_tag(mount_paths, actual_b.params)
                 self.control_client.results['info'][expected_b[1]]['extra']['tag'] = tag
 
@@ -952,12 +953,12 @@ def test_wlpath_change_pattern(cli, base_dir, client, search_mock, control_clien
 
     def change_watch_params():
         control_client.expect('mount')
-        search_mock.watch_params = ([(catalog_container, [catalog_s0], [], None)],
+        search_mock.watch_params = ([MountParams(catalog_container, [catalog_s0], [])],
                                     {'/.manifests/Container2.container.yaml'})
 
     def fail_mount():
         control_client.expect('mount', ControlClientError('mount failed'))
-        search_mock.watch_params = ([(catalog_container, [catalog_s1], [], None)],
+        search_mock.watch_params = ([MountParams(catalog_container, [catalog_s1], [])],
                                     {'/.manifests/Container3.container.yaml'})
 
     # initial mount
@@ -1063,7 +1064,7 @@ def test_failed_mount(remounter_type, control_client, client):
     del control_client.results['paths']
     remounter = Remounter(client, client.fs_client, [])
 
-    remounter.to_mount.append((mock.Mock, [], [], None))
+    remounter.to_mount.append(MountParams(mock.Mock, [], [], None, [], None))
     control_client.expect('mount', ControlClientError('mount failed'))
     # should catch the mount error
     remounter.mount_pending()
