@@ -127,10 +127,9 @@ class WildlandCoreStorage(WildlandCoreApi):
                          watcher_interval: Optional[int] = 0, inline: bool = True,
                          access_users: Optional[List[str]] = None, encrypt_manifest: bool = True):
 
-        # TODO change this after #699 is resolved and use container_find_by_id from wl_core_api
-        container = self.__get_container_from_wl_container_id(container_id)
-        if not container.local_path:
-            raise WildlandError('Need a local container')
+        container_result, container = self.container_find_by_id(container_id)
+        if not container_result.success or not container:
+            return container_result
 
         container_mount_path = container.paths[0]
         logger.info('Using container: %s (%s)', str(container.local_path),
@@ -182,13 +181,6 @@ class WildlandCoreStorage(WildlandCoreApi):
 
         return utils.storage_to_wl_storage(storage)
 
-    def __get_container_from_wl_container_id(self, container_id):
-        for container in self.client.load_all(WildlandObject.Type.CONTAINER):
-            if utils.container_to_wlcontainer(container, self.client).id == container_id:
-                return container
-
-        raise FileNotFoundError(f'Cannot find container {container_id}')
-
     def storage_create_from_template(self, template_name: str,
                                      container_id: str,
                                      local_dir: Optional[str] = None) -> WildlandResult:
@@ -206,15 +198,10 @@ class WildlandCoreStorage(WildlandCoreApi):
     @wildland_result()
     def __storage_create_from_template(self, template_name: str, container_id: str,
                                        local_dir: Optional[str]):
-        # TODO change this after #699 is resolved and use container_find_by_id from wl_core_api
-        container = None
-        for _container in self.client.load_all(WildlandObject.Type.CONTAINER):
-            if utils.container_to_wlcontainer(_container, self.client).id == container_id:
-                container = _container
-        # TODO END
+        container_result, container = self.container_find_by_id(container_id)
+        if not container_result.success or not container:
+            return container_result
 
-        if not container:
-            return WildlandResult()
         template_manager = TemplateManager(self.client.dirs[WildlandObject.Type.TEMPLATE])
         storage_templates = template_manager.get_template_file_by_name(template_name).templates
         result = self.storage_do_create_from_template(
@@ -222,9 +209,6 @@ class WildlandCoreStorage(WildlandCoreApi):
         )
         return result
 
-    # TODO change container: Container to container_id: str and adjust code, after
-    #  https://gitlab.com/wildland/wildland-client/-/issues/699 &&
-    #  and https://gitlab.com/wildland/wildland-client/-/issues/702 are solved
     def storage_do_create_from_template(self, container: Container,
                                         storage_templates: Iterable[StorageTemplate],
                                         local_dir: Optional[str]
@@ -321,14 +305,15 @@ class WildlandCoreStorage(WildlandCoreApi):
             return delete_result
 
         if usages:
-            self.__storage_sync_containers(name, usages, force)
+            containers_usages = [u[0] for u in usages]
+            self.__storage_delete_sync_containers(name, containers_usages, force)
 
             if local_path:
                 if cascade:
                     delete_cascade_result = self.__storage_delete_cascade(usages)
                     delete_result.errors += delete_cascade_result.errors
                 else:
-                    for container, _ in usages:
+                    for container in containers_usages:
                         logger.info('Storage used in container: %s', container.local_path)
 
                 if usages and not force and not cascade:
@@ -417,19 +402,19 @@ class WildlandCoreStorage(WildlandCoreApi):
         if cascade:
             logger.warning('Unable to cascade remove: manifest failed to load.')
 
-    def __storage_sync_containers(self,
-                                  name: str,
-                                  used_by: Sequence[Tuple[Container, Union[Path, str]]],
-                                  force: bool):
+    def __storage_delete_sync_containers(self,
+                                         name: str,
+                                         containers: List[Container],
+                                         force: bool):
         container_to_sync = []
         container_failed_to_sync = []
-        for container_obj, _ in used_by:
-            if len(self.client.get_all_storages(container_obj)) > 1 and not force:
-                status = self.client.get_sync_job_state(container_obj.sync_id)
+        for container in containers:
+            if len(self.client.get_all_storages(container)) > 1 and not force:
+                status = self.client.get_sync_job_state(container.sync_id)
                 if status is None:
-                    container_to_sync.append(container_obj)
+                    container_to_sync.append(container)
                 elif status[0] != SyncState.SYNCED:
-                    logger.info('Syncing of %s is in progress.', container_obj.uuid)
+                    logger.info('Syncing of %s is in progress.', container.uuid)
                     return
 
         for c in container_to_sync:
@@ -495,6 +480,67 @@ class WildlandCoreStorage(WildlandCoreApi):
         result.errors.append(
             WLError.from_exception(FileNotFoundError(f'Cannot find storage {storage_id}')))
         return result, None
+
+    def storage_sync_container(self, storage_id: str, container_id: str):
+        """
+        Sync storage with container
+        :param storage_id: id of storage
+        :param container_id: id of container
+        """
+        return self.__storage_sync_container(storage_id, container_id)
+
+    @wildland_result()
+    def __storage_sync_container(self, storage_id: str, container_id: str):
+        sync_result = WildlandResult()
+        storage = None
+
+        container_result, container = self.container_find_by_id(container_id)
+        if not container_result.success or not container:
+            return container_result
+
+        for container_storage in self.client.get_all_storages(container):
+            if utils.storage_to_wl_storage(container_storage).id == storage_id:
+                storage = container_storage
+                break
+
+        if storage:
+            if len(self.client.get_all_storages(container)) == 1:
+                logger.info(
+                    'Skipping syncing as there is just one storage attached to the container.'
+                )
+            elif Client.is_local_storage(storage):
+                logger.info('Skipping syncing as the created storage is local.')
+            elif not storage.is_writeable:
+                logger.info('Skipping syncing as the created storage is read-only.')
+            else:
+                try:
+                    source_storage = self.client.get_local_storage(
+                        container, excluded_storage=storage.backend_id)
+                except WildlandError:
+                    try:
+                        source_storage = self.client.get_remote_storage(
+                            container, excluded_storage=storage.backend_id)
+                    except WildlandError:
+                        logger.debug('No appropriate source storage found for syncing with %s',
+                                     str(storage))
+                        return sync_result
+
+                logger.debug("sync: {%s} -> {%s}", source_storage, storage)
+
+                response = self.client.do_sync(container.uuid, container.sync_id,
+                                               source_storage.params, storage.params,
+                                               one_shot=True, unidir=True,
+                                               wait_if_already_running=True)
+                logger.debug(response)
+                msg, success = self.client.wait_for_sync(container.sync_id, stop_on_finish=True)
+                logger.info(msg)
+                if not success:
+                    sync_result.errors.append(WLError.from_exception(
+                        WildlandError(f'Failed to sync storage for container {container.uuid} '
+                                      f'(source: {source_storage}, target: {storage})')
+                    ))
+
+        return sync_result
 
     def storage_import_from_data(self, yaml_data: str, overwrite: bool = True) -> \
             Tuple[WildlandResult, Optional[WLStorage]]:

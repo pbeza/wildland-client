@@ -311,8 +311,7 @@ def _create_container(obj: ContextObj,
                           backends=[], client=obj.client, access=access)
 
     obj.client.save_new_object(WildlandObject.Type.CONTAINER, container, container_name)
-    # TODO pass container.id when https://gitlab.com/wildland/wildland-client/-/issues/699 &&
-    # TODO and https://gitlab.com/wildland/wildland-client/-/issues/702 are solved
+
     result = obj.wlcore.storage_do_create_from_template(
         container, storage_templates, storage_local_dir
     )

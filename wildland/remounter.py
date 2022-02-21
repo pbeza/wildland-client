@@ -29,7 +29,6 @@ import os
 from pathlib import Path, PurePosixPath
 from typing import List, Optional, Tuple, Iterable, Dict, Set
 
-from wildland.cli.cli_common import prepare_remount
 from wildland.client import Client
 from wildland.container import Container
 from wildland.exc import WildlandError
@@ -273,7 +272,7 @@ class Remounter:
             logger.debug('  new: %s', str(container))
             self.to_mount.append((container, storages, user_paths, None))
         else:
-            to_remount, to_unmount = prepare_remount(self, container, storages, user_paths)
+            to_remount, to_unmount = self.client.prepare_remount(container, storages, user_paths)
             self.to_unmount += to_unmount
             if to_remount:
                 self.to_mount.append((container, to_remount, user_paths, None))

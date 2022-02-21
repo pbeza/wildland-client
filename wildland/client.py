@@ -921,6 +921,53 @@ class Client:
 
         return False
 
+    def prepare_remount(self,
+                        container: Container,
+                        storages: List[Storage],
+                        user_paths: Iterable[Iterable[PurePosixPath]],
+                        force_remount: bool = False):
+        """
+        Return storages to remount and storage IDs to unmount when remounting the container.
+        """
+        logger.debug('Prepare remount')
+        storages_to_remount = []
+        storages_to_unmount = []
+
+        for path in self.fs_client.get_orphaned_container_storage_paths(container, storages):
+            storage_and_pseudo_ids = self.find_storage_and_pseudomanifest_storage_ids(path)
+            logger.debug('  Removing orphan storage %s @ id: %d', path, storage_and_pseudo_ids[0])
+            storages_to_unmount += storage_and_pseudo_ids
+
+        if not force_remount:
+            for storage in storages:
+                if self.fs_client.should_remount(container, storage, user_paths):
+                    logger.debug('  Remounting storage: %s', storage.backend_id)
+                    storages_to_remount.append(storage)
+                else:
+                    logger.debug('  Storage not changed: %s', storage.backend_id)
+        else:
+            storages_to_remount = storages
+
+        return storages_to_remount, storages_to_unmount
+
+    def find_storage_and_pseudomanifest_storage_ids(self, path):
+        """
+        Find first storage ID for a given mount path. ``None` is returned if the given path is not
+        related to any storage.
+        """
+        storage_id = self.fs_client.find_storage_id_by_path(path)
+
+        pm_path = PurePosixPath(str(path) + '-pseudomanifest/.manifest.wildland.yaml')
+        pseudo_storage_id = self.fs_client.find_storage_id_by_path(pm_path)
+        if pseudo_storage_id is None:
+            pm_path = PurePosixPath(str(path) + '/.manifest.wildland.yaml')
+            pseudo_storage_id = self.fs_client.find_storage_id_by_path(pm_path)
+
+        assert storage_id is not None
+        assert pseudo_storage_id is not None
+
+        return storage_id, pseudo_storage_id
+
     @functools.lru_cache
     def get_bridge_paths_for_user(self, user: Union[User, str], owner: Optional[User] = None) \
             -> Iterable[Iterable[PurePosixPath]]:

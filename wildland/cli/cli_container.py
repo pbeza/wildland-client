@@ -213,8 +213,6 @@ def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Opt
 
     if storage_templates:
         try:
-            # TODO pass container.id when https://gitlab.com/wildland/wildland-client/-/issues/699
-            # TODO && https://gitlab.com/wildland/wildland-client/-/issues/702 are solved
             result = obj.wlcore.storage_do_create_from_template(
                 container, storage_templates, local_dir
             )
@@ -687,8 +685,8 @@ def prepare_mount(obj: ContextObj,
             _cache_sync(obj.client, container, storages, verbose, user_paths)
             yield container, storages, user_paths, subcontainer_of
         elif remount:
-            to_remount, to_unmount = cli_common.prepare_remount(
-                obj, container, storages, user_paths)
+            to_remount, to_unmount = obj.client.prepare_remount(
+                container, storages, user_paths)
             for storage_id in to_unmount:
                 obj.fs_client.unmount_storage(storage_id)
 

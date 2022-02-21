@@ -31,16 +31,13 @@ import functools
 import click
 
 from wildland.wildland_object.wildland_object import WildlandObject
-import wildland.core.core_utils as core_utils
 from .cli_base import aliased_group, ContextObj
 from .cli_exc import CliError
 from .cli_utils import parse_storage_cli_options, param_name_from_cli
-from ..client import Client
 from .cli_common import sign, verify, edit, modify_manifest, set_fields, \
     add_fields, del_fields, dump, check_if_any_options, check_options_conflict, \
-    publish, unpublish, remount_container
+    publish, unpublish
 from ..core.wildland_objects_api import WLStorage, WLContainer, WLObjectType
-from ..publish import Publisher
 from ..log import get_logger
 from ..storage_backends.base import StorageBackend
 from ..storage_backends.dispatch import get_storage_backends
@@ -129,77 +126,38 @@ def _do_create(
 
     obj: ContextObj = click.get_current_context().obj
 
-    wlcontainer_result, wlcontainer = obj.wlcore.object_get(WLObjectType.CONTAINER, container)
-    if not wlcontainer_result.success or not wlcontainer:
-        raise CliError(str(wlcontainer_result))
+    wl_container_result, wl_container = obj.wlcore.object_get(WLObjectType.CONTAINER, container)
+    if not wl_container_result.success or not wl_container:
+        raise CliError(str(wl_container_result))
+    container_id = wl_container.id
 
     data = {param_name_from_cli(key): data[key] for key in data}
 
-    result, wl_storage = obj.wlcore.storage_create(
-        backend.TYPE, data, wlcontainer.id, name, trusted,
+    create_result, wl_storage = obj.wlcore.storage_create(
+        backend.TYPE, data, container_id, name, trusted,
         watcher_interval, inline, access, encrypt_manifest
     )
 
-    if not result.success or not wl_storage:
-        raise CliError(f'Failed to create storage: {result}')
+    if not create_result.success or not wl_storage:
+        raise CliError(f'Failed to create storage: {create_result}')
+    storage_id = wl_storage.id
 
-    # TODO get rid of this when https://gitlab.com/wildland/wildland-client/-/issues/699 is ready
-    container_obj = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, container)
+    remount_result = obj.wlcore.container_remount(container_id)
+    if not remount_result.success:
+        raise CliError(str(remount_result))
 
-    # TODO change to i.e. obj.wlcore.container_remount(container_id) when #699 is ready
-    if obj.client.is_container_mounted(container_obj):
-        remount_container(obj, container_obj.local_path)
-
-    # TODO change to i.e. obj.wlcore.container_publish(container_id) when #699 is ready
     if not no_publish:
-        try:
-            user = obj.client.load_object_from_name(WildlandObject.Type.USER, container_obj.owner)
-            Publisher(obj.client, user).republish(container_obj)
-        except WildlandError as ex:
-            raise WildlandError(f"Failed to republish container: {ex}") from ex
+        publish_result = obj.wlcore.container_publish(container_id)
+        if not publish_result.success:
+            raise CliError(str(publish_result))
 
-    # TODO change to i.e. obj.wlcore.container_sync(container_id, storage_id) when #699 is ready
-    storage = None
-    container_obj = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, container)
-    for container_storage in obj.client.get_all_storages(container_obj):
-        if core_utils.storage_to_wl_storage(container_storage).id == wl_storage.id:
-            storage = container_storage
-            break
+    if skip_sync:
+        logger.info('Skipping syncing as requested.')
+        return
 
-    if storage:
-        if skip_sync:
-            click.echo('Skipping syncing as requested.')
-        elif len(obj.client.get_all_storages(container_obj)) == 1:
-            click.echo('Skipping syncing as there is just one storage attached to the container.')
-        elif Client.is_local_storage(storage):
-            click.echo('Skipping syncing as the created storage is local.')
-        elif not storage.is_writeable:
-            click.echo('Skipping syncing as the created storage is read-only.')
-        else:
-            try:
-                source_storage = obj.client.get_local_storage(
-                    container_obj, excluded_storage=storage.backend_id)
-            except WildlandError:
-                try:
-                    source_storage = obj.client.get_remote_storage(
-                        container_obj, excluded_storage=storage.backend_id)
-                except WildlandError:
-                    logger.debug('No appropriate source storage found for syncing with %s',
-                                 str(storage))
-                    return
-
-            logger.debug("sync: {%s} -> {%s}", source_storage, storage)
-
-            response = obj.client.do_sync(container_obj.uuid, container_obj.sync_id,
-                                          source_storage.params, storage.params,
-                                          one_shot=True, unidir=True,
-                                          wait_if_already_running=True)
-            logger.debug(response)
-            msg, success = obj.client.wait_for_sync(container_obj.sync_id, stop_on_finish=True)
-            click.echo(msg)
-            if not success:
-                raise WildlandError(f'Failed to sync storage for container {container_obj.uuid} '
-                    f'(source: {source_storage}, target: {storage})')
+    sync_result = obj.wlcore.storage_sync_container(storage_id, container_id)
+    if not sync_result.success:
+        raise CliError(str(sync_result))
 
 
 @storage_.command('list', short_help='list storages', alias=['ls'])
@@ -208,10 +166,10 @@ def list_(obj: ContextObj):
     """
     Display known storages.
     """
-    storage_result, storages = obj.wlcore.storage_list()
-    container_result, containers = obj.wlcore.container_list()
-    if not storage_result.success or not container_result.success:
-        raise CliError(f'{str(storage_result) + str(container_result)}')
+    storages_result, storages = obj.wlcore.storage_list()
+    containers_result, containers = obj.wlcore.container_list()
+    if not storages_result.success or not containers_result.success:
+        raise CliError(f'{str(storages_result) + str(containers_result)}')
 
     __print_storages_info(storages)
     __print_containers_info(containers)
@@ -321,25 +279,21 @@ def create_from_template(obj: ContextObj, cont, storage_template: str, local_dir
     """
     Setup storage for a container from a storage template.
     """
-    container_result, container = obj.wlcore.object_get(WLObjectType.CONTAINER, cont)
-    if not container_result.success or not container:
+    container_result, wl_container = obj.wlcore.object_get(WLObjectType.CONTAINER, cont)
+    if not container_result.success or not wl_container:
         raise CliError(f'Container not found: {str(container_result)}')
 
+    container_id = wl_container.id
     result = obj.wlcore.storage_create_from_template(
-        storage_template, container.id, local_dir
+        storage_template, container_id, local_dir
     )
     if not result.success:
         raise CliError(str(result))
 
-    # TODO replace by obj.wlcore.container_publish(container_id)
-    #  when https://gitlab.com/wildland/wildland-client/-/issues/699 is ready
     if not no_publish:
-        try:
-            container_obj = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, cont)
-            user = obj.client.load_object_from_name(WildlandObject.Type.USER, container.owner)
-            Publisher(obj.client, user).republish(container_obj)
-        except WildlandError as ex:
-            raise WildlandError(f"Failed to republish container: {ex}") from ex
+        publish_result = obj.wlcore.container_publish(container_id)
+        if not publish_result.success:
+            raise CliError(str(publish_result))
 
 
 @storage_.command(short_help='modify storage manifest')

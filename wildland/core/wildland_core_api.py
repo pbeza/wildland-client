@@ -25,6 +25,7 @@ from enum import Enum
 from .wildland_result import WildlandResult
 from .wildland_objects_api import WLObject, WLTemplateFile, WLBridge, WLObjectType, WLUser, \
     WLStorageBackend, WLStorage, WLContainer
+from ..container import Container
 from ..storage import Storage
 
 
@@ -534,6 +535,22 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         :param path: path to file (relative to Wildland mount root)
         :return: tuple of WildlandResult and list of tuples of WLContainer, WLStorage that contain
         the provided path
+        """
+
+    @abc.abstractmethod
+    def container_remount(self, container_id: str) -> WildlandResult:
+        """
+        Remount container
+        :param container_id: id of the container to be found (user_id:/.uuid/container_uuid)
+        :return: WildlandResult
+        """
+
+    @abc.abstractmethod
+    def container_find_by_id(self, container_id: str) -> Tuple[WildlandResult, Optional[Container]]:
+        """
+        Find container by id.
+        :param container_id: id of the container to be found (user_id:/.uuid/container_uuid)
+        :return: tuple of WildlandResult and, if successful, the WLContainer
         """
 
     # STORAGES
