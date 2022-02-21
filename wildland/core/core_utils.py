@@ -20,7 +20,7 @@
 Set of convenience utils for WLCore implementations
 """
 from copy import deepcopy
-from typing import Optional
+from typing import Optional, Tuple
 from pathlib import PurePosixPath
 
 from wildland.exc import WildlandError
@@ -191,3 +191,14 @@ def remove_suffix(s: str, suffix: str) -> str:
     if suffix and s.endswith(suffix):
         return s[:-len(suffix)]
     return s
+
+
+def parse_wl_storage_id(storage_id: str) -> Tuple[str, str, str]:
+    """
+    Split core storage ID into parts.
+    :param storage_id: storage ID in the format as in Wildland Core API
+    :return: tuple: (user id, container uuid path, backend id)
+    """
+    # user_id:/.uuid/container_uuid:/.uuid/backend_uuid
+    parts = storage_id.split(':')
+    return parts[0], parts[1], parts[2].split('/')[-1]

@@ -1,6 +1,6 @@
 # Wildland Project
 #
-# Copyright (C) 2021 Golem Foundation
+# Copyright (C) 2022 Golem Foundation
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,76 +21,19 @@ Public API for Wildland sync operations.
 """
 import abc
 import threading
-from dataclasses import dataclass, field
-from enum import Enum
+from dataclasses import dataclass
 from queue import Queue
 from typing import Any, List, Dict, Tuple, Optional, Callable, Set
 
+from wildland.client import Client
+from wildland.core.core_utils import parse_wl_storage_id
 from wildland.core.sync_internal import WlSyncCommand, WlSyncCommandType
-from wildland.core.wildland_result import WildlandResult, WLErrorType
+from wildland.core.sync_types import SyncApiEvent, SyncApiEventType, SyncApiFileState
+from wildland.core.wildland_result import WildlandResult, WLErrorType, wildland_result
 from wildland.log import get_logger
-from wildland.storage_sync.base import SyncState, SyncConflict, SyncEvent, SyncStateEvent, \
-    SyncProgressEvent, SyncConflictEvent, SyncErrorEvent
+from wildland.storage_sync.base import SyncState, SyncConflict
 
 logger = get_logger('sync-api')
-
-
-# TODO merge SyncEvent and SyncApiEvent (after removing current sync daemon that needs SyncEvent)
-class SyncApiEventType(Enum):
-    """
-    Type of sync event.
-    """
-    STATE = 1  # syncer state change
-    PROGRESS = 2  # sync progress
-    CONFLICT = 3  # sync conflict
-    ERROR = 4  # sync error
-
-    @staticmethod
-    def from_raw(raw: SyncEvent) -> 'SyncApiEventType':
-        """
-        Get SyncApiEventType from low-level SyncEvent.
-        """
-        if raw is SyncStateEvent:
-            return SyncApiEventType.STATE
-        if raw is SyncProgressEvent:
-            return SyncApiEventType.PROGRESS
-        if raw is SyncConflictEvent:
-            return SyncApiEventType.CONFLICT
-        if raw is SyncErrorEvent:
-            return SyncApiEventType.ERROR
-        raise ValueError
-
-
-@dataclass(frozen=True)
-class SyncApiEvent:
-    """
-    Class representing a sync event.
-    """
-    container_id: str
-    type: SyncApiEventType
-    value: Any  # TODO?
-
-    @staticmethod
-    def from_raw(raw: SyncEvent) -> 'SyncApiEvent':
-        """
-        Convert SyncEvent to SyncApiEvent.
-        """
-        assert raw.job_id, f'No job_id in event {raw}'
-        return SyncApiEvent(container_id=raw.job_id,
-                            type=SyncApiEventType.from_raw(raw),
-                            value=raw.value)
-
-
-@dataclass
-class SyncApiFileState:
-    """
-    Sync state of a single file.
-    """
-    path: str
-    size: int
-    synced: bool = True
-    errors: List[SyncApiEvent] = field(default_factory=list)
-    progress: int = 0
 
 
 class WildlandSync(metaclass=abc.ABCMeta):
@@ -106,8 +49,9 @@ class WildlandSync(metaclass=abc.ABCMeta):
         ready: threading.Event
         response: Optional[Tuple[WildlandResult, Any]] = None
 
-    def __init__(self):
+    def __init__(self, client: Client):
         self.cmd_id: int = 0
+        self.client = client
 
         # Requests that await processing.
         # Subclass implementations should asynchronously send requests with IDs in self.to_send
@@ -149,12 +93,12 @@ class WildlandSync(metaclass=abc.ABCMeta):
             self.requests[cmd.id] = request
             self.to_send.put(cmd.id)
 
-        logger.debug('waiting for %s', request)
+        logger.debug('waiting for %d', request.cmd.id)
         request.ready.wait()
 
         assert request.response is not None
 
-        logger.debug('executed %s', request)
+        logger.debug('executed %d', request.cmd.id)
         with self.requests_lock:
             self.requests.pop(cmd.id)
 
@@ -174,29 +118,48 @@ class WildlandSync(metaclass=abc.ABCMeta):
         :return: WildlandResult showing if it was successful.
         """
 
-    def start_container_sync(self, container_id: str, continuous: bool, unidirectional: bool,
-                             source_storage_id: str, target_storage_id: str) -> WildlandResult:
+    @wildland_result()
+    def start_container_sync(self, container_id: str, source_storage_id: str,
+                             target_storage_id: str, continuous: bool, unidirectional: bool) \
+            -> WildlandResult:
         """
         Start syncing given container. Asynchronous: sync job is started in the background
         and this method returns immediately.
-        :param container_id: container_id in the format as in Wildland Core API.
+        :param source_storage_id: storage id, in the format as in Wildland Core API, of the source
+        storage (order of source/target is relevant only for unidirectional sync, which transfers
+        data from source to target)
+        :param target_storage_id: storage id, in the format as in Wildland Core API, of the target
+        storage (order of source/target is relevant only for unidirectional sync, which transfers
+        data from source to target)
+        :param container_id: container id in the format as in Wildland Core API.
         :param continuous: should sync be continuous or one-shot
         :param unidirectional: should sync go both ways or one-way only
-        :param source_storage_id: storage_id, in the format as in Wildland Core API, of the source
-        storage (order of source/target is relevant only for unidirectional sync, which transfers
-        data from source to target)
-        :param target_storage_id: storage_id, in the format as in Wildland Core API, of the target
-        storage (order of source/target is relevant only for unidirectional sync, which transfers
-        data from source to target)
         :return: WildlandResult showing if it was successful.
         """
+        user1_id, container1_uuid, backend1_uuid = parse_wl_storage_id(source_storage_id)
+        user2_id, container2_uuid, backend2_uuid = parse_wl_storage_id(target_storage_id)
+
+        assert user1_id == user2_id, 'Trying to sync between storages of different users'
+        assert container1_uuid == container2_uuid, \
+            'Trying to sync between storages of different containers'
+
+        try:
+            container = next(self.client.load_containers_from(f'{user1_id}:{container1_uuid}:'))
+        except StopIteration:
+            return WildlandResult.error(WLErrorType.CONTAINER_NOT_FOUND, offender_id=container_id)
+
+        logger.debug('container: %s, storages %s/%s, cont %s, uni %s', container, backend1_uuid,
+                     backend2_uuid, continuous, unidirectional)
+
+        source = self.client.get_local_storage(container, backend1_uuid)
+        target = self.client.get_remote_storage(container, backend2_uuid)
 
         cmd = self._new_cmd(WlSyncCommandType.JOB_START,
                             container_id=container_id,
+                            source_params=source.params,
+                            target_params=target.params,
                             continuous=continuous,
-                            unidirectional=unidirectional,
-                            source_storage_id=source_storage_id,
-                            target_storage_id=target_storage_id)
+                            unidirectional=unidirectional)
         result, _ = self._execute_cmd(cmd)  # this command only returns success status
         return result
 
@@ -282,7 +245,7 @@ class WildlandSync(metaclass=abc.ABCMeta):
         return WildlandResult.OK()
 
     def get_container_sync_state(self, container_id: str) -> \
-            Tuple[WildlandResult, SyncState]:
+            Tuple[WildlandResult, Optional[SyncState]]:
         """
         Get current state of sync of the given container.
         :param container_id: container_id in the format as in Wildland Core API.
@@ -320,7 +283,7 @@ class WildlandSync(metaclass=abc.ABCMeta):
         return result, data
 
     def get_file_sync_state(self, container_id: str, path: str) -> \
-            Tuple[WildlandResult, SyncApiFileState]:
+            Tuple[WildlandResult, Optional[SyncApiFileState]]:
         """
         Get sync state of a given file.
         :param container_id: container_id in the format as in Wildland Core API.

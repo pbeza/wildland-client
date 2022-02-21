@@ -1,6 +1,6 @@
 # Wildland Project
 #
-# Copyright (C) 2021 Golem Foundation
+# Copyright (C) 2022 Golem Foundation
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,11 +20,12 @@
 Internal API for Wildland sync operations: sync manager.
 """
 import abc
+import logging
 import threading
 import time
 from dataclasses import dataclass
 from queue import Queue, Empty
-from typing import Callable, Dict, Any, Tuple, Optional, Set
+from typing import Callable, Dict, Any, Tuple, Optional, Set, List
 
 from wildland.core.sync_internal import WlSyncCommand, WlSyncCommandType, POLL_TIMEOUT
 from wildland.core.wildland_result import WildlandResult, wildland_result, WLError, WLErrorType
@@ -67,7 +68,11 @@ class WlSyncManager(metaclass=abc.ABCMeta):
         Subclasses are free to include additional data if needed.
         """
         syncer: Optional[BaseSyncer] = None
-        stop_event = threading.Event()
+        stop_event: Optional[threading.Event] = None
+
+        def __post_init__(self):
+            if self.stop_event is None:
+                self.stop_event = threading.Event()
 
     def __init__(self):
         self.active = False
@@ -128,8 +133,10 @@ class WlSyncManager(metaclass=abc.ABCMeta):
         """
         with self.responses_lock:
             queue = self.responses[client_id]
-            assert queue
-            queue.put((resp_id, response))
+            if queue is not None:
+                queue.put((resp_id, response))
+            else:
+                logger.warning('response %s for invalid client %d', response, client_id)
 
         return WildlandResult.OK()
 
@@ -153,21 +160,25 @@ class WlSyncManager(metaclass=abc.ABCMeta):
                 return result
 
             if request is None:
-                time.sleep(POLL_TIMEOUT)
+                time.sleep(POLL_TIMEOUT)  # TODO no sleeping
                 continue
 
-            logger.debug('processing %s', request)
+            logger.debug('processing %s (%d/%d)', request, request.client_id, request.cmd.id)
             try:
                 cmd_result, response = request.cmd.handle(self, request.client_id)
                 if not cmd_result.success:
-                    logger.warning('request %s failed: %s', request, cmd_result)
+                    logger.warning('request %d/%d failed: %s', request.client_id, request.cmd.id,
+                                   cmd_result)
 
                 result = self.queue_response(request.client_id, request.cmd.id,
                                              (cmd_result, response))
                 if not result.success:
                     return result
-            except Exception:
-                logger.exception('WTF')
+            except Exception as ex:
+                logger.exception('main loop exception:')
+                result = WildlandResult()
+                result.errors.append(WLError.from_exception(ex))
+                return result
 
             # responses (and events) should be sent to clients asynchronously by subclass
             # implementations from self.responses
@@ -205,59 +216,54 @@ class WlSyncManager(metaclass=abc.ABCMeta):
             if self.event_match(event, filter_data):
                 with self.responses_lock:
                     queue = self.responses[filter_data.client_id]
-                    assert queue
-                    queue.put((handler_id, event))
+                    if queue is not None:
+                        queue.put((handler_id, event))
+                    else:
+                        logger.warning('no response queue for client %d', filter_data.client_id)
 
     # TODO decorate handlers here in the base class instead of the subclasses
     # needs rework of the decorator to support that
 
-    # TODO: allow returning just WildlandResult if no data sent back?
-    # TODO these shouldn't be abstract, mostly
-
     @abc.abstractmethod
-    def cmd_job_start(self, container_id: str, source_storage_id: str, target_storage_id: str,
-                      continuous: bool, unidirectional: bool) \
-            -> Tuple[WildlandResult, None]:
+    def cmd_job_start(self, container_id: str, source_params: dict, target_params: dict,
+                      continuous: bool, unidirectional: bool) -> WildlandResult:
         """
         Handler for the JOB_START command. Starts a sync job in the background and returns
         immediately.
         """
 
     @abc.abstractmethod
-    def cmd_job_stop(self, container_id: str, force: bool) -> Tuple[WildlandResult, None]:
+    def cmd_job_stop(self, container_id: str, force: bool) -> WildlandResult:
         """
         Handler for the JOB_STOP command. Stops a sync job.
         If force is True, doesn't wait for the job to finish.
         """
 
     @WlSyncCommand.handler(WlSyncCommandType.JOB_PAUSE)
-    def cmd_job_pause(self, container_id: str) -> Tuple[WildlandResult, None]:
+    def cmd_job_pause(self, container_id: str) -> WildlandResult:
         """
         Handler for the JOB_PAUSE command. Pauses a sync job.
         """
-        logger.debug('pause handler: %s', container_id)
+        # TODO need base syncer changes
         return WildlandResult.error(WLErrorType.NOT_IMPLEMENTED,
-                                    diagnostic_info=str(container_id)), None
-        # raise NotImplementedError  # TODO need base syncer changes
+                                    offender_id=str(container_id))
 
     @WlSyncCommand.handler(WlSyncCommandType.JOB_RESUME)
-    def cmd_job_resume(self, container_id: str) -> Tuple[WildlandResult, None]:
+    def cmd_job_resume(self, container_id: str) -> WildlandResult:
         """
         Handler for the JOB_RESUME command. Resumes a sync job.
         """
-        return WildlandResult.error(WLErrorType.NOT_IMPLEMENTED), None
-        # raise NotImplementedError  # TODO need base syncer changes
-
-    # TODO handlers returned data should be Optional if failed
+        # TODO need base syncer changes
+        return WildlandResult.error(WLErrorType.NOT_IMPLEMENTED)
 
     @WlSyncCommand.handler(WlSyncCommandType.JOB_STATE)
-    def cmd_job_state(self, container_id: str) -> Tuple[WildlandResult, SyncState]:
+    def cmd_job_state(self, container_id: str) -> Tuple[WildlandResult, Optional[SyncState]]:
         """
         Handler for the JOB_STATE command. Returns job's overall state.
         """
         if not self.active:
             return WildlandResult.error(WLErrorType.SYNC_MANAGER_NOT_ACTIVE,
-                                        diagnostic_info=container_id), SyncState.STOPPED
+                                        diagnostic_info=container_id), None
 
         with self.jobs_lock:
             try:
@@ -266,24 +272,24 @@ class WlSyncManager(metaclass=abc.ABCMeta):
                 return WildlandResult.OK(), job.syncer.state
             except KeyError:
                 return WildlandResult.error(WLErrorType.SYNC_FOR_CONTAINER_NOT_RUNNING,
-                                            diagnostic_info=container_id), SyncState.STOPPED
+                                            diagnostic_info=container_id), None
 
     @WlSyncCommand.handler(WlSyncCommandType.JOB_DETAILS)
-    def cmd_job_details(self, container_id: str) -> Tuple[WildlandResult, Tuple[SyncApiFileState]]:
+    def cmd_job_details(self, container_id: str) -> Tuple[WildlandResult, List[SyncApiFileState]]:
         """
         Handler for the JOB_DETAILS command. Returns state of all files in the job.
         """
-        return WildlandResult.error(WLErrorType.NOT_IMPLEMENTED), ()
-        # raise NotImplementedError  # TODO need base syncer changes
+        # TODO need base syncer changes
+        return WildlandResult.error(WLErrorType.NOT_IMPLEMENTED), []
 
     @WlSyncCommand.handler(WlSyncCommandType.JOB_FILE_DETAILS)
     def cmd_job_file_details(self, container_id: str, path: str) \
-            -> Tuple[WildlandResult, SyncApiFileState]:
+            -> Tuple[WildlandResult, Optional[SyncApiFileState]]:
         """
         Handler for the JOB_FILE_DETAILS command. Returns state of a particular file in the job.
         """
-        return WildlandResult.error(WLErrorType.NOT_IMPLEMENTED), ()
-        # raise NotImplementedError  # TODO need base syncer changes
+        # TODO need base syncer changes
+        return WildlandResult.error(WLErrorType.NOT_IMPLEMENTED), None
 
     @WlSyncCommand.handler(WlSyncCommandType.JOB_SET_CALLBACK, client_id=True)
     def cmd_job_set_callback(self, client_id: int, container_id: Optional[str],
@@ -304,7 +310,7 @@ class WlSyncManager(metaclass=abc.ABCMeta):
         return WildlandResult.OK(), handler_id
 
     @WlSyncCommand.handler(WlSyncCommandType.JOB_CLEAR_CALLBACK)
-    def cmd_job_clear_callback(self, callback_id: int) -> Tuple[WildlandResult, None]:
+    def cmd_job_clear_callback(self, callback_id: int) -> WildlandResult:
         """
         Handler for the JOB_CLEAR_CALLBACK command. Manager should stop sending events matching
         passed callback ID.
@@ -312,28 +318,28 @@ class WlSyncManager(metaclass=abc.ABCMeta):
         with self.event_lock:
             if callback_id not in self.event_filters.keys():
                 return WildlandResult.error(WLErrorType.SYNC_CALLBACK_NOT_FOUND,
-                                            diagnostic_info=str(callback_id)), None
+                                            diagnostic_info=str(callback_id))
             self.event_filters.pop(callback_id)
 
-        return WildlandResult.OK(), None
+        return WildlandResult.OK()
 
     @WlSyncCommand.handler(WlSyncCommandType.FORCE_FILE)
     def cmd_force_file(self, container_id: str, path: str, source_storage_id: str,
-                       target_storage_id: str) -> Tuple[WildlandResult, None]:
+                       target_storage_id: str) -> WildlandResult:
         """
         Handler for the FORCE_FILE command. Force sync one file between storages.
         """
-        return WildlandResult.error(WLErrorType.NOT_IMPLEMENTED), None
-        # raise NotImplementedError  # TODO
+        # TODO
+        return WildlandResult.error(WLErrorType.NOT_IMPLEMENTED)
 
     @WlSyncCommand.handler(WlSyncCommandType.SHUTDOWN)
-    def cmd_shutdown(self) -> Tuple[WildlandResult, None]:
+    def cmd_shutdown(self) -> WildlandResult:
         """
         Handler for the SHUTDOWN command. Stops the manager and all sync jobs.
         """
-        return self.stop(), None
+        return self.stop()
 
-    def _job_worker(self, job_id: str, source_storage_id: str, target_storage_id: str,
+    def _job_worker(self, job_id: str, source_params: dict, target_params: dict,
                     continuous: bool, unidirectional: bool,
                     event_handler: Callable[[SyncEvent], None],
                     stop_event: threading.Event) -> WildlandResult:
@@ -341,12 +347,8 @@ class WlSyncManager(metaclass=abc.ABCMeta):
         Internal method that hosts a sync job. Normally runs in a background thread.
         Returns only after the job is finished/stopped.
         :param job_id: ID of the sync job (normally container ID)
-        :param source_storage_id: storage_id, in the format as in Wildland Core API, of the source
-                                  storage (order of source/target is relevant only for
-                                  unidirectional sync, which transfers data from source to target)
-        :param target_storage_id: storage_id, in the format as in Wildland Core API, of the target
-                                  storage (order of source/target is relevant only for
-                                  unidirectional sync, which transfers data from source to target)
+        :param source_params: backend parameters of the source storage
+        :param target_params: backend parameters of the target storage
         :param continuous: should sync be continuous or one-shot
         :param unidirectional: should sync go both ways or one-way only
         :param event_handler: callback that receives all sync events from this job
@@ -358,8 +360,6 @@ class WlSyncManager(metaclass=abc.ABCMeta):
         syncer = None
 
         try:
-            source_params = _params_from_wl_storage_id(source_storage_id)  # TODO
-            target_params = _params_from_wl_storage_id(target_storage_id)
             source_backend = StorageBackend.from_params(source_params)
             target_backend = StorageBackend.from_params(target_params)
 

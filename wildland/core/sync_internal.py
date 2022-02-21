@@ -1,6 +1,6 @@
 # Wildland Project
 #
-# Copyright (C) 2021 Golem Foundation
+# Copyright (C) 2022 Golem Foundation
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,34 +20,45 @@
 Internal API for Wildland sync operations (sync commands).
 """
 from dataclasses import dataclass
-from enum import Enum, auto
-from typing import Callable, Dict, Any, get_type_hints, get_origin, get_args, Tuple
+from enum import Enum
+from typing import Callable, Any, get_type_hints, Tuple, Optional, Set, Union, List
 
+from wildland.core.sync_types import SyncApiFileState, SyncApiEventType
 from wildland.core.wildland_result import WildlandResult
+from wildland.storage_sync.base import SyncState
 
 POLL_TIMEOUT = 0.00001  # timeout (seconds) for connection polling
 
 
 class WlSyncCommandType(Enum):
     """
-    Type of sync command.
+    Type of sync command. Includes type annotation for its handler.
+    The annotation should be in the format of {'param_name': type, 'name': type, ...}
+    Param name 'return' signifies return type.
+    Handlers are expected to return WildlandResult to indicate success. If more data needs
+    to be returned, it should be contained in a tuple with WildlandResult.
     """
-    # TODO: set expected handler signature here?
-    JOB_START = auto()  # cid, s1: params, s2: params, cont: bool, uni: bool
-    JOB_STOP = auto()  # cid
-    JOB_PAUSE = auto()  # cid
-    JOB_RESUME = auto()  # cid
-    JOB_STATE = auto()  # cid -> SyncState
-    JOB_DETAILS = auto()  # cid -> tuple(file state)
-    JOB_FILE_DETAILS = auto()  # cid, path: str -> file state
-    JOB_SET_CALLBACK = auto()  # cid, filters -> handler id
-    JOB_CLEAR_CALLBACK = auto()  # handler id
-    FORCE_FILE = auto()  # cid, path, s1, s2 / synchronous?
-    SHUTDOWN = auto()  # - / stop processing
+    # note: auto() values are not picklable
+    JOB_START = 1, {'container_id': str, 'source_params': dict, 'target_params': dict,
+                    'continuous': bool, 'unidirectional': bool, 'return': WildlandResult}
+    JOB_STOP = 2, {'container_id': str, 'force': bool, 'return': WildlandResult}
+    JOB_PAUSE = 3, {'container_id': str, 'return': WildlandResult}
+    JOB_RESUME = 4, {'container_id': str, 'return': WildlandResult}
+    JOB_STATE = 5, {'container_id': str, 'return': Tuple[WildlandResult, Optional[SyncState]]}
+    JOB_DETAILS = 6, {'container_id': str,
+                      'return': Tuple[WildlandResult, List[SyncApiFileState]]}
+    JOB_FILE_DETAILS = 7, {'container_id': str, 'path': str,
+                           'return': Tuple[WildlandResult, Optional[SyncApiFileState]]}
+    JOB_SET_CALLBACK = 8, {'container_id': Optional[str], 'filters': Set[SyncApiEventType],
+                           'return': Tuple[WildlandResult, Optional[int]]}
+    JOB_CLEAR_CALLBACK = 9, {'callback_id': int, 'return': WildlandResult}
+    FORCE_FILE = 10, {'container_id': str, 'path': str, 'source_storage_id': str,
+                      'target_storage_id': str, 'return': WildlandResult}
+    SHUTDOWN = 11, {'return': WildlandResult}
 
-    handler: Callable  # handler for particular command type
-    sig: Dict[str, Any]  # signature of the handler (params/types)
-    client_id: bool  # whether the handler requires client_id param
+    # handler for particular command type
+    handler: Callable[..., Union[WildlandResult, Tuple[WildlandResult, Any]]]
+    client_id: bool
 
     def __repr__(self):
         return self.__str__()
@@ -70,49 +81,43 @@ class WlSyncCommand:
         """
         Create a command instance from keyword arguments.
         """
-        # TODO: validate once, not on every instantiation. possible?
-        # TODO: this fails in client now, no handlers there
-        # for arg in cmd.sig.keys():
-        #     assert arg in kwargs, f'Missing argument {arg} for command {cmd}'
-        #     assert isinstance(kwargs[arg], cmd.sig[arg]), \
-        #         f'Invalid argument {arg} type for command {cmd}'
+        # TODO: validate once, not on every instantiation. pylint plugin?
+        for name, sig in cmd.value[1].items():
+            if name == 'return':
+                continue
+
+            assert name in kwargs, f'Missing argument {name} for command {cmd}'
+
+            # TODO Subscripted generics cannot be used with class and instance checks
+            #assert isinstance(kwargs[name], sig), \
+            #    f'Invalid argument {name} type for command {cmd}'
+
         return WlSyncCommand(cmd_id, cmd, kwargs)
 
     @staticmethod
     def handler(cmd: WlSyncCommandType, client_id: bool = False):
         """
         Decorator for command handlers. Required one handler per WlSyncCommandType.
-        Handlers can have different parameter list depending on command type.
+        Handler's signature must match one expected in the WlSyncCommandType definition.
         :param cmd: command type this handler applies to
-        :param client_id: if true, the handler is expected take a client_id parameter (before other
-                          keyword parameters)
-        :return: A tuple (WildlandResult, Any). First element indicates success,
-                 second is the data returned (can be None).
+        :param client_id: if True, handler should accept a client_id:int parameter that will be
+                          supplied by the manager.
         """
         def _wrapper(func: Callable):
             assert not hasattr(cmd, 'handler'), f'Duplicate handlers for {cmd}'
             sig = get_type_hints(func)
-            assert 'return' in sig, f'Return type not specified in handler for {cmd}'
-            ret = sig['return']
-            assert_msg = f'Invalid return type of handler for {cmd}'
-            assert get_origin(ret) == tuple, assert_msg
-            args = get_args(ret)
-            assert len(args) == 2, assert_msg
-            assert args[0] == WildlandResult, assert_msg
+
+            if client_id:
+                assert 'client_id' in sig.keys(), f'Invalid handler for {cmd} {cmd.client_id}'
+                assert sig['client_id'] == int, f'Invalid handler for {cmd}'
+                sig.pop('client_id')
+
+            assert sig == cmd.value[1], f'Invalid handler for {cmd}'
 
             # see https://github.com/python/mypy/issues/708
             cmd.handler = func  # type: ignore
+            cmd.client_id = client_id
 
-            sig.pop('return')  # not needed any more
-
-            if client_id:
-                assert 'client_id' in sig, f'client_id param missing in handler for {cmd}'
-                cmd.client_id = True
-                sig.pop('client_id')  # this param is only for server side
-            else:
-                cmd.client_id = False
-
-            cmd.sig = sig
             return func
 
         return _wrapper
@@ -124,17 +129,22 @@ class WlSyncCommand:
         """
         for cmd in WlSyncCommandType:
             assert hasattr(cmd, 'handler'), f'Handler not found for {cmd}'
-            assert hasattr(cmd, 'sig'), f'Handler signature not found for {cmd}'
-            assert isinstance(cmd.sig, Dict)
 
-    def handle(self, instance: object, client_id: int) -> Tuple[WildlandResult, Any]:
+    def handle(self, instance: object, client_id: int = 0) -> Tuple[WildlandResult, Any]:
         """
         Call the handler assigned for this command type.
         :param instance: WlSyncManager instance that contains handler methods.
-        :param client_id: ID of the client that requested this command.
+        :param client_id: client ID of the requestor.
         :return: WildlandResult and data returned by the handler, data can be None.
         """
-        if self.type.client_id:
-            return self.type.handler(instance, client_id, **self.params)
 
-        return self.type.handler(instance, **self.params)
+        if self.type.client_id:
+            self.params['client_id'] = client_id
+
+        ret = self.type.handler(instance, **self.params)
+
+        if isinstance(ret, WildlandResult):
+            return ret, None
+
+        assert isinstance(ret, tuple)
+        return ret
