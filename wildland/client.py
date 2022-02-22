@@ -925,13 +925,13 @@ class Client:
                         container: Container,
                         storages: List[Storage],
                         user_paths: Iterable[Iterable[PurePosixPath]],
-                        force_remount: bool = False):
+                        force_remount: bool = False) -> Tuple[List[Storage], List[int]]:
         """
         Return storages to remount and storage IDs to unmount when remounting the container.
         """
         logger.debug('Prepare remount')
-        storages_to_remount = []
-        storages_to_unmount = []
+        storages_to_remount: List[Storage] = []
+        storages_to_unmount: List[int] = []
 
         for path in self.fs_client.get_orphaned_container_storage_paths(container, storages):
             storage_and_pseudo_ids = self.find_storage_and_pseudomanifest_storage_ids(path)
@@ -950,10 +950,9 @@ class Client:
 
         return storages_to_remount, storages_to_unmount
 
-    def find_storage_and_pseudomanifest_storage_ids(self, path):
+    def find_storage_and_pseudomanifest_storage_ids(self, path: PurePosixPath) -> Tuple[int, int]:
         """
-        Find first storage ID for a given mount path. ``None` is returned if the given path is not
-        related to any storage.
+        Find first storage ID for a given mount path
         """
         storage_id = self.fs_client.find_storage_id_by_path(path)
 

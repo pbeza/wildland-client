@@ -34,7 +34,6 @@ import dateutil.parser
 import requests
 import requests.auth
 from lxml import etree
-import click
 
 from wildland.storage_backends.base import StorageBackend, Attr, StorageParam
 from wildland.storage_backends.buffered import FullBufferedFile, PagedFile
@@ -175,7 +174,7 @@ class WebdavStorageBackend(FileChildrenMixin, CachedStorageMixin, StorageBackend
 
     @classmethod
     def validate_and_parse_params(cls, params):
-        data = super(WebdavStorageBackend, cls).cli_create(params)
+        data = super(WebdavStorageBackend, cls).validate_and_parse_params(params)
         base_path = urlparse(params['url']).path
         url = params['url']
         if urlparse(url).path != '/' and urlparse(url).path != '':
@@ -192,35 +191,6 @@ class WebdavStorageBackend(FileChildrenMixin, CachedStorageMixin, StorageBackend
 
         cls.SCHEMA.validate(data)
         return data
-
-    @classmethod
-    def cli_options(cls):
-        opts = super(WebdavStorageBackend, cls).cli_options()
-        opts.extend([
-            click.Option(['--url'], metavar='URL', required=True),
-            click.Option(['--login'], metavar='LOGIN', required=True),
-            click.Option(['--password'], metavar='PASSWORD', required=True,
-                         help='Password (omit for a password prompt)',
-                         prompt=True, hide_input=True),
-        ])
-        return opts
-
-    @classmethod
-    def cli_create(cls, data):
-        result = super(WebdavStorageBackend, cls).cli_create(data)
-        base_path = urlparse(data['url']).path
-        url = data['url']
-        if urlparse(url).path!='/' and urlparse(url).path!='':
-            url=urlunparse(urlparse(url)._replace(path='/'))
-        result.update({
-            'url': url,
-            'base_path': base_path,
-            'credentials': {
-                'login': data['login'],
-                'password': data['password'],
-            }
-        })
-        return result
 
     def info_all(self) -> Iterable[Tuple[PurePosixPath, Attr]]:
         path = PurePosixPath('.')

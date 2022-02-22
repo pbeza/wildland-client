@@ -32,7 +32,6 @@ from urllib.parse import urljoin, urlparse, quote
 import errno
 from io import BytesIO
 
-import click
 from lxml import etree
 import requests
 
@@ -132,22 +131,6 @@ class HttpStorageBackend(FileChildrenMixin, DirectoryCachedStorageMixin, Storage
 
         cls.SCHEMA.validate(data)
         return data
-
-    @classmethod
-    def cli_options(cls):
-        opts = super(HttpStorageBackend, cls).cli_options()
-        opts.extend([
-            click.Option(['--url'], metavar='URL', required=True),
-        ])
-        return opts
-
-    @classmethod
-    def cli_create(cls, data):
-        result = super(HttpStorageBackend, cls).cli_create(data)
-        result.update({
-            'url': data['url'],
-        })
-        return result
 
     def make_url(self, path: PurePosixPath, is_dir=False) -> str:
         """

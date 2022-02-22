@@ -30,8 +30,6 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Iterable, Iterator, List, Set, Tuple, FrozenSet, Dict, Any
 
-import click
-
 from wildland.storage_backends.base import StorageBackend, File, Attr, StorageParam, \
     StorageParamType
 from wildland.manifest.schema import Schema
@@ -128,36 +126,6 @@ class CategorizationProxyStorageBackend(StorageBackend):
 
         cls.SCHEMA.validate(data)
         return data
-
-    @classmethod
-    def cli_options(cls):
-        return [
-            click.Option(['--reference-container-url'],
-                         metavar='URL',
-                         help='URL for inner container manifest.',
-                         required=True),
-            click.Option(['--with-unclassified-category'],
-                         is_flag=True,
-                         default=False,
-                         required=False,
-                         help='Create unclassified directory holding all of the untagged '
-                              'directories.'),
-            click.Option(['--unclassified-category-path'],
-                         metavar='PATH',
-                         default='/unclassified',
-                         required=False,
-                         help='Path to directory where unclassified directories are mounted '
-                              '(`/unclassified` by default). This option is ignored unless '
-                              '`--with-unclassified-category` is set.'),
-        ]
-
-    @classmethod
-    def cli_create(cls, data):
-        return {
-            'reference-container': data['reference_container_url'],
-            'with-unclassified-category': data['with_unclassified_category'],
-            'unclassified-category-path': data['unclassified_category_path'],
-        }
 
     def mount(self) -> None:
         self.inner.request_mount()

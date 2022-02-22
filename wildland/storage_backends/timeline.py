@@ -31,8 +31,6 @@ from pathlib import PurePosixPath
 import errno
 import datetime
 
-import click
-
 from .base import StorageBackend, File, Attr, StorageParam
 from .cached import CachedStorageMixin
 from ..manifest.schema import Schema
@@ -84,22 +82,6 @@ class TimelineStorageBackend(CachedStorageMixin, StorageBackend):
         self.reference = self.params['reference-container']
         self.root = self.params.get('timeline-root', '/timeline')
         self.read_only = True
-
-    @classmethod
-    def cli_options(cls):
-        return [
-            click.Option(['--reference-container-url'], metavar='URL',
-                         help='URL for inner container manifest',
-                         required=True),
-            click.Option(['--timeline-root'], required=False,
-                         default='/timeline',
-                         help='The name of the root of the timeline tree'),
-        ]
-
-    @classmethod
-    def cli_create(cls, data):
-        return {'reference-container': data['reference_container_url'],
-                'timeline-root': data['timeline_root']}
 
     @classmethod
     def storage_options(cls) -> List[StorageParam]:

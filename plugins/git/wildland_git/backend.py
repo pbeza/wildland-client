@@ -31,7 +31,6 @@ from pathlib import PurePosixPath
 from typing import List, Union, Optional, Callable, Iterable, Tuple, Dict, Any
 
 import uuid
-import click
 
 from git import Blob, Tree
 from wildland.storage_backends.base import StorageBackend, Attr, StorageParam
@@ -109,35 +108,6 @@ class GitStorageBackend(DirectoryCachedStorageMixin, StorageBackend):
         directory
         """
         return str(uuid.uuid3(uuid.UUID(self.backend_id), str(self.params['url'])))
-
-    @classmethod
-    def cli_options(cls):
-        opts = super(GitStorageBackend, cls).cli_options()
-        opts.extend([
-            click.Option(
-                ['--url'], metavar='URL', required=True,
-                help='Git url leading to the repo',
-            ),
-            click.Option(
-                ['--username'], required=False,
-                help='The git username - used for authorization purposes'
-            ),
-            click.Option(
-                ['--password'], required=False,
-                help='The git password/personal access token. Necessary for authorization purposes'
-            )
-        ])
-        return opts
-
-    @classmethod
-    def cli_create(cls, data):
-        result = super(GitStorageBackend, cls).cli_create(data)
-        result.update({
-            'url': data['url'],
-            'username': data['username'],
-            'password': data['password']
-        })
-        return result
 
     @classmethod
     def storage_options(cls) -> List[StorageParam]:

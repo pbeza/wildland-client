@@ -131,6 +131,7 @@ def _do_create(
         raise CliError(str(wl_container_result))
     container_id = wl_container.id
 
+    data = backend.get_cli_user_input(data)
     data = {param_name_from_cli(key): data[key] for key in data}
 
     create_result, wl_storage = obj.wlcore.storage_create(

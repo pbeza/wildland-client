@@ -76,7 +76,7 @@ class SshFsBackend(LocalProxy):
                 "description": "A POSIX relative path to the directory on target server "
                                "that will be mounted as root.",
             },
-            "mount_opts": {
+            "mount-opts": {
                 "type": ["string"],
                 "description": "Additional mount options passed directly to sshfs command."
             },
@@ -159,12 +159,6 @@ class SshFsBackend(LocalProxy):
                          required=True,
                          description='host to mount'
                          ),
-            # FIXME can we keep option like passwd instead of pwprompt?
-            # StorageParam('passwd',
-            #              display_name='PASSWORD',
-            #              private=True,
-            #              description='password for authentication'
-            #              ),
             StorageParam('path',
                          default_value='./',
                          description="path on target host to mount"
@@ -189,26 +183,16 @@ class SshFsBackend(LocalProxy):
 
     @classmethod
     def validate_and_parse_params(cls, params):
-        # FIXME can we replace pwprompt with passwd option?
-        #  (in order to get rid of click dependence)
-        if params['ssh_identity'] and params['pwprompt']:
-            raise click.UsageError('pwprompt and ssh-identity are mutually exclusive')
-        # if params['ssh_identity'] and params['passwd']:
-        #     raise WildlandError('passwd and ssh-identity are mutually exclusive')
         data = {
-            'cmd': params['sshfs_command'],
-            'login': params['ssh_user'],
-            'mount_opts': params['mount_options'],
-            'host': params['host'],
-            'path': params['path'],
-            # 'passwd': params['passwd']
+            'cmd': params.get('sshfs_command'),
+            'login': params.get('ssh_user'),
+            'mount-opts': params.get('mount_options'),
+            'host': params.get('host'),
+            'path': params.get('path'),
+            'passwd': params.get('passwd')
         }
 
-        if params['pwprompt']:
-            data['passwd'] = click.prompt('SSH password',
-                                          hide_input=True)
-
-        if params['ssh_identity']:
+        if params.get('ssh_identity'):
             with open(params['ssh_identity']) as f:
                 data['identity'] = '\n'.join([l.rstrip() for l in f])
 
@@ -218,56 +202,12 @@ class SshFsBackend(LocalProxy):
         return data
 
     @classmethod
-    def cli_create(cls, data):
-        if data['ssh_identity'] and data['pwprompt']:
+    def get_cli_user_input(cls, params):
+        if params.get('ssh_identity') and params.get('pwprompt'):
             raise click.UsageError('pwprompt and ssh-identity are mutually exclusive')
-        conf = {
-            'cmd': data['sshfs_command'],
-            'login': data['ssh_user'],
-            'mount_opts': data['mount_options'],
-            'host': data['host'],
-            'path': data['path']
-        }
 
+        if params.get('pwprompt'):
+            params['passwd'] = click.prompt('SSH password',
+                                            hide_input=True)
 
-        if data['pwprompt']:
-            conf['passwd'] = click.prompt('SSH password',
-                                          hide_input=True)
-
-        if data['ssh_identity']:
-            with open(data['ssh_identity']) as f:
-                conf['identity'] = '\n'.join([l.rstrip() for l in f])
-        return conf
-
-    @classmethod
-    def cli_options(cls):
-        return [
-            click.Option(['--sshfs-command'],
-                         default='sshfs',
-                         metavar='CMD',
-                         required=True,
-                         help='command to mount sshfs filesystem',
-                         ),
-            click.Option(['--host'],
-                         required=True,
-                         metavar='HOST',
-                         help='host to mount',
-                         ),
-            click.Option(['--path'],
-                         help='path on target host to mount',
-                         default='./'),
-            click.Option(['--ssh-user'],
-                         metavar='USER',
-                         help='user name to log on to target host',
-                         default=getpass.getuser()
-                         ),
-            click.Option(['--ssh-identity'],
-                         metavar='PATH',
-                         help='path to private key file to use for authentication',
-                         ),
-            click.Option(['--pwprompt'], is_flag=True,
-                         help='prompt for password that will be used for authentication'),
-            click.Option(['--mount-options'],
-                         metavar='OPT1,OPT2,...',
-                         help='additional options to be passed to sshfs command directly'),
-        ]
+        return params

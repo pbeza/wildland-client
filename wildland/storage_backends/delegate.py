@@ -28,8 +28,6 @@ Delegate proxy backend
 from typing import Iterable, Optional, Tuple, List, Dict, Any
 from pathlib import PurePosixPath
 
-import click
-
 from .base import StorageBackend, File, Attr, StorageParam
 from ..cli.cli_exc import CliError
 from ..exc import WildlandError
@@ -113,31 +111,6 @@ class DelegateProxyStorageBackend(StorageBackend):
 
         cls.SCHEMA.validate(data)
         return data
-
-    @classmethod
-    def cli_options(cls):
-        return [
-            click.Option(['--reference-container-url'], metavar='URL',
-                         help='URL for reference container manifest',
-                         required=True),
-            click.Option(['--subdirectory'], metavar='SUBDIRECTORY',
-                         help='Subdirectory of reference-container to be exposed',
-                         required=False),
-        ]
-
-    @classmethod
-    def cli_create(cls, data):
-        if WildlandPath.match(data['reference_container_url']):
-            wl_path = WildlandPath.from_str(data['reference_container_url'])
-            if not wl_path.has_explicit_or_default_owner():
-                raise CliError("reference container URL must contain explicit or default owner")
-
-        opts = {
-            'reference-container': data['reference_container_url'],
-        }
-        if 'subdirectory' in data:
-            opts['subdirectory'] = data['subdirectory']
-        return opts
 
     def mount(self):
         self.reference.request_mount()

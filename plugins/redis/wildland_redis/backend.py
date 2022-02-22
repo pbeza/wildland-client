@@ -27,7 +27,6 @@ Redis storage backend
 from pathlib import PurePosixPath
 from typing import Iterable, Tuple, Union, List
 
-import click
 from redis import Redis
 
 from wildland.exc import WildlandError
@@ -206,41 +205,6 @@ class RedisStorageBackend(FileChildrenMixin, DirectoryCachedStorageMixin, Storag
 
         cls.SCHEMA.validate(data)
         return data
-
-    @classmethod
-    def cli_options(cls):
-        opts = super(RedisStorageBackend, cls).cli_options()
-        opts.extend([
-            click.Option(['--prefix'], required=False, metavar='PATH',
-                         help='Redis key prefix as an absolute path, defaults to /'),
-            click.Option(['--database'], required=True, metavar='INTEGER',
-                         help='Redis DB index'),
-            click.Option(['--hostname'], required=True, metavar='HOST',
-                         help='Server hostname'),
-            click.Option(['--port'], required=False, metavar='INTEGER',
-                         help='Server port (defaults to 6379)'),
-            click.Option(['--password'], required=False,
-                         help='Server password'),
-            click.Option(['--username'], required=False,
-                         help='Server username (defaults to "default")'),
-            click.Option(['--tls'], required=False, metavar='BOOL',
-                         help='Use TLS'),
-        ])
-        return opts
-
-    @classmethod
-    def cli_create(cls, data):
-        opts = super(RedisStorageBackend, cls).cli_create(data)
-        opts.update({
-            'prefix': data.get('prefix', '/'),
-            'database': int(data.get('database') or 0),
-            'hostname': data.get('hostname'),
-            'port': int(data.get('port') or 6379),
-            'password': data.get('password', None),
-            'tls': data.get('tls', None),
-            'username': data.get('username'),
-        })
-        return opts
 
     def get_children(self, client=None, query_path: PurePosixPath = PurePosixPath('*')) -> \
             Iterable[Tuple[PurePosixPath, Link]]:

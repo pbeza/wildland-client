@@ -31,8 +31,6 @@ from datetime import datetime
 from pathlib import PosixPath, PurePosixPath
 from typing import cast, Callable, Iterable, Optional, Tuple, List
 
-import click
-
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.errors import HttpError
 from treelib import Tree
@@ -194,51 +192,6 @@ class DriveStorageBackend(
         data = cls.remove_non_required_params(data)
 
         return data
-
-    @classmethod
-    def cli_options(cls):
-        opts = super(DriveStorageBackend, cls).cli_options()
-        opts.extend(
-            [
-                click.Option(
-                    ["--location"],
-                    metavar="PATH",
-                    required=False,
-                    default="/",
-                    help="Absolute path to root directory in your Google Drive account.",
-                ),
-                click.Option(
-                    ["--credentials"],
-                    metavar="CREDENTIALS",
-                    required=True,
-                    help="Google Drive Client Configuration Object",
-                ),
-                click.Option(
-                    ["--skip-interaction"],
-                    default=False,
-                    is_flag=True,
-                    required=False,
-                    help="Pass pre-generated refresh token as credential"
-                    "and pass this flag to skip interaction",
-                ),
-            ]
-        )
-        return opts
-
-    @classmethod
-    def cli_create(cls, data):
-        credentials = None
-        client_config = json.loads(data["credentials"])
-        if data["skip_interaction"]:
-            credentials = client_config
-        else:
-            flow = InstalledAppFlow.from_client_config(client_config, DRIVE_SCOPES)
-            credentials = flow.run_console()
-            credentials = json.loads(credentials.to_json())
-
-        result = super(DriveStorageBackend, cls).cli_create(data)
-        result.update({"location": data["location"], "credentials": credentials})
-        return result
 
     @staticmethod
     def _get_attr_from_metadata(metadata) -> Attr:

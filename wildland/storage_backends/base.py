@@ -38,8 +38,6 @@ from pathlib import PurePosixPath, Path
 from uuid import UUID
 from typing import Optional, Dict, Type, Any, Iterable, Tuple, Union, TYPE_CHECKING, List
 
-import click
-
 import wildland
 from wildland.wildland_object.wildland_object import PublishableWildlandObject
 from .kv_store import KVStore
@@ -322,6 +320,14 @@ class StorageBackend(metaclass=abc.ABCMeta):
         return {}
 
     @classmethod
+    def get_cli_user_input(cls, params):
+        """
+        If interaction with user is necessary implement this method
+        in backend and it this way fetch params from user
+        """
+        return {key.replace("_", "-"): params[key] for key in params}
+
+    @classmethod
     def remove_non_required_params(cls, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Remove empty params - not required
@@ -330,25 +336,6 @@ class StorageBackend(metaclass=abc.ABCMeta):
             if value is None or value == []:
                 del params[param]
         return params
-
-    # TODO: remove when will be ready https://gitlab.com/wildland/wildland-client/-/issues/703
-    @classmethod
-    def cli_options(cls) -> List[click.Option]:
-        """
-        Provide a list of command-line options needed to create this storage. If using mixins,
-        check if a super() call is needed.
-        """
-        return []
-
-    # TODO: remove when will be ready https://gitlab.com/wildland/wildland-client/-/issues/703
-    @classmethod
-    def cli_create(cls, data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Convert provided command-line arguments to a list of storage parameters. If using mixins,
-        check if a super() call is needed.
-        """
-        # pylint: disable=unused-argument
-        return {}
 
     @staticmethod
     def types() -> Dict[str, Type['StorageBackend']]:

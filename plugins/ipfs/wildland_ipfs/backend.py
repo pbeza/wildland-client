@@ -30,7 +30,6 @@ import errno
 import stat
 
 import ipfshttpclient
-import click
 
 from wildland.storage_backends.base import StorageBackend, Attr, StorageParam
 from wildland.storage_backends.buffered import File, FullBufferedFile
@@ -135,25 +134,6 @@ class IPFSStorageBackend(DirectoryCachedStorageMixin, StorageBackend):
 
         cls.SCHEMA.validate(data)
         return data
-
-    @classmethod
-    def cli_options(cls):
-        return [
-            click.Option(['--ipfs-hash'], metavar='URL', required=True,
-                         help='IPFS CID or IPNS name to access the '
-                         'resource in /ipfs/CID or /ipns/name format'),
-            click.Option(['--endpoint-addr'], metavar='MULTIADDRESS', required=False,
-                         help='Override default IPFS gateway address '
-                         '(/ip4/127.0.0.1/tcp/8080/http) with the given address.',
-                         default='/ip4/127.0.0.1/tcp/8080/http'),
-        ]
-
-    @classmethod
-    def cli_create(cls, data):
-        return {
-            'ipfs_hash': data['ipfs_hash'],
-            'endpoint_addr': data['endpoint_addr'],
-        }
 
     def key(self, path: PurePosixPath) -> str:
         """

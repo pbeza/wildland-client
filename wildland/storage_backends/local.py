@@ -33,7 +33,6 @@ import time
 from pathlib import Path, PurePosixPath
 from typing import Optional, List, Dict, Tuple
 
-import click
 import inotify_simple
 
 from .base import StorageBackend, File, Attr, verify_local_access, StorageParam
@@ -149,19 +148,6 @@ class LocalStorageBackend(FileChildrenMixin, StorageBackend):
         self.root = location_path
 
     @classmethod
-    def cli_options(cls):
-        opts = super(LocalStorageBackend, cls).cli_options()
-        opts.append(click.Option(['--location'], metavar='PATH', help='path in local filesystem',
-                                 required=True))
-        return opts
-
-    @classmethod
-    def cli_create(cls, data):
-        result = super(LocalStorageBackend, cls).cli_create(data)
-        result['location'] = data['location']
-        return result
-
-    @classmethod
     def storage_options(cls) -> List[StorageParam]:
         opts = super(LocalStorageBackend, cls).storage_options()
         opts.append(
@@ -175,7 +161,7 @@ class LocalStorageBackend(FileChildrenMixin, StorageBackend):
 
     @classmethod
     def validate_and_parse_params(cls, params):
-        data = super(LocalStorageBackend, cls).cli_create(params)
+        data = super(LocalStorageBackend, cls).validate_and_parse_params(params)
         data['location'] = params['location']
         data = cls.remove_non_required_params(data)
 

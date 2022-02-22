@@ -34,7 +34,6 @@ from pathlib import PurePosixPath, Path
 from typing import Iterable, Optional, List, Set, Dict, Tuple, Any
 
 import bear  # pylint: disable=import-error,wrong-import-order
-import click
 
 from wildland.storage_backends.base import StorageBackend, StorageParam
 from wildland.storage_backends.generated import (
@@ -263,22 +262,6 @@ class BearDBStorageBackend(GeneratedStorageMixin, StorageBackend):
 
         cls.SCHEMA.validate(data)
         return data
-
-    @classmethod
-    def cli_options(cls):
-        return [
-            click.Option(['--path'], metavar='PATH',
-                         help='Path to the SQLite database',
-                         required=True),
-        ]
-
-    @classmethod
-    def cli_create(cls, data):
-        return {
-            'path': data['path'],
-            'trusted': True,
-            'manifest_pattern': {'type': 'glob', 'path': '/*/container.yaml'},
-        }
 
     @staticmethod
     def _make_note_container(ident: str, title: str, tags: List[str]) -> ContainerStub:

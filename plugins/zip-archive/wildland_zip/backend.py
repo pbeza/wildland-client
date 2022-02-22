@@ -30,8 +30,6 @@ from pathlib import Path, PurePosixPath
 from datetime import datetime
 import errno
 
-import click
-
 from wildland.manifest.schema import Schema
 from wildland.storage_backends.cached import CachedStorageMixin
 from wildland.storage_backends.buffered import FullBufferedFile
@@ -127,20 +125,6 @@ class ZipArchiveStorageBackend(CachedStorageMixin, StorageBackend):
 
         cls.SCHEMA.validate(data)
         return data
-
-    @classmethod
-    def cli_options(cls):
-        return [
-            click.Option(['--location'], metavar='PATH',
-                         help='Location of the ZIP file (filesystem path)',
-                         required=True),
-        ]
-
-    @classmethod
-    def cli_create(cls, data):
-        return {
-            'location': data['location'],
-        }
 
     def watcher(self):
         return ZipArchiveWatcher(self)

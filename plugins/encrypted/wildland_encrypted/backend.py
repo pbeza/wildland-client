@@ -35,8 +35,6 @@ import secrets
 import string
 from typing import Dict, List, Optional, Type, Any
 
-import click
-
 from wildland.storage_backends.base import StorageBackend, File, StorageParam
 from wildland.manifest.schema import Schema
 from wildland.storage_backends.local import LocalStorageBackend, LocalFile
@@ -485,32 +483,6 @@ class EncryptedStorageBackend(StorageBackend):
 
         cls.SCHEMA.validate(data)
         return data
-
-    @classmethod
-    def cli_options(cls):
-        return [
-            click.Option(['--reference-container-url'], metavar='URL',
-                         help='URL for inner container manifest',
-                         required=True),
-            click.Option(['--engine'], metavar='ENGINE',
-                         help='Cryptographic filesystem to use: gocryptfs or encfs.',
-                         default="gocryptfs",
-                         required=False),
-        ]
-
-    @classmethod
-    def cli_create(cls, data):
-        engine = engines[data['engine']]
-        with tempfile.TemporaryDirectory(prefix='encrypted-temp-dir.') as d:
-            d1 = PurePosixPath(d) / 'encrypted'
-            d2 = PurePosixPath(d) / 'cleartext'
-            Path(d1).mkdir()
-            Path(d2).mkdir()
-            runner = engine.init(PurePosixPath(d), d1, d2)
-        return {'reference-container': data['reference_container_url'],
-                'symmetrickey': runner.credentials(),
-                'engine': data['engine']
-                }
 
     # pylint: disable=protected-access
     def open(self, path: PurePosixPath, flags: int) -> File:

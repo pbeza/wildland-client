@@ -29,8 +29,6 @@ from functools import partial
 from pathlib import PurePosixPath
 from typing import List, Tuple
 
-import click
-
 from wildland.container import ContainerStub
 from wildland.log import get_logger
 from wildland.manifest.schema import Schema
@@ -241,36 +239,3 @@ class JiraStorageBackend(GeneratedStorageMixin, StorageBackend):
 
         cls.SCHEMA.validate(data)
         return data
-
-    @classmethod
-    def cli_options(cls):
-        return [
-            click.Option(
-                ['--workspace-url'], required=True,
-                help='address of the v2 REST endpoint of your Jira Work Management Cloud site'),
-            click.Option(
-                ['--username'], required=False,
-                help='(optional) Jira username'),
-            click.Option(
-                ['--personal-token'], required=False,
-                help='(optional) personal access token generated for your Attlassian Account'),
-            click.Option(
-                ['--project-name'], required=False, multiple=True,
-                help='(optional) (multiple) Jira projects names'),
-            click.Option(
-                ['--limit'], required=False, default=DEFAULT_ISSUES_LIMIT,
-                help=f'(optional) (default: {DEFAULT_ISSUES_LIMIT}) maximum amount of issues to '
-                     f'be fetched starting from the most recently updated')
-        ]
-
-    @classmethod
-    def cli_create(cls, data):
-        if bool(data['personal_token']) ^ bool(data['username']):
-            raise TypeError('Only one of [token, user] provided. Expected either none or both.')
-        return {
-            'workspace_url': data['workspace_url'],
-            'username': data['username'],
-            'personal_token': data['personal_token'],
-            'project_name': list(data['project_name']),
-            'limit': data['limit'],
-        }
