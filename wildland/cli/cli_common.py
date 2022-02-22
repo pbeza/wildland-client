@@ -57,7 +57,7 @@ from ..manifest.schema import SchemaError
 from ..exc import WildlandError
 from ..utils import yaml_parser
 from ..storage_sync.base import SyncState
-from ..storage import Storage, _get_storage_by_id_or_type
+from ..storage import Storage, get_storage_by_id_or_type
 from ..user import User
 from ..publish import Publisher
 from ..log import get_logger
@@ -423,7 +423,7 @@ def _sync_removed_storages(obj, manifest_type, original_data, edited_s, path):
         try:
             new_storages = yaml.safe_load(edited_s)['backends']['storage']
         except Exception as error:
-            click.echo(error)
+            click.echo("Could not load storages from the new manifest: ",error)
             return
     elif status[0] != SyncState.SYNCED:
         click.echo(f"Syncing of {container.uuid} is in progress.")
@@ -450,7 +450,7 @@ def _sync_removed_storages(obj, manifest_type, original_data, edited_s, path):
     try:
         old_storages = yaml.safe_load(original_data)['backends']['storage']
     except Exception as error:
-        click.echo(error)
+        click.echo("Could not load storages from the old manifest: ",error)
         return
 
     for storage in old_storages:
@@ -466,7 +466,7 @@ def _sync_removed_storages(obj, manifest_type, original_data, edited_s, path):
     #if any old storage not on the new list, synchronize
     for storage_id in old_storage_ids:
         if storage_id not in new_storage_ids:
-            storage_to_delete = _get_storage_by_id_or_type(storage_id,
+            storage_to_delete = get_storage_by_id_or_type(storage_id,
                                                            obj.client.all_storages(container))
             click.echo(f'Outdated storage for container {container.uuid}, \
                                                          attempting to sync storage.')
