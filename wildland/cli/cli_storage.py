@@ -31,7 +31,7 @@ import functools
 import click
 
 from wildland.wildland_object.wildland_object import WildlandObject
-from .cli_base import aliased_group, ContextObj
+from .cli_base import aliased_group, ContextObj, CliStorageUserInteraction
 from .cli_exc import CliError
 from .cli_utils import parse_storage_cli_options, param_name_from_cli
 from .cli_common import sign, verify, edit, modify_manifest, set_fields, \
@@ -131,7 +131,7 @@ def _do_create(
         raise CliError(str(wl_container_result))
     container_id = wl_container.id
 
-    data = backend.get_cli_user_input(data)
+    data = backend.get_additional_user_data(data, user_interaction_cls=CliStorageUserInteraction)
     data = {param_name_from_cli(key): data[key] for key in data}
 
     create_result, wl_storage = obj.wlcore.storage_create(

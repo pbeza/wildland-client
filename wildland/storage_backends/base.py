@@ -192,6 +192,32 @@ class StorageParam:
     required: bool = False
 
 
+class StorageUserInteraction(metaclass=abc.ABCMeta):
+    """
+    Interface for interaction with user
+    """
+    @staticmethod
+    @abc.abstractmethod
+    def display_message(msg: str) -> None:
+        """
+        Display given message to user
+        """
+
+    @staticmethod
+    @abc.abstractmethod
+    def get_user_input(prompt: str, hide_input: bool) -> str:
+        """
+        Fetch data from user
+        """
+
+    @staticmethod
+    @abc.abstractmethod
+    def get_user_confirmation(prompt: str) -> bool:
+        """
+        Check whether user confirms his input
+        """
+
+
 class StorageBackend(metaclass=abc.ABCMeta):
     """Abstract storage implementation.
 
@@ -320,12 +346,13 @@ class StorageBackend(metaclass=abc.ABCMeta):
         return {}
 
     @classmethod
-    def get_cli_user_input(cls, params):
+    def get_additional_user_data(cls, params, user_interaction_cls):
         """
         If interaction with user is necessary implement this method
-        in backend and it this way fetch params from user
+        in the backend to fetch additional data
         """
-        return {key.replace("_", "-"): params[key] for key in params}
+        # pylint: disable=unused-argument
+        return params
 
     @classmethod
     def remove_non_required_params(cls, params: Dict[str, Any]) -> Dict[str, Any]:

@@ -27,7 +27,7 @@ import functools
 import click
 
 from wildland.wildland_object.wildland_object import WildlandObject
-from .cli_base import aliased_group, ContextObj
+from .cli_base import aliased_group, ContextObj, CliStorageUserInteraction
 from .cli_exc import CliError
 from .cli_utils import parse_storage_cli_options, param_name_from_cli
 from ..manifest.schema import SchemaError
@@ -123,7 +123,7 @@ def _do_create(
     if default_cache and read_only:
         raise CliError('Cache storage cannot be read-only.')
 
-    data = backend.get_cli_user_input(data)
+    data = backend.get_additional_user_data(data, user_interaction_cls=CliStorageUserInteraction)
     data = {param_name_from_cli(key): data[key] for key in data}
 
     params = backend.validate_and_parse_params(data)

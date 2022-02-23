@@ -31,8 +31,7 @@ from tempfile import mkstemp
 from subprocess import Popen, PIPE, STDOUT, run
 from typing import List
 
-import click
-
+from wildland.exc import WildlandError
 from wildland.fs_client import WildlandFSError
 from wildland.manifest.schema import Schema
 from wildland.log import get_logger
@@ -202,12 +201,11 @@ class SshFsBackend(LocalProxy):
         return data
 
     @classmethod
-    def get_cli_user_input(cls, params):
+    def get_additional_user_data(cls, params, user_interaction_cls):
         if params.get('ssh_identity') and params.get('pwprompt'):
-            raise click.UsageError('pwprompt and ssh-identity are mutually exclusive')
+            raise WildlandError('pwprompt and ssh-identity are mutually exclusive')
 
         if params.get('pwprompt'):
-            params['passwd'] = click.prompt('SSH password',
-                                            hide_input=True)
+            params['passwd'] = user_interaction_cls.get_user_input("SSH password", hide_input=True)
 
         return params
