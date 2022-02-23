@@ -42,7 +42,7 @@ from ..manifest.manifest import Manifest
 from .cli_base import aliased_group, ContextObj
 from .cli_exc import CliError
 from ..wlpath import WildlandPath, WILDLAND_URL_PREFIX
-from .cli_common import modify_manifest, add_fields
+from .cli_common import modify_manifest, set_fields
 from .cli_container import _mount as mount_container
 from .cli_container import _unmount as unmount_container
 from ..exc import WildlandError
@@ -602,10 +602,6 @@ def _bootstrap_forest(ctx: click.Context, user: str, manifest_storage_template_n
 
         obj.client.save_object(WildlandObject.Type.CONTAINER, catalog_container)
 
-        manifests_storage = obj.client.select_storage(container=catalog_container,
-                                                      predicate=lambda x: x.is_writeable)
-        manifests_backend = StorageBackend.from_params(manifests_storage.params)
-
         user_manifests_catalog = get_user_manifests_catalog(obj, catalog_container)
         modify_manifest(ctx, str(forest_owner.local_path), edit_funcs=[add_fields],
                         to_add={'manifests-catalog': user_manifests_catalog})
@@ -613,12 +609,11 @@ def _bootstrap_forest(ctx: click.Context, user: str, manifest_storage_template_n
         # Refresh user's manifests catalog
         obj.client.recognize_users_and_bridges()
 
-        _bootstrap_manifest(manifests_backend, forest_owner.local_path,
-                            Path('forest-owner.user.yaml'))
-
         # Reload forest_owner to load the manifests-catalog info
         forest_owner = obj.client.load_object_from_name(WildlandObject.Type.USER, user)
-        Publisher(obj.client, forest_owner, catalog_container).publish(catalog_container)
+        publisher = Publisher(obj.client, forest_owner, catalog_container)
+        publisher.publish(forest_owner)
+        publisher.publish(catalog_container)
     except Exception as ex:
         raise CliError(f'Could not create a Forest. {ex}') from ex
     finally:
@@ -647,13 +642,6 @@ def _create_container(obj: ContextObj,
                           backends=[], client=obj.client, access=access)
 
     obj.client.save_new_object(WildlandObject.Type.CONTAINER, container, container_name)
-    do_create_storage_from_templates(obj.client, container, storage_templates, storage_local_dir)
+    do_create_storage_from_templates(obj.client, container, storage_templates, storage_local_dir, no_publish=True)
 
     return container
-
-
-def _bootstrap_manifest(backend: StorageBackend, manifest_path: Path, file_path: Path):
-    with backend:
-        with backend.create(PurePosixPath(file_path), os.O_CREAT | os.O_WRONLY) as manifest_obj:
-            data = manifest_path.read_bytes()
-            manifest_obj.write(data, 0)

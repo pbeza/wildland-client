@@ -226,6 +226,7 @@ class _UnpublishedWildlandObjectCache:
         self.client = client
         self.obj_type = obj_type
         self.file: Path = client.dirs[obj_type] / '.unpublished'
+        self.file.touch(exist_ok=True)
 
     def load_cache(self) -> Set[str]:
         """
