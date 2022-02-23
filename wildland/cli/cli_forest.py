@@ -603,8 +603,8 @@ def _bootstrap_forest(ctx: click.Context, user: str, manifest_storage_template_n
         obj.client.save_object(WildlandObject.Type.CONTAINER, catalog_container)
 
         user_manifests_catalog = get_user_manifests_catalog(obj, catalog_container)
-        modify_manifest(ctx, str(forest_owner.local_path), edit_funcs=[add_fields],
-                        to_add={'manifests-catalog': user_manifests_catalog})
+        modify_manifest(ctx, str(forest_owner.local_path), edit_funcs=[set_fields],
+                        to_set={'manifests-catalog': user_manifests_catalog})
 
         # Refresh user's manifests catalog
         obj.client.recognize_users_and_bridges()
