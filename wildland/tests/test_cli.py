@@ -151,7 +151,8 @@ def test_edit(cli, cli_fail, base_dir):
 
     #remove Standalone.storage.yaml line to test storage sync
     editor = r'sed -i 16d'
-    cli('edit', container_path, '--editor', editor)
+    result = cli('edit', container_path, '--editor', editor, capture=True)
+    assert "Outdated storage for container" in result.splitlines()[0]
 
 # Users
 
