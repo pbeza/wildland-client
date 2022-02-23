@@ -44,7 +44,7 @@ def get_object_id(obj: WildlandObject):
     if isinstance(obj, User):
         return f'{obj.owner}:'
     if isinstance(obj, Container):
-        return str(obj.uuid_path)
+        return f'{obj.owner}:{obj.uuid_path}:'
     if isinstance(obj, Bridge):
         return str(obj.paths[0])  # TODO
     if isinstance(obj, Storage):
