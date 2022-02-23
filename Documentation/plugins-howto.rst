@@ -138,8 +138,8 @@ Command line and manifest
 Besides the above mentioned methods that are all strictly related to handling filesystem operations,
 you need to also implement:
 
-* :meth:`~wildland.storage_backends.base.StorageBackend.cli_options`,
-  :meth:`~wildland.storage_backends.base.StorageBackend.cli_create` that are responsible for parsing
+* :meth:`~wildland.storage_backends.base.StorageBackend.storage_options`,
+  :meth:`~wildland.storage_backends.base.StorageBackend.validate_and_parse_params` that are responsible for parsing
   command line input.
 
 * ``SCHEMA`` that defines storage :ref:`manifest <wl-manifests>` schema.
