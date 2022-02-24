@@ -216,7 +216,7 @@ class WildlandCoreStorage(WildlandCoreApi):
         """
         Create storage from template if storage_templates are known
         i.e. while creating container or forest.
-        :param container: container
+        :param container: Container object
         :param storage_templates: list of storage templates
         :param local_dir: directory of local storages
         :return: WildlandResult
@@ -281,7 +281,6 @@ class WildlandCoreStorage(WildlandCoreApi):
         """
         Delete provided storage.
         :param name: storage name
-         (in the form of user_id:/.uuid/container_uuid:/.uuid/storage_uuid)
         :param cascade: remove reference from containers
         :param force: delete even if used by containers or if manifest cannot be loaded
         :return: WildlandResult
@@ -467,6 +466,12 @@ class WildlandCoreStorage(WildlandCoreApi):
         return result
 
     def storage_get_by_id(self, storage_id: str) -> Tuple[WildlandResult, Optional[Storage]]:
+        """
+        Get storage by specified ID.
+        :param storage_id: id of the storage to be found
+         (user_id:/.uuid/container_uuid:/.uuid/storage_uuid)
+        :return: tuple of WildlandResult and, if successful, the Storage
+        """
         return self.__storage_get_by_id(storage_id)
 
     @wildland_result(default_output=None)
@@ -481,11 +486,12 @@ class WildlandCoreStorage(WildlandCoreApi):
             WLError.from_exception(FileNotFoundError(f'Cannot find storage {storage_id}')))
         return result, None
 
-    def storage_sync_container(self, storage_id: str, container_id: str):
+    def storage_sync_container(self, storage_id: str, container_id: str) -> WildlandResult:
         """
         Sync storage with container
         :param storage_id: id of storage
         :param container_id: id of container
+        :return: WildlandResult
         """
         return self.__storage_sync_container(storage_id, container_id)
 

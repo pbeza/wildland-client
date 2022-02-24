@@ -230,9 +230,9 @@ class DropboxStorageBackend(FileChildrenMixin, DirectoryCachedStorageMixin, Stor
 
             authorize_url = auth_flow.start()
             msg = f"""
-        1. Go to: {authorize_url}
-        2. Click \"Allow\" (you might have to log in first).
-        3. Copy the authorization code."""
+1. Go to: {authorize_url}
+2. Click \"Allow\" (you might have to log in first).
+3. Copy the authorization code."""
             user_interaction_cls.display_message(msg)
 
             err_msg = "Cannot get refresh token"

@@ -613,7 +613,6 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         """
         Delete provided storage.
         :param name: storage name
-         (in the form of user_id:/.uuid/container_uuid:/.uuid/storage_uuid)
         :param cascade: remove reference from containers
         :param force: delete even if used by containers or if manifest cannot be loaded
         :return: WildlandResult
@@ -667,7 +666,10 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def storage_get_by_id(self, storage_id: str) -> Tuple[WildlandResult, Optional[Storage]]:
         """
-        Get storage from specified ID.
+        Get storage by specified ID.
+        :param storage_id: id of the storage to be found
+         (user_id:/.uuid/container_uuid:/.uuid/storage_uuid)
+        :return: tuple of WildlandResult and, if successful, the Storage
         """
 
     # TEMPLATES
