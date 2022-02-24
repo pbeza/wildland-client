@@ -402,13 +402,6 @@ class WildlandCoreContainer(WildlandCoreApi):
 
         return response_list
 
-    @staticmethod
-    def __find_container(containers: List[Container], container_id: str):
-        for container in containers:
-            if utils.container_to_wlcontainer(container).id == container_id:
-                return container
-        return None
-
     def container_find_by_id(self, container_id: str) \
             -> Tuple[WildlandResult, Optional[Container]]:
         """
@@ -416,9 +409,13 @@ class WildlandCoreContainer(WildlandCoreApi):
         :param container_id: id of the container to be found (user_id:/.uuid/container_uuid)
         :return: tuple of WildlandResult and, if successful, the Container
         """
-        return self.__container_find_by_id(container_id)
 
-    @wildland_result()
-    def __container_find_by_id(self, container_id: str):
-        container = self.client.load_object_from_name(WildlandObject.Type.CONTAINER, container_id)
-        return container
+        result = WildlandResult()
+
+        for container in self.client.load_all(WildlandObject.Type.CONTAINER):
+            if utils.container_to_wlcontainer(container).id == container_id:
+                return result, container
+
+        result.errors.append(
+            WLError.from_exception(FileNotFoundError(f'Cannot find container {container_id}')))
+        return result, None

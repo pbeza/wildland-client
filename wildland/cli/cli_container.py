@@ -255,9 +255,7 @@ def update(obj: ContextObj, storage, cont):
 
 
 def _container_info(obj, wl_container, users_and_bridge_paths):
-    container_result, container = obj.wlcore.container_find_by_id(wl_container.id)
-    if not container_result.success or not container:
-        raise WildlandError(str(container_result))
+    container = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, wl_container.id)
     container_fields = container.to_repr_fields(include_sensitive=False)
     bridge_paths = []
     try:
@@ -1363,8 +1361,7 @@ def find(obj: ContextObj, path: str):
         raise CliError('Given path was not found in any storage')
 
     for container, storage in wl_objects:
-        wlpath = f'wildland:{container.owner}:{container.id}'
-        click.echo(f'Container: {wlpath}:\n'
+        click.echo(f'Container: wildland:{container.id}\n'
                    f'  Backend id: {storage.backend_id}')
 
 
