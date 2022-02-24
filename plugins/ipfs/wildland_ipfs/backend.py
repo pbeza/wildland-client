@@ -25,14 +25,13 @@ IPFS storage backend
 """
 
 from pathlib import PurePosixPath
-from typing import Iterable, Tuple
+from typing import Iterable, Tuple, List
 import errno
 import stat
 
 import ipfshttpclient
-import click
 
-from wildland.storage_backends.base import StorageBackend, Attr
+from wildland.storage_backends.base import StorageBackend, Attr, StorageParam
 from wildland.storage_backends.buffered import File, FullBufferedFile
 from wildland.storage_backends.cached import DirectoryCachedStorageMixin
 from wildland.manifest.schema import Schema
@@ -109,23 +108,32 @@ class IPFSStorageBackend(DirectoryCachedStorageMixin, StorageBackend):
             raise IOError(errno.ENOTDIR, str(self.base_path))
 
     @classmethod
-    def cli_options(cls):
+    def storage_options(cls) -> List[StorageParam]:
         return [
-            click.Option(['--ipfs-hash'], metavar='URL', required=True,
-                         help='IPFS CID or IPNS name to access the '
-                         'resource in /ipfs/CID or /ipns/name format'),
-            click.Option(['--endpoint-addr'], metavar='MULTIADDRESS', required=False,
-                         help='Override default IPFS gateway address '
-                         '(/ip4/127.0.0.1/tcp/8080/http) with the given address.',
-                         default='/ip4/127.0.0.1/tcp/8080/http'),
+            StorageParam('ipfs_hash',
+                         display_name='URL',
+                         required=True,
+                         description='IPFS CID or IPNS name to access the '
+                         'resource in /ipfs/CID or /ipns/name format'
+                         ),
+            StorageParam('endpoint_addr',
+                         display_name='MULTIADDRESS',
+                         default_value='/ip4/127.0.0.1/tcp/8080/http',
+                         description='Override default IPFS gateway address '
+                         '(/ip4/127.0.0.1/tcp/8080/http) with the given address.'
+                         ),
         ]
 
     @classmethod
-    def cli_create(cls, data):
-        return {
-            'ipfs_hash': data['ipfs_hash'],
-            'endpoint_addr': data['endpoint_addr'],
+    def validate_and_parse_params(cls, params):
+        data = {
+            'ipfs_hash': params['ipfs_hash'],
+            'endpoint_addr': params['endpoint_addr'],
         }
+        data = cls.remove_non_required_params(data)
+
+        cls.SCHEMA.validate(data)
+        return data
 
     def key(self, path: PurePosixPath) -> str:
         """

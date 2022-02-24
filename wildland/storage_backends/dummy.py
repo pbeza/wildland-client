@@ -59,16 +59,6 @@ class DummyStorageBackend(StorageBackend):
         cls.SCHEMA.validate(data)
         return data
 
-    @classmethod
-    def cli_options(cls):
-        return []
-
-    @classmethod
-    def cli_create(cls, data):
-        return {
-            'subcontainers': list(data.get('subcontainer', [])),
-        }
-
     def open(self, path, flags):
         raise FileNotFoundError
 

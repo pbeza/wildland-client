@@ -25,6 +25,8 @@ from enum import Enum
 from .wildland_result import WildlandResult
 from .wildland_objects_api import WLObject, WLTemplateFile, WLBridge, WLObjectType, WLUser, \
     WLStorageBackend, WLStorage, WLContainer
+from ..container import Container
+from ..storage import Storage
 
 
 class ModifyMethod(Enum):
@@ -535,6 +537,22 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         the provided path
         """
 
+    @abc.abstractmethod
+    def container_remount(self, container_id: str) -> WildlandResult:
+        """
+        Remount container
+        :param container_id: id of the container to be found (user_id:/.uuid/container_uuid)
+        :return: WildlandResult
+        """
+
+    @abc.abstractmethod
+    def container_find_by_id(self, container_id: str) -> Tuple[WildlandResult, Optional[Container]]:
+        """
+        Find container by id.
+        :param container_id: id of the container to be found (user_id:/.uuid/container_uuid)
+        :return: tuple of WildlandResult and, if successful, the WLContainer
+        """
+
     # STORAGES
 
     @abc.abstractmethod
@@ -548,7 +566,7 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
     def storage_create(self, backend_type: str, backend_params: Dict[str, Any],
                        container_id: str, name: Optional[str], trusted: bool = False,
                        watcher_interval: Optional[int] = 0, inline: bool = True,
-                       access_users: Optional[list[str]] = None, encrypt_manifest: bool = True) -> \
+                       access_users: Optional[List[str]] = None, encrypt_manifest: bool = True) -> \
             Tuple[WildlandResult, Optional[WLStorage]]:
         """
         Create a storage.
@@ -590,12 +608,11 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         """
 
     @abc.abstractmethod
-    def storage_delete(self, storage_id: str, cascade: bool = True,
+    def storage_delete(self, name: str, cascade: bool = True,
                        force: bool = False) -> WildlandResult:
         """
         Delete provided storage.
-        :param storage_id: storage ID
-         (in the form of user_id:/.uuid/container_uuid:/.uuid/storage_uuid)
+        :param name: storage name
         :param cascade: remove reference from containers
         :param force: delete even if used by containers or if manifest cannot be loaded
         :return: WildlandResult
@@ -646,6 +663,15 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         :return: WildlandResult
         """
 
+    @abc.abstractmethod
+    def storage_get_by_id(self, storage_id: str) -> Tuple[WildlandResult, Optional[Storage]]:
+        """
+        Get storage by specified ID.
+        :param storage_id: id of the storage to be found
+         (user_id:/.uuid/container_uuid:/.uuid/storage_uuid)
+        :return: tuple of WildlandResult and, if successful, the Storage
+        """
+
     # TEMPLATES
     @abc.abstractmethod
     def template_create(self, name: str) -> Tuple[WildlandResult, Optional[WLTemplateFile]]:
@@ -660,7 +686,7 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
     def template_add_storage(self, backend_type: str, backend_params: Dict[str, str],
                              template_name: str, read_only: bool = False,
                              default_cache: bool = False, watcher_interval: Optional[int] = 0,
-                             access_users: Optional[list[str]] = None,
+                             access_users: Optional[List[str]] = None,
                              encrypt_manifest: bool = True) -> \
             Tuple[WildlandResult, Optional[WLTemplateFile]]:
         """

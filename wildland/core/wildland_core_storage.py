@@ -21,18 +21,23 @@
 Wildland core implementation - storage-related functions
 """
 import uuid
-from typing import List, Tuple, Optional, Dict, Type, Any
+from pathlib import Path, PurePosixPath
+from typing import List, Tuple, Optional, Dict, Type, Any, Union, Iterable, Sequence
 
 import wildland.core.core_utils as utils
 from wildland.log import get_logger
 from .wildland_core_api import WildlandCoreApi, ModifyMethod
 from .wildland_objects_api import WLStorage, WLStorageBackend
-from .wildland_result import WildlandResult, wildland_result
+from .wildland_result import WildlandResult, wildland_result, WLError, WLErrorType
 from ..client import Client
+from ..container import Container
 from ..exc import WildlandError
+from ..manifest.manifest import ManifestError
+from ..manifest.template import StorageTemplate, TemplateManager
 from ..storage import Storage
 from ..storage_backends.base import StorageBackend
 from ..storage_backends.dispatch import get_storage_backends
+from ..storage_sync.base import SyncState
 from ..wildland_object.wildland_object import WildlandObject
 from ..wlenv import WLEnv
 from ..wlpath import WildlandPath
@@ -41,12 +46,34 @@ logger = get_logger('core-storage')
 
 
 def get_backend(backend_type: str) -> Type[StorageBackend]:
+    """
+    Search for backend from existing backends. Throw an error if backend not found.
+    """
     backends = get_storage_backends()
     backend = backends.get(backend_type)
     if backend is None:
         raise FileNotFoundError(f'[{backend_type}] cannot be matched with any known storage '
                                 f'configuration')
     return backend
+
+
+def ensure_backend_location_exists(backend: StorageBackend) -> None:
+    """
+    Check if location of given backend exists.
+    """
+    path = backend.location
+
+    if path is None:
+        return
+    try:
+        with backend:
+            if str(PurePosixPath(backend.location)) != backend.location:
+                raise WildlandError('The `LOCATION_PARAM` of the backend is not a valid path.')
+            backend.mkdir(PurePosixPath(path))
+            logger.info('Created base path: %s', path)
+    except Exception as ex:
+        logger.warning('Could not create base path %s in a writable storage [%s]. %s',
+                       path, backend.backend_id, ex)
 
 
 class WildlandCoreStorage(WildlandCoreApi):
@@ -69,7 +96,7 @@ class WildlandCoreStorage(WildlandCoreApi):
     def storage_create(self, backend_type: str, backend_params: Dict[str, Any],
                        container_id: str, name: Optional[str], trusted: bool = False,
                        watcher_interval: Optional[int] = 0, inline: bool = True,
-                       access_users: Optional[list[str]] = None, encrypt_manifest: bool = True) -> \
+                       access_users: Optional[List[str]] = None, encrypt_manifest: bool = True) -> \
             Tuple[WildlandResult, Optional[WLStorage]]:
         """
         Create a storage.
@@ -94,33 +121,20 @@ class WildlandCoreStorage(WildlandCoreApi):
         return self.__storage_create(backend_type, backend_params, container_id, name, trusted,
                                      watcher_interval, inline, access_users, encrypt_manifest)
 
-    def __get_container_from_wl_container_id(self, container_id):
-        # FIXME:
-        for container in self.client.load_all(WildlandObject.Type.CONTAINER):
-            if utils.container_to_wlcontainer(container).id == container_id:
-                return container
-
-        raise FileNotFoundError(f'Cannot find container {container_id}')
-
     @wildland_result(default_output=None)
     def __storage_create(self, backend_type: str, backend_params: Dict[str, Any],
                          container_id: str, name: Optional[str], trusted: bool = False,
                          watcher_interval: Optional[int] = 0, inline: bool = True,
-                         access_users: Optional[list[str]] = None, encrypt_manifest: bool = True):
+                         access_users: Optional[List[str]] = None, encrypt_manifest: bool = True):
 
-        container = self.__get_container_from_wl_container_id(container_id)
-        if not container.local_path:
-            raise WildlandError('Need a local container')
+        container_result, container = self.container_find_by_id(container_id)
+        if not container_result.success or not container:
+            return container_result
 
         container_mount_path = container.paths[0]
         logger.info('Using container: %s (%s)', str(container.local_path),
                     str(container_mount_path))
         backend = get_backend(backend_type)
-
-        # remove default, non-required values
-        for param, value in list(backend_params.items()):
-            if value is None or value == []:
-                del backend_params[param]
 
         backend_params = backend.validate_and_parse_params(backend_params)
 
@@ -167,8 +181,9 @@ class WildlandCoreStorage(WildlandCoreApi):
 
         return utils.storage_to_wl_storage(storage)
 
-    def storage_create_from_template(self, template_name: str, container_id: str,
-                                     local_dir: Optional[str] = None):
+    def storage_create_from_template(self, template_name: str,
+                                     container_id: str,
+                                     local_dir: Optional[str] = None) -> WildlandResult:
         """
         Create storages for a container from a given storage template.
         :param template_name: name of the template
@@ -176,26 +191,362 @@ class WildlandCoreStorage(WildlandCoreApi):
         :param local_dir: str to be passed to template renderer as a parameter, can be used by
         template creators
         """
-        raise NotImplementedError
+        return self.__storage_create_from_template(
+            template_name, container_id, local_dir
+        )
+
+    @wildland_result()
+    def __storage_create_from_template(self, template_name: str, container_id: str,
+                                       local_dir: Optional[str]):
+        container_result, container = self.container_find_by_id(container_id)
+        if not container_result.success or not container:
+            return container_result
+
+        template_manager = TemplateManager(self.client.dirs[WildlandObject.Type.TEMPLATE])
+        storage_templates = template_manager.get_template_file_by_name(template_name).templates
+        result = self.storage_do_create_from_template(
+            container, storage_templates, local_dir
+        )
+        return result
+
+    def storage_do_create_from_template(self, container: Container,
+                                        storage_templates: Iterable[StorageTemplate],
+                                        local_dir: Optional[str]
+                                        ) -> WildlandResult:
+        """
+        Create storage from template if storage_templates are known
+        i.e. while creating container or forest.
+        :param container: Container object
+        :param storage_templates: list of storage templates
+        :param local_dir: directory of local storages
+        :return: WildlandResult
+        """
+        return self.__storage_do_create_from_template(
+            container, storage_templates, local_dir
+        )
+
+    @wildland_result()
+    def __storage_do_create_from_template(self, container: Container,
+                                          storage_templates: Iterable[StorageTemplate],
+                                          local_dir: Optional[str]
+                                          ):
+        result = WildlandResult()
+
+        to_process: List[Tuple[Storage, StorageBackend]] = []
+
+        for template in storage_templates:
+            try:
+                storage = template.get_storage(self.client, container, local_dir)
+            except ValueError as ex:
+                result.errors.append(WLError.from_exception(ex))
+                return result
+
+            storage_backend = StorageBackend.from_params(storage.params)
+            to_process.append((storage, storage_backend))
+
+        storages_to_add = []
+        for storage, backend in to_process:
+            if storage.is_writeable:
+                ensure_backend_location_exists(backend)
+            storages_to_add.append(storage)
+            logger.info('Adding storage %s to container.', storage.backend_id)
+
+        self.client.add_storage_to_container(
+            container=container, storages=storages_to_add, inline=True
+        )
+        logger.info('Saved container %s', container.local_path)
+
+        return result
 
     def storage_list(self) -> Tuple[WildlandResult, List[WLStorage]]:
         """
         List all known storages.
         :return: WildlandResult, List of WLStorages
         """
-        raise NotImplementedError
+        return self.__storage_list()
 
-    def storage_delete(self, storage_id: str, cascade: bool = True,
+    @wildland_result(default_output=[])
+    def __storage_list(self):
+        result = WildlandResult()
+        storages = []
+        try:
+            for storage in self.client.load_all(WildlandObject.Type.STORAGE):
+                storages.append(utils.storage_to_wl_storage(storage))
+        except Exception as ex:
+            result.errors.append(WLError.from_exception(ex))
+        return result, storages
+
+    def storage_delete(self, name: str, cascade: bool = True,
                        force: bool = False) -> WildlandResult:
         """
         Delete provided storage.
-        :param storage_id: storage ID
-         (in the form of user_id:/.uuid/container_uuid:/.uuid/storage_uuid)
+        :param name: storage name
         :param cascade: remove reference from containers
         :param force: delete even if used by containers or if manifest cannot be loaded
         :return: WildlandResult
         """
-        raise NotImplementedError
+        return self.__storage_delete(name, cascade, force)
+
+    @wildland_result()
+    def __storage_delete(self, name: str, cascade: bool, force: bool):
+        delete_result = WildlandResult()
+        result, local_path, usages = self.storage_get_local_path_and_find_usages(name)
+
+        if WLErrorType.MANIFEST_ERROR in [err.error_code for err in result.errors]:
+            if force:
+                logger.info('Failed to load manifest: %s', str(result))
+                self.__storage_delete_force(name, cascade)
+                return delete_result
+
+            logger.info('Failed to load manifest, cannot delete: %s', str(result))
+            logger.info('Use --force to force deletion.')
+            delete_result.errors += result.errors
+            return delete_result
+
+        if usages:
+            containers_usages = [u[0] for u in usages]
+            self.__storage_delete_sync_containers(name, containers_usages, force)
+
+            if local_path:
+                if cascade:
+                    delete_cascade_result = self.__storage_delete_cascade(usages)
+                    delete_result.errors += delete_cascade_result.errors
+                else:
+                    for container in containers_usages:
+                        logger.info('Storage used in container: %s', container.local_path)
+
+                if usages and not force and not cascade:
+                    delete_result.errors.append(
+                        WLError.from_exception(
+                            WildlandError('Storage is still used, not deleting '
+                                          '(use --force or remove --no-cascade)')))
+                    return delete_result
+
+                logger.info('Deleting: %s', local_path)
+                local_path.unlink()
+                return delete_result
+
+            if not cascade:
+                delete_result.errors.append(WLError.from_exception(
+                    WildlandError('Inline storage cannot be deleted in --no-cascade mode')))
+                return delete_result
+
+            delete_cascade_result = self.__storage_delete_cascade(usages)
+            delete_result.errors += delete_cascade_result.errors
+
+        return delete_result
+
+    def storage_get_local_path_and_find_usages(self, name: str) \
+            -> Tuple[WildlandResult, Optional[Path],
+                     Optional[Sequence[Tuple[Container, Union[Path, str]]]]]:
+        """
+        Get local path of storage and find its usages.
+        :param name: storage name
+        :return: WildlandResult, local_path - if there is one
+        and list of tuples (container, storage_url_or_dict) - if storage is in use
+        """
+        return self.__storage_get_local_path_and_find_usages(name)
+
+    @wildland_result(default_output=None)
+    def __storage_get_local_path_and_find_usages(self, name: str):
+        result = WildlandResult()
+        try:
+            storage = self.client.load_object_from_name(WildlandObject.Type.STORAGE, name)
+
+        except ManifestError as me:
+            result.errors.append(WLError.from_exception(ManifestError(me)))
+            return result, None, None
+
+        except WildlandError as we:
+            used_by = self.client.find_storage_usage(name)
+            if not used_by:
+                result.errors.append(WLError.from_exception(WildlandError(we)))
+                return result, None, None
+            return result, None, used_by
+
+        if not storage.local_path:
+            result.errors.append(WLError.from_exception(
+                WildlandError('Can only delete a local manifest')))
+            return result, None, None
+        used_by = self.client.find_storage_usage(storage.backend_id)
+        return result, storage.local_path, used_by
+
+    def storage_get_usages_within_container(
+            self,
+            usages: Sequence[Tuple[Container, Union[Path, str]]],
+            container_name: str
+    ) -> Optional[Sequence[Tuple[Container, Union[Path, str]]]]:
+        """
+        Get usages within given container
+        :param usages: list of tuples (container, storage_url_or_dict)
+        :param container_name: container name
+        :return: list of tuples (container, storage_url_or_dict)
+        """
+        container_obj = self.client.load_object_from_name(
+            WildlandObject.Type.CONTAINER, container_name)
+        usages = [(cont, backend) for (cont, backend) in usages
+                  if cont.local_path == container_obj.local_path]
+
+        return usages
+
+    def __storage_delete_force(self, name: str, cascade: bool):
+        try:
+            path = self.client.find_local_manifest(WildlandObject.Type.STORAGE, name)
+            if path:
+                logger.info('Deleting file %s', path)
+                path.unlink()
+        except ManifestError:
+            # already removed
+            pass
+        if cascade:
+            logger.warning('Unable to cascade remove: manifest failed to load.')
+
+    def __storage_delete_sync_containers(self,
+                                         name: str,
+                                         containers: List[Container],
+                                         force: bool):
+        container_to_sync = []
+        container_failed_to_sync = []
+        for container in containers:
+            if len(self.client.get_all_storages(container)) > 1 and not force:
+                status = self.client.get_sync_job_state(container.sync_id)
+                if status is None:
+                    container_to_sync.append(container)
+                elif status[0] != SyncState.SYNCED:
+                    logger.info('Syncing of %s is in progress.', container.uuid)
+                    return
+
+        for c in container_to_sync:
+            storage_to_delete = self.client.get_storage_by_id_or_type(name,
+                                                                      self.client.all_storages(c))
+            logger.info('Outdated storage for container %s, attempting to sync storage.', c.uuid)
+            target = None
+            try:
+                target = self.client.get_remote_storage(c, excluded_storage=name)
+            except WildlandError:
+                pass
+            if not target:
+                target = self.client.get_local_storage(c, excluded_storage=name)
+
+            logger.debug("sync: {%s} -> {%s}", storage_to_delete, target)
+            response = self.client.do_sync(c.uuid, c.sync_id, storage_to_delete.params,
+                                           target.params, one_shot=True, unidir=True)
+            logger.debug(response)
+            msg, success = self.client.wait_for_sync(c.sync_id)
+            logger.info(msg)
+            if not success:
+                container_failed_to_sync.append(c.uuid)
+
+        if container_failed_to_sync and not force:
+            logger.info('Failed to sync storage for containers: %s',
+                        ','.join(container_failed_to_sync))
+
+    def storage_delete_cascade(self,
+                               containers:
+                               Optional[Sequence[Tuple[Container, Union[Path, str]]]]
+                               ) -> WildlandResult:
+        """
+        Delete storages cascade
+        :param containers: optionally list of tuples (container, storage_url_or_dict)
+        :return: WildlandResult
+        """
+        return self.__storage_delete_cascade(containers)
+
+    @wildland_result()
+    def __storage_delete_cascade(self, containers: Sequence[Tuple[Container, Union[Path, str]]]):
+        result = WildlandResult()
+        for container, backend in containers:
+            logger.info('Removing %s from %s', backend, container.local_path)
+            container.del_storage(backend)
+            try:
+                logger.info('Saving: %s', container.local_path)
+                self.client.save_object(WildlandObject.Type.CONTAINER, container)
+            except ManifestError as ex:
+                result.errors.append(WLError.from_exception(ex))
+        return result
+
+    def storage_get_by_id(self, storage_id: str) -> Tuple[WildlandResult, Optional[Storage]]:
+        """
+        Get storage by specified ID.
+        :param storage_id: id of the storage to be found
+         (user_id:/.uuid/container_uuid:/.uuid/storage_uuid)
+        :return: tuple of WildlandResult and, if successful, the Storage
+        """
+        return self.__storage_get_by_id(storage_id)
+
+    @wildland_result(default_output=None)
+    def __storage_get_by_id(self, storage_id: str):
+        result = WildlandResult()
+
+        for storage in self.client.load_all(WildlandObject.Type.STORAGE):
+            if utils.storage_to_wl_storage(storage).id == storage_id:
+                return result, storage
+
+        result.errors.append(
+            WLError.from_exception(FileNotFoundError(f'Cannot find storage {storage_id}')))
+        return result, None
+
+    def storage_sync_container(self, storage_id: str, container_id: str) -> WildlandResult:
+        """
+        Sync storage with container
+        :param storage_id: id of storage
+        :param container_id: id of container
+        :return: WildlandResult
+        """
+        return self.__storage_sync_container(storage_id, container_id)
+
+    @wildland_result()
+    def __storage_sync_container(self, storage_id: str, container_id: str):
+        sync_result = WildlandResult()
+        storage = None
+
+        container_result, container = self.container_find_by_id(container_id)
+        if not container_result.success or not container:
+            return container_result
+
+        for container_storage in self.client.get_all_storages(container):
+            if utils.storage_to_wl_storage(container_storage).id == storage_id:
+                storage = container_storage
+                break
+
+        if storage:
+            if len(self.client.get_all_storages(container)) == 1:
+                logger.info(
+                    'Skipping syncing as there is just one storage attached to the container.'
+                )
+            elif Client.is_local_storage(storage):
+                logger.info('Skipping syncing as the created storage is local.')
+            elif not storage.is_writeable:
+                logger.info('Skipping syncing as the created storage is read-only.')
+            else:
+                try:
+                    source_storage = self.client.get_local_storage(
+                        container, excluded_storage=storage.backend_id)
+                except WildlandError:
+                    try:
+                        source_storage = self.client.get_remote_storage(
+                            container, excluded_storage=storage.backend_id)
+                    except WildlandError:
+                        logger.debug('No appropriate source storage found for syncing with %s',
+                                     str(storage))
+                        return sync_result
+
+                logger.debug("sync: {%s} -> {%s}", source_storage, storage)
+
+                response = self.client.do_sync(container.uuid, container.sync_id,
+                                               source_storage.params, storage.params,
+                                               one_shot=True, unidir=True,
+                                               wait_if_already_running=True)
+                logger.debug(response)
+                msg, success = self.client.wait_for_sync(container.sync_id, stop_on_finish=True)
+                logger.info(msg)
+                if not success:
+                    sync_result.errors.append(WLError.from_exception(
+                        WildlandError(f'Failed to sync storage for container {container.uuid} '
+                                      f'(source: {source_storage}, target: {storage})')
+                    ))
+
+        return sync_result
 
     def storage_import_from_data(self, yaml_data: str, overwrite: bool = True) -> \
             Tuple[WildlandResult, Optional[WLStorage]]:

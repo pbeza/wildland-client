@@ -114,10 +114,13 @@ class WLStorage(WLObject):
     """
     Wildland storage
     """
+    location: str
     #: storage backend type
     storage_type: str
     #: id of the container owning this storage
     container: str  # container id
+    #: storage backend id
+    backend_id: str
     #: is this storage trusted
     trusted: bool
     #: is this a primary storage of the container

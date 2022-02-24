@@ -33,11 +33,9 @@ from subprocess import Popen, PIPE
 from pathlib import PurePosixPath, Path
 import secrets
 import string
-from typing import Dict, List, Optional, Type
+from typing import Dict, List, Optional, Type, Any
 
-import click
-
-from wildland.storage_backends.base import StorageBackend, File
+from wildland.storage_backends.base import StorageBackend, File, StorageParam
 from wildland.manifest.schema import Schema
 from wildland.storage_backends.local import LocalStorageBackend, LocalFile
 from wildland.fs_client import WildlandFSError
@@ -454,30 +452,37 @@ class EncryptedStorageBackend(StorageBackend):
         self.ciphertext_path = PurePosixPath(self.params['storage-path'])
 
     @classmethod
-    def cli_options(cls):
+    def storage_options(cls) -> List[StorageParam]:
         return [
-            click.Option(['--reference-container-url'], metavar='URL',
-                         help='URL for inner container manifest',
-                         required=True),
-            click.Option(['--engine'], metavar='ENGINE',
-                         help='Cryptographic filesystem to use: gocryptfs or encfs.',
-                         default="gocryptfs",
-                         required=False),
+            StorageParam('reference_container_url',
+                         display_name='URL',
+                         required=True,
+                         description='URL for inner container manifest',
+                         ),
+            StorageParam('engine',
+                         display_name='ENGINE',
+                         default_value='gocryptfs',
+                         description='Cryptographic filesystem to use: gocryptfs or encfs.',
+                         ),
         ]
 
     @classmethod
-    def cli_create(cls, data):
-        engine = engines[data['engine']]
+    def validate_and_parse_params(cls, params) -> Dict[str, Any]:
+        engine = engines[params['engine']]
         with tempfile.TemporaryDirectory(prefix='encrypted-temp-dir.') as d:
             d1 = PurePosixPath(d) / 'encrypted'
             d2 = PurePosixPath(d) / 'cleartext'
             Path(d1).mkdir()
             Path(d2).mkdir()
             runner = engine.init(PurePosixPath(d), d1, d2)
-        return {'reference-container': data['reference_container_url'],
+        data = {'reference-container': params['reference_container_url'],
                 'symmetrickey': runner.credentials(),
-                'engine': data['engine']
+                'engine': params['engine']
                 }
+        data = cls.remove_non_required_params(data)
+
+        cls.SCHEMA.validate(data)
+        return data
 
     # pylint: disable=protected-access
     def open(self, path: PurePosixPath, flags: int) -> File:

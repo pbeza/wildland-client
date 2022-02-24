@@ -28,7 +28,6 @@ import os
 import click
 
 from wildland.wildland_object.wildland_object import WildlandObject
-from .cli_storage import do_create_storage_from_templates
 from ..container import Container
 from ..storage import StorageBackend
 from ..storage_backends.file_children import FileChildrenMixin
@@ -312,7 +311,12 @@ def _create_container(obj: ContextObj,
                           backends=[], client=obj.client, access=access)
 
     obj.client.save_new_object(WildlandObject.Type.CONTAINER, container, container_name)
-    do_create_storage_from_templates(obj.client, container, storage_templates, storage_local_dir)
+
+    result = obj.wlcore.storage_do_create_from_template(
+        container, storage_templates, storage_local_dir
+    )
+    if not result.success:
+        raise CliError(str(result))
 
     return container
 

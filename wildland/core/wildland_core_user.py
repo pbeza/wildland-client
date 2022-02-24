@@ -65,7 +65,7 @@ class WildlandCoreUser(WildlandCoreApi):
         assert obj
         for container in self.client.load_all(WildlandObject.Type.CONTAINER):
             if container.owner == obj.owner:
-                usages.append(utils.container_to_wlcontainer(container))
+                usages.append(utils.container_to_wlcontainer(container, self.client))
         return usages
 
     # USER METHODS

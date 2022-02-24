@@ -49,7 +49,6 @@ from wildland.wildland_object.wildland_object import WildlandObject
 from wildland.fs_client import StorageInfo
 from .cli_base import aliased_group, ContextObj
 from .cli_exc import CliError
-from .cli_storage import do_create_storage_from_templates
 from ..container import Container
 from ..exc import WildlandError
 from ..manifest.manifest import ManifestError
@@ -214,8 +213,11 @@ def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Opt
 
     if storage_templates:
         try:
-            do_create_storage_from_templates(obj.client, container, storage_templates, local_dir,
-                                             no_publish=no_publish)
+            result = obj.wlcore.storage_do_create_from_template(
+                container, storage_templates, local_dir
+            )
+            if not result.success:
+                raise CliError(str(result))
         except (WildlandError, ValueError) as ex:
             click.echo(f'Removing container: {container_path}')
             container_path.unlink()
@@ -683,8 +685,8 @@ def prepare_mount(obj: ContextObj,
             _cache_sync(obj.client, container, storages, verbose, user_paths)
             yield container, storages, user_paths, subcontainer_of
         elif remount:
-            to_remount, to_unmount = cli_common.prepare_remount(
-                obj, container, storages, user_paths)
+            to_remount, to_unmount = obj.client.prepare_remount(
+                container, storages, user_paths)
             for storage_id in to_unmount:
                 obj.fs_client.unmount_storage(storage_id)
 

@@ -29,7 +29,6 @@ from __future__ import annotations
 import abc
 import hashlib
 import itertools
-import click as click
 import json
 import os
 import stat
@@ -171,6 +170,9 @@ class File(metaclass=abc.ABCMeta):
 
 
 class StorageParamType(Enum):
+    """
+    Enum for storage param type
+    """
     SINGLE = auto()
     LIST = auto()
     BOOLEAN = auto()
@@ -178,13 +180,42 @@ class StorageParamType(Enum):
 
 @dataclass
 class StorageParam:
-    names: str
+    """
+    Dataclass for storage params
+    """
+    name: str
     description: str
     param_type: Optional[StorageParamType] = StorageParamType.SINGLE
     display_name: Optional[str] = None
-    default_value: Union[str, bool, List[str], None] = None
+    default_value: Union[int, str, bool, List[str], None] = None
     private: bool = False
     required: bool = False
+
+
+class StorageUserInteraction(metaclass=abc.ABCMeta):
+    """
+    Interface for interaction with user
+    """
+    @staticmethod
+    @abc.abstractmethod
+    def display_message(msg: str) -> None:
+        """
+        Display given message to user
+        """
+
+    @staticmethod
+    @abc.abstractmethod
+    def get_user_input(prompt: str, hide_input: bool) -> str:
+        """
+        Fetch data from user
+        """
+
+    @staticmethod
+    @abc.abstractmethod
+    def get_user_confirmation(prompt: str) -> bool:
+        """
+        Check whether user confirms his input
+        """
 
 
 class StorageBackend(metaclass=abc.ABCMeta):
@@ -298,7 +329,7 @@ class StorageBackend(metaclass=abc.ABCMeta):
         return self.params.get(self.LOCATION_PARAM)
 
     @classmethod
-    def storage_options(cls) -> List[StorageParam]:
+    def storage_options(cls):
         """
         Provide a list of parameters needed to create this storage. If using mixins,
         check if a super() call is needed.
@@ -306,31 +337,32 @@ class StorageBackend(metaclass=abc.ABCMeta):
         return []
 
     @classmethod
-    def validate_and_parse_params(cls, params) -> Dict[str, Any]:
+    def validate_and_parse_params(cls, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Checks whether provided params match backend requirements. If necessary supplements and
         parses params
         """
-        return params
-
-    # TODO: remove when will be ready https://gitlab.com/wildland/wildland-client/-/issues/703
-    @classmethod
-    def cli_options(cls) -> List[click.Option]:
-        """
-        Provide a list of command-line options needed to create this storage. If using mixins,
-        check if a super() call is needed.
-        """
-        return []
-
-    # TODO: remove when will be ready https://gitlab.com/wildland/wildland-client/-/issues/703
-    @classmethod
-    def cli_create(cls, data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Convert provided command-line arguments to a list of storage parameters. If using mixins,
-        check if a super() call is needed.
-        """
         # pylint: disable=unused-argument
         return {}
+
+    @classmethod
+    def get_additional_user_data(cls, params, user_interaction_cls):
+        """
+        If interaction with user is necessary implement this method
+        in the backend to fetch additional data
+        """
+        # pylint: disable=unused-argument
+        return params
+
+    @classmethod
+    def remove_non_required_params(cls, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Remove empty params - not required
+        """
+        for param, value in list(params.items()):
+            if value is None or value == []:
+                del params[param]
+        return params
 
     @staticmethod
     def types() -> Dict[str, Type['StorageBackend']]:

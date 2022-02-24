@@ -28,8 +28,6 @@ Delegate proxy backend
 from typing import Iterable, Optional, Tuple, List, Dict, Any
 from pathlib import PurePosixPath
 
-import click
-
 from .base import StorageBackend, File, Attr, StorageParam
 from ..cli.cli_exc import CliError
 from ..exc import WildlandError
@@ -85,12 +83,15 @@ class DelegateProxyStorageBackend(StorageBackend):
     @classmethod
     def storage_options(cls) -> List[StorageParam]:
         return [
-            StorageParam('reference_container_url', display_name='URL',
+            StorageParam('reference_container_url',
+                         display_name='URL',
+                         required=True,
                          description='URL for reference container manifest',
-                         required=True),
-            StorageParam('subdirectory', display_name='SUBDIRECTORY',
+                         ),
+            StorageParam('subdirectory',
+                         display_name='SUBDIRECTORY',
                          description='Subdirectory of reference-container to be exposed',
-                         required=False),
+                         ),
         ]
 
     @classmethod
@@ -100,37 +101,16 @@ class DelegateProxyStorageBackend(StorageBackend):
             wl_path = WildlandPath.from_str(params['reference_container_url'])
             if not wl_path.has_explicit_or_default_owner():
                 raise CliError("reference container URL must contain explicit or default owner")
-        opts = {'reference-container': params['reference_container_url']}
-        if 'subdirectory' in params:
-            opts['subdirectory'] = params['subdirectory']
-
-        cls.SCHEMA.validate(opts)
-        return opts
-
-    @classmethod
-    def cli_options(cls):
-        return [
-            click.Option(['--reference-container-url'], metavar='URL',
-                         help='URL for reference container manifest',
-                         required=True),
-            click.Option(['--subdirectory'], metavar='SUBDIRECTORY',
-                         help='Subdirectory of reference-container to be exposed',
-                         required=False),
-        ]
-
-    @classmethod
-    def cli_create(cls, data):
-        if WildlandPath.match(data['reference_container_url']):
-            wl_path = WildlandPath.from_str(data['reference_container_url'])
-            if not wl_path.has_explicit_or_default_owner():
-                raise CliError("reference container URL must contain explicit or default owner")
-
-        opts = {
-            'reference-container': data['reference_container_url'],
+        data = {
+            'reference-container': params['reference_container_url']
         }
-        if 'subdirectory' in data:
-            opts['subdirectory'] = data['subdirectory']
-        return opts
+        if 'subdirectory' in params:
+            data['subdirectory'] = params['subdirectory']
+
+        data = cls.remove_non_required_params(data)
+
+        cls.SCHEMA.validate(data)
+        return data
 
     def mount(self):
         self.reference.request_mount()

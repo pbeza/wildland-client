@@ -29,9 +29,8 @@ from typing import Iterable, List, Set, Tuple
 from datetime import timezone
 
 import uuid
-import click
 
-from wildland.storage_backends.base import StorageBackend
+from wildland.storage_backends.base import StorageBackend, StorageParam, StorageParamType
 from wildland.storage_backends.watch import SimpleStorageWatcher
 from wildland.storage_backends.generated import \
     GeneratedStorageMixin, StaticFileEntry, FuncDirEntry
@@ -178,31 +177,44 @@ class ImapStorageBackend(GeneratedStorageMixin, StorageBackend):
         })
 
     @classmethod
-    def cli_options(cls):
+    def storage_options(cls) -> List[StorageParam]:
         return [
-            click.Option(['--host'], metavar='HOST',
-                         help='imap server host name',
-                         required=True),
-            click.Option(['--login'], metavar='LOGIN',
-                         help='imap account name / login',
-                         required=True),
-            click.Option(['--password'], metavar='PASSWORD',
-                         help='imap account password (omit for a password prompt)',
-                         prompt=True, required=True, hide_input=True),
-            click.Option(['--folder'], metavar='FOLDER',
-                         default='INBOX',
-                         help='root folder to expose'),
-            click.Option(['--ssl/--no-ssl'], metavar='SSL',
-                         default=True,
-                         help='use encrypted connection')
+            StorageParam('host',
+                         display_name='HOST',
+                         required=True,
+                         description='imap server host name'
+                         ),
+            StorageParam('login',
+                         display_name='LOGIN',
+                         required=True,
+                         description='imap account name / login'
+                         ),
+            StorageParam('password',
+                         display_name='PASSWORD',
+                         private=True,
+                         description="imap account password (omit for a password prompt)"
+                         ),
+            StorageParam('folder',
+                         display_name='FOLDER',
+                         default_value='INBOX',
+                         description="root folder to expose"),
+            StorageParam('ssl/no_ssl',
+                         display_name='SSL',
+                         default_value=True,
+                         param_type=StorageParamType.BOOLEAN,
+                         description="use encrypted connection"
+                         ),
         ]
 
     @classmethod
-    def cli_create(cls, data):
-        return {
-            'host': data['host'],
-            'login': data['login'],
-            'password': data['password'],
-            'folder': data['folder'],
-            'ssl': data['ssl']
+    def validate_and_parse_params(cls, params):
+        data = {
+            'host': params['host'],
+            'login': params['login'],
+            'password': params['password'],
+            'folder': params['folder'],
+            'ssl': params['ssl']
         }
+        data = cls.remove_non_required_params(data)
+
+        return data
