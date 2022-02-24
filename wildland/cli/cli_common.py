@@ -444,24 +444,11 @@ def _sync_removed_storages(obj, manifest_type, original_data, edited_s, path):
                 WildlandObject.Type.STORAGE, storage, owner, container=container)
             new_storage_ids.append(found_storage.backend_id)
 
-
     #check old manifest's list of storage ids
     old_storage_ids = []
-    try:
-        old_storages = yaml.safe_load(original_data)['backends']['storage']
-    except Exception as error:
-        click.echo("Could not load storages from the old manifest: ",error)
-        return
-
-    for storage in old_storages:
-        #handle either backend_id or url
-        if isinstance(storage, dict):
-            old_storage_ids.append(storage['backend-id'])
-        else:
-            owner = yaml.safe_load(edited_s)['owner']
-            found_storage = obj.client.load_object_from_url_or_dict(
-                WildlandObject.Type.STORAGE, storage, owner, container=container)
-            old_storage_ids.append(found_storage.backend_id)
+    for i in obj.client.get_all_storages(container):
+        click.echo(i)
+        old_storage_ids.append(i.backend_id)
 
     #if any old storage not on the new list, synchronize
     for storage_id in old_storage_ids:
