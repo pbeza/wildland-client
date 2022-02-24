@@ -68,7 +68,7 @@ def user_to_wluser(user: User, client: Client) -> WLUser:
     return wl_user
 
 
-def container_to_wlcontainer( container: Container) -> WLContainer:
+def container_to_wlcontainer(container: Container, client: Client) -> WLContainer:
     """
     Convert Container to WLContainer
     """
@@ -79,8 +79,9 @@ def container_to_wlcontainer( container: Container) -> WLContainer:
         title=container.title,
         categories=[str(c) for c in container.categories],
         access_ids=[],  # TODO
-        storage_ids=[],  # TODO
-        storage_description=[],  # TODO
+        storage_ids=[storage_to_wl_storage(storage).id
+                     for storage in client.get_all_storages(container)],
+        storage_description=list(container.get_backends_description(only_inline=True))
     )
     return wl_container
 
@@ -107,8 +108,10 @@ def storage_to_wl_storage(storage: Storage) -> WLStorage:
     wl_storage = WLStorage(
         owner=storage.owner,
         id=get_object_id(storage),
+        location=storage.location,
         storage_type=storage.storage_type,
         container="",  # TODO
+        backend_id=storage.backend_id,
         trusted=storage.trusted,
         primary=storage.primary,
         access_ids=[],  # TODO
@@ -144,7 +147,7 @@ def wildland_object_to_wl_object(obj: WildlandObject, client: Client) -> WLObjec
     if isinstance(obj, User):
         return user_to_wluser(obj, client)
     if isinstance(obj, Container):
-        return container_to_wlcontainer(obj)
+        return container_to_wlcontainer(obj, client)
     if isinstance(obj, Bridge):
         return bridge_to_wl_bridge(obj)
     if isinstance(obj, Storage):

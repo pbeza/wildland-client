@@ -32,7 +32,6 @@ from urllib.parse import urljoin, urlparse, quote
 import errno
 from io import BytesIO
 
-import click
 from lxml import etree
 import requests
 
@@ -114,34 +113,24 @@ class HttpStorageBackend(FileChildrenMixin, DirectoryCachedStorageMixin, Storage
     def storage_options(cls) -> List[StorageParam]:
         opts = super(HttpStorageBackend, cls).storage_options()
         opts.extend([
-            StorageParam('url', display_name='URL', description='url', required=True),
+            StorageParam('url',
+                         display_name='URL',
+                         required=True,
+                         description='url'
+                         ),
         ])
         return opts
 
     @classmethod
     def validate_and_parse_params(cls, params):
-        result = super(HttpStorageBackend, cls).validate_and_parse_params(params)
-        result.update({
+        data = super(HttpStorageBackend, cls).validate_and_parse_params(params)
+        data.update({
             'url': params['url'],
         })
-        cls.SCHEMA.validate(params)
-        return result
+        data = cls.remove_non_required_params(data)
 
-    @classmethod
-    def cli_options(cls):
-        opts = super(HttpStorageBackend, cls).cli_options()
-        opts.extend([
-            click.Option(['--url'], metavar='URL', required=True),
-        ])
-        return opts
-
-    @classmethod
-    def cli_create(cls, data):
-        result = super(HttpStorageBackend, cls).cli_create(data)
-        result.update({
-            'url': data['url'],
-        })
-        return result
+        cls.SCHEMA.validate(data)
+        return data
 
     def make_url(self, path: PurePosixPath, is_dir=False) -> str:
         """

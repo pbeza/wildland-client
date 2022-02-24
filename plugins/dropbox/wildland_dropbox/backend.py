@@ -27,14 +27,12 @@ import errno
 import stat
 
 from pathlib import PurePosixPath, PosixPath
-from typing import Iterable, Tuple, Optional, Callable
-
-import click
+from typing import Iterable, Tuple, Optional, Callable, List
 
 from dropbox import DropboxOAuth2FlowNoRedirect
 from dropbox.files import FileMetadata, FolderMetadata, Metadata
 from dropbox.exceptions import ApiError
-from wildland.storage_backends.base import StorageBackend, Attr
+from wildland.storage_backends.base import StorageBackend, Attr, StorageParam
 from wildland.storage_backends.buffered import FullBufferedFile
 from wildland.storage_backends.cached import DirectoryCachedStorageMixin
 from wildland.storage_backends.file_children import FileChildrenMixin
@@ -165,45 +163,63 @@ class DropboxStorageBackend(FileChildrenMixin, DirectoryCachedStorageMixin, Stor
         self.root = PosixPath(self.params.get('location', '/')).resolve()
 
     @classmethod
-    def cli_options(cls):
-        opts = super(DropboxStorageBackend, cls).cli_options()
+    def storage_options(cls) -> List[StorageParam]:
+        opts = super(DropboxStorageBackend, cls).storage_options()
         opts.extend([
-            click.Option(
-                ['--location'], metavar='PATH', required=False, default='/',
-                help='Absolute path to root directory in your Dropbox account.'),
-            click.Option(
-                ["--token"],
-                metavar="STRING",
+            StorageParam(
+                'location',
+                display_name='PATH',
                 required=False,
-                help="Dropbox OAuth 2.0 access token. You can generate it in Dropbox App "
-                     "Console. Deprecated and will be replaced in favor of App Key and "
-                     "refresh token.",
+                default_value='/',
+                description='Absolute path to root directory in your Dropbox account.',
             ),
-            click.Option(
-                ["--app-key"],
-                metavar="STRING",
+            StorageParam(
+                'token',
+                display_name='STRING',
                 required=False,
-                help="Dropbox App Key. You can obtain it in Dropbox App Console.",
+                description="Dropbox OAuth 2.0 access token. You can generate it in Dropbox App "
+                            "Console. Deprecated and will be replaced in favor of App Key and "
+                            "refresh token."
             ),
-            click.Option(
-                ["--refresh-token"],
-                metavar="STRING",
+            StorageParam(
+                'app_key',
+                display_name='STRING',
                 required=False,
-                help="Dropbox OAuth 2.0 refresh token. "
-                     "You can generate it using the following "
-                     "https://www.dropbox.com/developers/documentation/http/documentation"
-                     "at '/oauth2/token' endpoint section. "
-                     "Please note that this is optional as the procedure is performed "
-                     "when a container is created.",
+                description='Dropbox App Key. You can obtain it in Dropbox App Console.'
+            ),
+            StorageParam(
+                'refresh_token',
+                display_name='STRING',
+                required=False,
+                description="Dropbox OAuth 2.0 refresh token. "
+                            "You can generate it using the following "
+                            "https://www.dropbox.com/developers/documentation/http/documentation "
+                            "at '/oauth2/token' endpoint section. "
+                            "Please note that this is optional as the procedure is performed "
+                            "when a container is created."
             )
         ])
         return opts
 
     @classmethod
-    def cli_create(cls, data):
-        token = data.get("token", None)
-        app_key = data.get("app_key", None)
-        refresh_token = data.get("refresh_token", None)
+    def validate_and_parse_params(cls, params):
+        data = super(DropboxStorageBackend, cls).validate_and_parse_params(params)
+        data.update({
+            "location": params.get("location"),
+            "token": params.get("token"),
+            "app-key": params.get("app_key"),
+            "refresh-token": params.get('refresh_token')
+        })
+        data = cls.remove_non_required_params(data)
+
+        cls.SCHEMA.validate(data)
+        return data
+
+    @classmethod
+    def get_additional_user_data(cls, params, user_interaction_cls):
+        token = params.get("token", None)
+        app_key = params.get("app_key", None)
+        refresh_token = params.get("refresh_token", None)
 
         if token and app_key:
             raise CliError('--token and --app-key are mutually exclusive')
@@ -217,29 +233,35 @@ class DropboxStorageBackend(FileChildrenMixin, DirectoryCachedStorageMixin, Stor
 1. Go to: {authorize_url}
 2. Click \"Allow\" (you might have to log in first).
 3. Copy the authorization code."""
-            print(msg)
+            user_interaction_cls.display_message(msg)
 
             err_msg = "Cannot get refresh token"
             for i in range(0, 3):
                 try:
-                    auth_code = click.prompt("4. Enter the authorization code here")
+                    auth_code = user_interaction_cls.get_user_input(
+                        "4. Enter the authorization code here"
+                    )
                     oauth_result = auth_flow.finish(auth_code.strip())
                     refresh_token = oauth_result.refresh_token
                 except Exception as e:
-                    if i != 2 and click.confirm("Do you want to retry?"):
+                    if i != 2 and user_interaction_cls.get_user_confirmation(
+                            "Do you want to retry?"
+                    ):
                         continue
                     err_msg = f"Cannot get refresh token: {str(e)}"
                 break
             if not refresh_token:
                 raise ValueError(err_msg)
 
-        result = super(DropboxStorageBackend, cls).cli_create(data)
-        result.update({"location": data["location"]})
+        data = super(DropboxStorageBackend, cls).get_additional_user_data(
+            params, user_interaction_cls
+        )
+        data.update({"location": params["location"]})
         if token:
-            result.update({"token": token})
+            data.update({"token": token})
         if app_key:
-            result.update({"app-key":  app_key, "refresh-token": refresh_token})
-        return result
+            data.update({"app_key":  app_key, "refresh_token": refresh_token})
+        return data
 
     @staticmethod
     def _get_attr_from_metadata(metadata: Metadata) -> DropboxFileAttr:

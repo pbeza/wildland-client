@@ -29,12 +29,10 @@ from functools import partial
 from pathlib import PurePosixPath
 from typing import List, Tuple
 
-import click
-
 from wildland.container import ContainerStub
 from wildland.log import get_logger
 from wildland.manifest.schema import Schema
-from wildland.storage_backends.base import StorageBackend
+from wildland.storage_backends.base import StorageBackend, StorageParam, StorageParamType
 from wildland.storage_backends.generated import GeneratedStorageMixin, DirEntry, FuncDirEntry
 from .jira_client import CompactIssue, JiraClient
 from .jira_file_entry import JiraFileEntry
@@ -200,34 +198,44 @@ class JiraStorageBackend(GeneratedStorageMixin, StorageBackend):
         })
 
     @classmethod
-    def cli_options(cls):
+    def storage_options(cls) -> List[StorageParam]:
         return [
-            click.Option(
-                ['--workspace-url'], required=True,
-                help='address of the v2 REST endpoint of your Jira Work Management Cloud site'),
-            click.Option(
-                ['--username'], required=False,
-                help='(optional) Jira username'),
-            click.Option(
-                ['--personal-token'], required=False,
-                help='(optional) personal access token generated for your Attlassian Account'),
-            click.Option(
-                ['--project-name'], required=False, multiple=True,
-                help='(optional) (multiple) Jira projects names'),
-            click.Option(
-                ['--limit'], required=False, default=DEFAULT_ISSUES_LIMIT,
-                help=f'(optional) (default: {DEFAULT_ISSUES_LIMIT}) maximum amount of issues to '
-                     f'be fetched starting from the most recently updated')
+            StorageParam('workspace_url',
+                         required=True,
+                         description='address of the v2 REST endpoint of your '
+                                     'Jira Work Management Cloud site'
+                         ),
+            StorageParam('username',
+                         description='(optional) Jira username'
+                         ),
+            StorageParam('personal_token',
+                         description="(optional) personal access token "
+                                     "generated for your Attlassian Account"
+                         ),
+            StorageParam('project_name',
+                         param_type=StorageParamType.LIST,
+                         description="(optional) (multiple) Jira projects names"
+                         ),
+            StorageParam('limit',
+                         default_value=DEFAULT_ISSUES_LIMIT,
+                         description=f'(optional) (default: {DEFAULT_ISSUES_LIMIT}) '
+                                     f'maximum amount of issues to '
+                                     f'be fetched starting from the most recently updated'
+                         ),
         ]
 
     @classmethod
-    def cli_create(cls, data):
-        if bool(data['personal_token']) ^ bool(data['username']):
+    def validate_and_parse_params(cls, params):
+        if bool(params['personal_token']) ^ bool(params['username']):
             raise TypeError('Only one of [token, user] provided. Expected either none or both.')
-        return {
-            'workspace_url': data['workspace_url'],
-            'username': data['username'],
-            'personal_token': data['personal_token'],
-            'project_name': list(data['project_name']),
-            'limit': data['limit'],
+        data = {
+            'workspace_url': params['workspace_url'],
+            'username': params['username'],
+            'personal_token': params['personal_token'],
+            'project_name': list(params['project_name']),
+            'limit': params['limit'],
         }
+        data = cls.remove_non_required_params(data)
+
+        cls.SCHEMA.validate(data)
+        return data

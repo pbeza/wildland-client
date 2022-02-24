@@ -29,12 +29,13 @@ from pathlib import PurePosixPath
 from os import unlink
 from tempfile import mkstemp
 from subprocess import Popen, PIPE, STDOUT, run
+from typing import List
 
-import click
-
+from wildland.exc import WildlandError
 from wildland.fs_client import WildlandFSError
 from wildland.manifest.schema import Schema
 from wildland.log import get_logger
+from wildland.storage_backends.base import StorageParam, StorageParamType
 from .local_proxy import LocalProxy
 
 logger = get_logger('storage-sshfs')
@@ -74,7 +75,7 @@ class SshFsBackend(LocalProxy):
                 "description": "A POSIX relative path to the directory on target server "
                                "that will be mounted as root.",
             },
-            "mount_opts": {
+            "mount-opts": {
                 "type": ["string"],
                 "description": "Additional mount options passed directly to sshfs command."
             },
@@ -143,59 +144,68 @@ class SshFsBackend(LocalProxy):
             if self.identity:
                 unlink(ipath)
 
+    @classmethod
+    def storage_options(cls) -> List[StorageParam]:
+        return [
+            StorageParam('sshfs_command',
+                         display_name='CMD',
+                         default_value='sshfs',
+                         required=True,
+                         description='command to mount sshfs filesystem'
+                         ),
+            StorageParam('host',
+                         display_name='HOST',
+                         required=True,
+                         description='host to mount'
+                         ),
+            StorageParam('path',
+                         default_value='./',
+                         description="path on target host to mount"
+                         ),
+            StorageParam('ssh_user',
+                         display_name='USER',
+                         default_value=getpass.getuser(),
+                         description='user name to log on to target host'
+                         ),
+            StorageParam('ssh_identity',
+                         display_name='PATH',
+                         description='path to private key file to use for authentication'
+                         ),
+            StorageParam('pwprompt', param_type=StorageParamType.BOOLEAN,
+                         description='prompt for password that will be used for authentication'
+                         ),
+            StorageParam('mount_options',
+                         display_name='OPT1,OPT2,...',
+                         description="additional options to be passed to sshfs command directly"
+                         ),
+        ]
 
     @classmethod
-    def cli_create(cls, data):
-
-        if data['ssh_identity'] and data['pwprompt']:
-            raise click.UsageError('pwprompt and ssh-identity are mutually exclusive')
-        conf = {
-            'cmd': data['sshfs_command'],
-            'login': data['ssh_user'],
-            'mount_opts': data['mount_options'],
-            'host': data['host'],
-            'path': data['path']
+    def validate_and_parse_params(cls, params):
+        data = {
+            'cmd': params.get('sshfs_command'),
+            'login': params.get('ssh_user'),
+            'mount-opts': params.get('mount_options'),
+            'host': params.get('host'),
+            'path': params.get('path'),
+            'passwd': params.get('passwd')
         }
 
+        if params.get('ssh_identity'):
+            with open(params['ssh_identity']) as f:
+                data['identity'] = '\n'.join([l.rstrip() for l in f])
 
-        if data['pwprompt']:
-            conf['passwd'] = click.prompt('SSH password',
-                                          hide_input=True)
+        data = cls.remove_non_required_params(data)
 
-        if data['ssh_identity']:
-            with open(data['ssh_identity']) as f:
-                conf['identity'] = '\n'.join([l.rstrip() for l in f])
-        return conf
+        cls.SCHEMA.validate(data)
+        return data
 
     @classmethod
-    def cli_options(cls):
-        return [
-            click.Option(['--sshfs-command'],
-                         default='sshfs',
-                         metavar='CMD',
-                         required=True,
-                         help='command to mount sshfs filesystem',
-                         ),
-            click.Option(['--host'],
-                         required=True,
-                         metavar='HOST',
-                         help='host to mount',
-                         ),
-            click.Option(['--path'],
-                         help='path on target host to mount',
-                         default='./'),
-            click.Option(['--ssh-user'],
-                         metavar='USER',
-                         help='user name to log on to target host',
-                         default=getpass.getuser()
-                         ),
-            click.Option(['--ssh-identity'],
-                         metavar='PATH',
-                         help='path to private key file to use for authentication',
-                         ),
-            click.Option(['--pwprompt'], is_flag=True,
-                         help='prompt for password that will be used for authentication'),
-            click.Option(['--mount-options'],
-                         metavar='OPT1,OPT2,...',
-                         help='additional options to be passed to sshfs command directly'),
-        ]
+    def get_additional_user_data(cls, params, user_interaction_cls):
+        if params.get('ssh_identity') and params.get('pwprompt'):
+            raise WildlandError('pwprompt and ssh-identity are mutually exclusive')
+
+        if params.get('pwprompt'):
+            params['passwd'] = user_interaction_cls.get_user_input("SSH password", hide_input=True)
+
+        return params

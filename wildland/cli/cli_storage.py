@@ -26,29 +26,21 @@ Storage object
 """
 
 import types
-from typing import Iterable, List, Optional, Sequence, Tuple, Type, Union
-from pathlib import Path, PurePosixPath
+from typing import List, Optional, Type
 import functools
 import click
 
 from wildland.wildland_object.wildland_object import WildlandObject
-import wildland.core.core_utils as core_utils
-from .cli_base import aliased_group, ContextObj
+from .cli_base import aliased_group, ContextObj, CliStorageUserInteraction
 from .cli_exc import CliError
 from .cli_utils import parse_storage_cli_options, param_name_from_cli
-from ..client import Client
 from .cli_common import sign, verify, edit, modify_manifest, set_fields, \
     add_fields, del_fields, dump, check_if_any_options, check_options_conflict, \
-    publish, unpublish, remount_container
-from ..container import Container
-from ..storage import Storage, _get_storage_by_id_or_type
-from ..manifest.template import TemplateManager, StorageTemplate
-from ..publish import Publisher
+    publish, unpublish
+from ..core.wildland_objects_api import WLStorage, WLContainer, WLObjectType
 from ..log import get_logger
 from ..storage_backends.base import StorageBackend
 from ..storage_backends.dispatch import get_storage_backends
-from ..storage_sync.base import SyncState
-from ..manifest.manifest import ManifestError
 from ..exc import WildlandError
 from ..utils import format_command_options
 
@@ -97,7 +89,6 @@ def _make_create_command(backend: Type[StorageBackend]):
                           'this option is present or not.'),
         click.Argument(['name'], metavar='NAME', required=False),
     ]
-
     params.extend(parse_storage_cli_options(backend.storage_options()))
     callback = functools.partial(_do_create, backend=backend)
 
@@ -127,7 +118,7 @@ def _do_create(
         trusted: bool,
         inline: bool,
         watcher_interval: Optional[int],
-        access: Sequence[str],
+        access: List[str],
         encrypt_manifest: bool,
         no_publish: bool,
         skip_sync: bool,
@@ -135,79 +126,39 @@ def _do_create(
 
     obj: ContextObj = click.get_current_context().obj
 
-    container_obj = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, container)
+    wl_container_result, wl_container = obj.wlcore.object_get(WLObjectType.CONTAINER, container)
+    if not wl_container_result.success or not wl_container:
+        raise CliError(str(wl_container_result))
+    container_id = wl_container.id
+
+    data = backend.get_additional_user_data(data, user_interaction_cls=CliStorageUserInteraction)
     data = {param_name_from_cli(key): data[key] for key in data}
 
-    storage_params = dict(backend_type=backend.TYPE, backend_params=data,
-                          container_id=core_utils.container_to_wlcontainer(container_obj).id,
-                          name=name, trusted=trusted, watcher_interval=watcher_interval,
-                          inline=inline, access_users=access, encrypt_manifest=encrypt_manifest)
-    result, wl_storage = obj.wlcore.storage_create(**storage_params)
-    if not result.success or not wl_storage:
-        raise CliError(f'Failed to create storage: {result}')
+    create_result, wl_storage = obj.wlcore.storage_create(
+        backend.TYPE, data, container_id, name, trusted,
+        watcher_interval, inline, access, encrypt_manifest
+    )
 
-    if _is_container_mounted(obj, container_obj.paths[0]):
-        remount_container(obj, container_obj.local_path)
+    if not create_result.success or not wl_storage:
+        raise CliError(f'Failed to create storage: {create_result}')
+    storage_id = wl_storage.id
 
-    storage = None
-    container_obj = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, container)
-    for container_storage in obj.client.get_all_storages(container_obj):
-        if core_utils.storage_to_wl_storage(container_storage).id == wl_storage.id:
-            storage = container_storage
-            break
+    remount_result = obj.wlcore.container_remount(container_id)
+    if not remount_result.success:
+        raise CliError(str(remount_result))
 
     if not no_publish:
-        try:
-            user = obj.client.load_object_from_name(WildlandObject.Type.USER, container_obj.owner)
-            Publisher(obj.client, user).republish(container_obj)
-        except WildlandError as ex:
-            raise WildlandError(f"Failed to republish container: {ex}") from ex
+        publish_result = obj.wlcore.container_publish(container_id)
+        if not publish_result.success:
+            raise CliError(str(publish_result))
 
     if skip_sync:
-        click.echo('Skipping syncing as requested.')
-    elif len(obj.client.get_all_storages(container_obj)) == 1:
-        click.echo('Skipping syncing as there is just one storage attached to the container.')
-    elif Client.is_local_storage(storage):
-        click.echo('Skipping syncing as the created storage is local.')
-    elif not storage.is_writeable:
-        click.echo('Skipping syncing as the created storage is read-only.')
-    else:
-        try:
-            source_storage = obj.client.get_local_storage(
-                container_obj, excluded_storage=storage.backend_id)
-        except WildlandError:
-            try:
-                source_storage = obj.client.get_remote_storage(
-                    container_obj, excluded_storage=storage.backend_id)
-            except WildlandError:
-                logger.debug('No appropriate source storage found for syncing with %s',
-                             str(storage))
-                return
+        logger.info('Skipping syncing as requested.')
+        return
 
-        logger.debug("sync: {%s} -> {%s}", source_storage, storage)
-
-        response = obj.client.do_sync(container_obj.uuid, container_obj.sync_id,
-            source_storage.params, storage.params, one_shot=True, unidir=True,
-            wait_if_already_running=True)
-        logger.debug(response)
-        msg, success = obj.client.wait_for_sync(container_obj.sync_id, stop_on_finish=True)
-        click.echo(msg)
-        if not success:
-            raise WildlandError(f'Failed to sync storage for container {container_obj.uuid} '
-                f'(source: {source_storage}, target: {storage})')
-
-
-def _is_container_mounted(obj: ContextObj, container_mount_path: PurePosixPath) -> bool:
-    if not obj.fs_client.is_running():
-        return False
-
-    mounted_storages = obj.fs_client.get_info().values()
-    for storage in mounted_storages:
-        for path in storage.paths:
-            if path == container_mount_path:
-                return True
-
-    return False
+    sync_result = obj.wlcore.storage_sync_container(storage_id, container_id)
+    if not sync_result.success:
+        raise CliError(str(sync_result))
 
 
 @storage_.command('list', short_help='list storages', alias=['ls'])
@@ -216,21 +167,31 @@ def list_(obj: ContextObj):
     """
     Display known storages.
     """
-    for storage in obj.client.load_all(WildlandObject.Type.STORAGE):
-        click.echo(storage.local_path)
+    storages_result, storages = obj.wlcore.storage_list()
+    containers_result, containers = obj.wlcore.container_list()
+    if not storages_result.success or not containers_result.success:
+        raise CliError(f'{str(storages_result) + str(containers_result)}')
+
+    __print_storages_info(storages)
+    __print_containers_info(containers)
+
+
+def __print_storages_info(storages: List[WLStorage]):
+    for storage in storages:
         click.echo(f'  type: {storage.storage_type}')
         click.echo(f'  backend_id: {storage.backend_id}')
         if storage.storage_type in ['local', 'local-cached', 'local-dir-cached']:
-            click.echo(f'  location: {storage.params["location"]}')
+            click.echo(f'  location: {storage.location}')
 
-    for container in obj.client.load_all(WildlandObject.Type.CONTAINER):
-        backends = list(container.get_backends_description(only_inline=True))
-        if not backends:
+
+def __print_containers_info(containers: List[WLContainer]):
+    for container in containers:
+        if not container.storage_description:
             continue
 
-        click.echo(f'{container.local_path} (inline)')
-        for backend in backends:
-            click.echo(backend)
+        click.echo(f'container id: {container.id}')
+        for description in container.storage_description:
+            click.echo(description)
 
 
 @storage_.command('delete', short_help='delete a storage; sync removed storage with the first '
@@ -262,190 +223,46 @@ def delete(obj: ContextObj, names, force: bool, no_cascade: bool, container: Opt
 
 
 def _delete(obj: ContextObj, name: str, force: bool, no_cascade: bool, container: Optional[str]):
-    try:
-        local_path, used_by = _get_local_path_and_find_usage(obj.client, name)
-    except ManifestError as ex:
-        if force:
-            click.echo(f'Failed to load manifest: {ex}')
-            _delete_force(obj.client, name, no_cascade)
-        else:
-            click.echo(f'Failed to load manifest, cannot delete: {ex}')
-            click.echo('Use --force to force deletion.')
-            raise
-        return
+    cascade = not no_cascade
+    if cascade:
+        if __check_if_storage_in_use_and_try_to_delete(obj, name, container):
+            return
 
-    container_to_sync = []
-    container_failed_to_sync = []
-    for container_obj, _ in used_by:
-        if len(obj.client.get_all_storages(container_obj)) > 1 and not force:
-            status = obj.client.get_sync_job_state(container_obj.sync_id)
-            if status is None:
-                container_to_sync.append(container_obj)
-            elif status[0] != SyncState.SYNCED:
-                click.echo(f"Syncing of {container_obj.uuid} is in progress.")
-                return
+    delete_result = obj.wlcore.storage_delete(name, cascade, force)
 
-    for c in container_to_sync:
-        storage_to_delete = _get_storage_by_id_or_type(name, obj.client.all_storages(c))
-        click.echo(f'Outdated storage for container {c.uuid}, attempting to sync storage.')
-        target = None
-        try:
-            target = obj.client.get_remote_storage(c, excluded_storage=name)
-        except WildlandError:
-            pass
-        if not target:
-            try:
-                target = obj.client.get_local_storage(c, excluded_storage=name)
-            except WildlandError:
-                # pylint: disable=raise-missing-from
-                raise WildlandError("Cannot find storage to sync data into.")
-        logger.debug("sync: {%s} -> {%s}", storage_to_delete, target)
-        response = obj.client.do_sync(c.uuid, c.sync_id, storage_to_delete.params,
-                                        target.params, one_shot=True, unidir=True)
-        logger.debug(response)
-        msg, success = obj.client.wait_for_sync(c.sync_id)
-        click.echo(msg)
-        if not success:
-            container_failed_to_sync.append(c.uuid)
+    if not delete_result.success:
+        raise CliError(str(delete_result))
 
-    if container_failed_to_sync and not force:
-        click.echo(f"Failed to sync storage for containers: {','.join(container_failed_to_sync)}")
-        return
 
-    if local_path:
-        if no_cascade:
-            for container_obj, _ in used_by:
-                click.echo(f'Storage used in container: {container_obj.local_path}')
-        else:
-            _delete_cascade(obj.client, used_by)
-
-        if used_by and not force and no_cascade:
-            raise CliError('Storage is still used, not deleting '
-                           '(use --force or remove --no-cascade)')
-
-        click.echo(f'Deleting: {local_path}')
-        local_path.unlink()
-    else:
-        if no_cascade:
-            raise CliError('Inline storage cannot be deleted in --no-cascade mode')
-
-        if len(used_by) > 1:
-            if container is None:
-                raise CliError(f'Storage {name} is used '
-                               f'in multiple containers: {[str(cont) for cont, _ in used_by]} '
+def __check_if_storage_in_use_and_try_to_delete(
+        obj: ContextObj,
+        storage_name: str,
+        container_name: Optional[str]) -> bool:
+    result, local_path, usages = obj.wlcore.storage_get_local_path_and_find_usages(storage_name)
+    if not local_path and usages:
+        if len(usages) > 1:
+            if container_name is None:
+                raise CliError(f'Storage {storage_name} is used '
+                               f'in multiple containers: {[str(cont) for cont in usages]} '
                                '(please specify container name with --container)')
 
-            container_obj = obj.client.load_object_from_name(
-                WildlandObject.Type.CONTAINER, container)
-            used_by = [(cont, backend) for cont, backend in used_by
-                       if cont.local_path == container_obj.local_path]
+            usages = obj.wlcore.storage_get_usages_within_container(usages, container_name)
+            if not result.success:
+                raise CliError(str(result))
 
-        if len(used_by) > 1:
-            if not click.confirm('Several matching results have been found: \n'
-                                 f'{used_by} \n'
-                                 f'Do you want remove all listed storages?'):
-                return
+            if usages:
+                if len(usages) > 1:
+                    if not click.confirm('Several matching results have been found: \n'
+                                         f'{usages} \n'
+                                         f'Do you want remove all listed storages?'):
+                        return False
 
-        _delete_cascade(obj.client, used_by)
+                result = obj.wlcore.storage_delete_cascade(usages)
+                if not result.success:
+                    raise CliError(str(result))
+                return True
 
-
-def _get_local_path_and_find_usage(client: Client, name: str) \
-        -> Tuple[Optional[Path],  List[Tuple[Container, Union[Path, str]]]]:
-    try:
-        storage = client.load_object_from_name(WildlandObject.Type.STORAGE, name)
-    except ManifestError:
-        raise
-    except WildlandError:
-        used_by = client.find_storage_usage(name)
-        if not used_by:
-            raise
-        return None, used_by
-
-    if not storage.local_path:
-        raise WildlandError('Can only delete a local manifest')
-    used_by = client.find_storage_usage(storage.backend_id)
-    return storage.local_path, used_by
-
-
-def _delete_force(client: Client, name: str, no_cascade: bool):
-    try:
-        path = client.find_local_manifest(WildlandObject.Type.STORAGE, name)
-        if path:
-            click.echo(f'Deleting file {path}')
-            path.unlink()
-    except ManifestError:
-        # already removed
-        pass
-    if not no_cascade:
-        logger.warning('Unable to cascade remove: manifest failed to load.')
-
-
-def _delete_cascade(client: Client, containers: List[Tuple[Container, Union[Path, str]]]):
-    for container, backend in containers:
-        click.echo(f'Removing {backend} from {container.local_path}')
-        container.del_storage(backend)
-        try:
-            click.echo(f'Saving: {container.local_path}')
-            client.save_object(WildlandObject.Type.CONTAINER, container)
-        except ManifestError as ex:
-            raise CliError(f'Failed to modify container manifest, cannot delete: {ex}') from ex
-
-
-def do_create_storage_from_templates(client: Client, container: Container,
-        storage_templates: Iterable[StorageTemplate], local_dir: Optional[str],
-        no_publish: bool = False) -> None:
-    """
-    Create storages for a container from a given list of storage templates.
-    :param client: Wildland client
-    :param container: Wildland container
-    :param storage_templates: list of storage templates
-    :param local_dir: str to be passed to template renderer as a parameter, can be used by template
-        creators
-    :param no_publish: should the container not be published after creation
-    """
-    to_process: List[Tuple[Storage, StorageBackend]] = []
-
-    for template in storage_templates:
-        try:
-            storage = template.get_storage(client, container, local_dir)
-        except ValueError as ex:
-            raise CliError(f'Failed to create storage from storage template: {ex}') from ex
-
-        storage_backend = StorageBackend.from_params(storage.params)
-        to_process.append((storage, storage_backend))
-
-    storages_to_add = []
-    for storage, backend in to_process:
-        if storage.is_writeable:
-            _ensure_backend_location_exists(backend)
-        storages_to_add.append(storage)
-        click.echo(f'Adding storage {storage.backend_id} to container.')
-
-    client.add_storage_to_container(container=container, storages=storages_to_add, inline=True)
-    click.echo(f'Saved container {container.local_path}')
-
-    if not no_publish:
-        try:
-            user = client.load_object_from_name(WildlandObject.Type.USER, container.owner)
-            Publisher(client, user).republish(container)
-        except WildlandError as ex:
-            raise WildlandError(f"Failed to republish container: {ex}") from ex
-
-
-def _ensure_backend_location_exists(backend: StorageBackend) -> None:
-    path = backend.location
-
-    if path is None:
-        return
-    try:
-        with backend:
-            if str(PurePosixPath(backend.location)) != backend.location:
-                raise WildlandError('The `LOCATION_PARAM` of the backend is not a valid path.')
-            backend.mkdir(PurePosixPath(path))
-            click.echo(f'Created base path: {path}')
-    except Exception as ex:
-        logger.warning('Could not create base path %s in a writable storage [%s]. %s',
-                       path, backend.backend_id, ex)
+    return False
 
 
 @storage_.command('create-from-template', short_help='create a storage from a storage template',
@@ -463,26 +280,21 @@ def create_from_template(obj: ContextObj, cont, storage_template: str, local_dir
     """
     Setup storage for a container from a storage template.
     """
-    container = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, cont)
-    template_manager = TemplateManager(obj.client.dirs[WildlandObject.Type.TEMPLATE])
+    container_result, wl_container = obj.wlcore.object_get(WLObjectType.CONTAINER, cont)
+    if not container_result.success or not wl_container:
+        raise CliError(f'Container not found: {str(container_result)}')
 
-    try:
-        storage_templates = template_manager.get_template_file_by_name(storage_template).templates
+    container_id = wl_container.id
+    result = obj.wlcore.storage_create_from_template(
+        storage_template, container_id, local_dir
+    )
+    if not result.success:
+        raise CliError(str(result))
 
-        do_create_storage_from_templates(obj.client, container, storage_templates, local_dir,
-                                         no_publish=no_publish)
-    except WildlandError as we:
-        raise CliError(f'Could not create storage from [{storage_template}] template. {we}') from we
-
-
-storage_.add_command(sign)
-storage_.add_command(verify)
-storage_.add_command(edit)
-storage_.add_command(dump)
-storage_.add_command(publish)
-storage_.add_command(unpublish)
-
-_add_create_commands(create)
+    if not no_publish:
+        publish_result = obj.wlcore.container_publish(container_id)
+        if not publish_result.success:
+            raise CliError(str(publish_result))
 
 
 @storage_.command(short_help='modify storage manifest')
@@ -521,3 +333,13 @@ def modify(ctx: click.Context,
                     to_del=to_del,
                     to_set=to_set,
                     logger=logger)
+
+
+storage_.add_command(sign)
+storage_.add_command(verify)
+storage_.add_command(edit)
+storage_.add_command(dump)
+storage_.add_command(publish)
+storage_.add_command(unpublish)
+
+_add_create_commands(create)

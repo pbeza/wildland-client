@@ -31,8 +31,6 @@ import os
 import errno
 import time
 
-import click
-
 from .cached import CachedStorageMixin, DirectoryCachedStorageMixin
 from .buffered import FullBufferedFile, PagedFile, File
 from .base import StorageBackend, Attr, verify_local_access, StorageParam
@@ -108,30 +106,24 @@ class BaseCached(StorageBackend):
         self.root = Path(self.params['location'])
 
     @classmethod
-    def cli_options(cls):
-        return [
-            click.Option(['--location'], metavar='PATH',
-                         help='path in local filesystem',
-                         required=True)
-        ]
-
-    @classmethod
-    def cli_create(cls, data):
-        return {'location': data['location']}
-
-    @classmethod
     def storage_options(cls) -> List[StorageParam]:
         return [
-            StorageParam('location', display_name='PATH',
-                         description='path in local filesystem',
-                         required=True)
+            StorageParam('location',
+                         display_name='PATH',
+                         required=True,
+                         description='path in local filesystem'
+                         )
         ]
 
     @classmethod
     def validate_and_parse_params(cls, params) -> Dict[str, Any]:
-        result = {'location': params['location']}
-        cls.SCHEMA.validate(result)
-        return result
+        data = {
+            'location': params['location']
+        }
+        data = cls.remove_non_required_params(data)
+
+        cls.SCHEMA.validate(data)
+        return data
 
     @staticmethod
     def _stat(st: os.stat_result) -> Attr:

@@ -30,7 +30,7 @@ import logging
 import subprocess
 import sys
 import tempfile
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Callable, List, Any, Optional, Dict, Tuple, Union
 
 import click
@@ -44,6 +44,7 @@ from .cli_base import ContextObj
 from .cli_exc import CliError
 from ..client import Client
 from ..container import Container
+from ..core import core_utils
 from ..manifest.sig import SigError
 from ..manifest.manifest import (
     HEADER_SEPARATOR,
@@ -396,44 +397,17 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
     if remount and manifest_type == 'container' and obj.fs_client.is_running():
         path = find_manifest_file(obj.client, input_file, manifest_type)
         owner_changed = owner is not None and owner != new_owner
+        container = obj.client.load_object_from_file_path(WildlandObject.Type.CONTAINER, path)
         if owner_changed:
             LOGGER.debug("Owner changed")
             assert manifest is not None
-            hard_remount_container(obj, path, old_manifest=manifest)
+            obj.wlcore.container_hard_remount(path, manifest)
         else:
-            remount_container(obj, path)
+            obj.wlcore.container_remount(
+                core_utils.container_to_wlcontainer(container, obj.client).id
+            )
 
     return True
-
-
-def hard_remount_container(obj, container_path: Path, old_manifest: Manifest):
-    """
-    Unmount all storages and then mount new ones.
-
-    @param obj context object
-    @param container_path is the path to the new container manifest, to be mounted
-    @param old_manifest manifest before changes, to be unmounted
-    """
-    old_container = WildlandObject.from_manifest(old_manifest, obj.client,
-                                                 WildlandObject.Type.CONTAINER,
-                                                 local_owners=obj.client.config.get(
-                                                     'local-owners'))
-
-    if obj.fs_client.find_primary_storage_id(old_container) is not None:
-        click.echo('Container is mounted, remounting')
-        # unmount old container
-        for path in obj.fs_client.get_unique_storage_paths(old_container):
-            storage_and_pseudo_ids = find_storage_and_pseudomanifest_storage_ids(obj, path)
-            LOGGER.debug('  Removing storage %s @ id: %d', path, storage_and_pseudo_ids[0])
-            for storage_id in storage_and_pseudo_ids:
-                obj.fs_client.unmount_storage(storage_id)
-
-        # mount new container
-        container = obj.client.load_object_from_file_path(
-            WildlandObject.Type.CONTAINER, container_path)
-        storages = obj.client.get_storages_to_mount(container)
-        user_paths = obj.client.get_bridge_paths_for_user(container.owner)
-        obj.fs_client.mount_container(container, storages, user_paths, remount=True)
 
 
 @click.command(short_help='publish a manifest')
@@ -546,70 +520,6 @@ def _get_publishable_object_from_file_or_path(
     return [wl_object]
 
 
-def remount_container(ctx_obj: ContextObj, path: Path):
-    """
-    Remount container given by path.
-    """
-    container = ctx_obj.client.load_object_from_file_path(WildlandObject.Type.CONTAINER, path)
-    if ctx_obj.fs_client.find_primary_storage_id(container) is not None:
-        click.echo('Container is mounted, remounting')
-
-        user_paths = ctx_obj.client.get_bridge_paths_for_user(container.owner)
-        storages = ctx_obj.client.get_storages_to_mount(container)
-
-        to_remount, to_unmount = prepare_remount(
-            ctx_obj, container, storages, user_paths, force_remount=True)
-        for storage_id in to_unmount:
-            ctx_obj.fs_client.unmount_storage(storage_id)
-
-        ctx_obj.fs_client.mount_container(container, to_remount, user_paths, remount=True)
-
-
-def prepare_remount(obj, container, storages, user_paths, force_remount=False):
-    """
-    Return storages to remount and storage IDs to unmount when remounting the container.
-    """
-    LOGGER.debug('Prepare remount')
-    storages_to_remount = []
-    storages_to_unmount = []
-
-    for path in obj.fs_client.get_orphaned_container_storage_paths(container, storages):
-        storage_and_pseudo_ids = find_storage_and_pseudomanifest_storage_ids(obj, path)
-        LOGGER.debug('  Removing orphan storage %s @ id: %d', path, storage_and_pseudo_ids[0])
-        storages_to_unmount += storage_and_pseudo_ids
-
-    if not force_remount:
-        for storage in storages:
-            if obj.fs_client.should_remount(container, storage, user_paths):
-                LOGGER.debug('  Remounting storage: %s', storage.backend_id)
-                storages_to_remount.append(storage)
-            else:
-                LOGGER.debug('  Storage not changed: %s', storage.backend_id)
-    else:
-        storages_to_remount = storages
-
-    return storages_to_remount, storages_to_unmount
-
-
-def find_storage_and_pseudomanifest_storage_ids(obj, path):
-    """
-    Find first storage ID for a given mount path. ``None` is returned if the given path is not
-    related to any storage.
-    """
-    storage_id = obj.fs_client.find_storage_id_by_path(path)
-
-    pm_path = PurePosixPath(str(path) + '-pseudomanifest/.manifest.wildland.yaml')
-    pseudo_storage_id = obj.fs_client.find_storage_id_by_path(pm_path)
-    if pseudo_storage_id is None:
-        pm_path = PurePosixPath(str(path) + '/.manifest.wildland.yaml')
-        pseudo_storage_id = obj.fs_client.find_storage_id_by_path(pm_path)
-
-    assert storage_id is not None
-    assert pseudo_storage_id is not None
-
-    return storage_id, pseudo_storage_id
-
-
 def modify_manifest(pass_ctx: click.Context, input_file: str, edit_funcs: List[Callable[..., dict]],
                     *, remount: bool = True, **kwargs) -> bool:
     """
@@ -661,7 +571,9 @@ def modify_manifest(pass_ctx: click.Context, input_file: str, edit_funcs: List[C
 
     if remount and manifest_type == 'container' and obj.fs_client.is_running():
         path = find_manifest_file(obj.client, input_file, 'container')
-        remount_container(obj, path)
+
+        container = obj.client.load_object_from_file_path(WildlandObject.Type.CONTAINER, path)
+        obj.wlcore.container_remount(core_utils.container_to_wlcontainer(container, obj.client).id)
 
     return True
 

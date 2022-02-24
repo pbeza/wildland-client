@@ -28,6 +28,8 @@ from wildland.manifest.manifest import Manifest
 from wildland.log import get_logger
 from .wildland_core_storage import WildlandCoreStorage
 from ..client import Client
+from ..exc import WildlandError
+from ..publish import Publisher
 from ..user import User
 from ..container import Container
 from ..bridge import Bridge
@@ -76,7 +78,7 @@ class WildlandCore(WildlandCoreUser, WildlandCoreStorage, WildlandCoreApi):
         if isinstance(obj, User):
             return utils.user_to_wluser(obj, self.client)
         if isinstance(obj, Container):
-            return utils.container_to_wlcontainer(obj)
+            return utils.container_to_wlcontainer(obj, self.client)
         if isinstance(obj, Bridge):
             return utils.bridge_to_wl_bridge(obj)
         if isinstance(obj, Storage):
@@ -182,7 +184,7 @@ class WildlandCore(WildlandCoreUser, WildlandCoreStorage, WildlandCoreApi):
         if object_type == WLObjectType.USER:
             return utils.user_to_wluser(wildland_object, self.client)
         if object_type == WLObjectType.CONTAINER:
-            return utils.container_to_wlcontainer(wildland_object)
+            return utils.container_to_wlcontainer(wildland_object, self.client)
         if object_type == WLObjectType.BRIDGE:
             return utils.bridge_to_wl_bridge(wildland_object)
         if object_type == WLObjectType.STORAGE:
@@ -500,12 +502,21 @@ class WildlandCore(WildlandCoreUser, WildlandCoreStorage, WildlandCoreApi):
         """
         raise NotImplementedError
 
+    # TODO delete from here as it will be in wildland_core_container
+    #  when https://gitlab.com/wildland/wildland-client/-/issues/699 is ready
     def container_list(self) -> Tuple[WildlandResult, List[WLContainer]]:
         """
         List all known containers.
         :return: WildlandResult, List of WLContainers
         """
-        raise NotImplementedError
+        result = WildlandResult()
+        result_list = []
+        try:
+            for container in self.client.load_all(WildlandObject.Type.CONTAINER):
+                result_list.append(utils.container_to_wlcontainer(container, self.client))
+        except Exception as ex:
+            result.errors.append(WLError.from_exception(ex))
+        return result, result_list
 
     def container_delete(self, container_id: str) -> WildlandResult:
         """
@@ -518,7 +529,7 @@ class WildlandCore(WildlandCoreUser, WildlandCoreStorage, WildlandCoreApi):
     def __container_delete(self, container_id: str):
         found = False
         for container in self.client.load_all(WildlandObject.Type.CONTAINER):
-            if utils.container_to_wlcontainer(container).id == container_id:
+            if utils.container_to_wlcontainer(container, self.client).id == container_id:
                 if not container.local_path:
                     raise FileNotFoundError('Can only delete a local manifest')
                 container.local_path.unlink()
@@ -590,13 +601,32 @@ class WildlandCore(WildlandCoreUser, WildlandCoreStorage, WildlandCoreApi):
         """
         raise NotImplementedError
 
+    # TODO delete from here as it will be in wildland_core_container
+    #  when https://gitlab.com/wildland/wildland-client/-/issues/699 is ready
     def container_publish(self, container_id) -> WildlandResult:
         """
         Publish the given container.
         :param container_id: id of the container to be published (user_id:/.uuid/container_uuid)
         :return: WildlandResult
         """
-        raise NotImplementedError
+        return self.__container_publish(container_id)
+
+    # TODO delete from here as it will be in wildland_core_container
+    #  when https://gitlab.com/wildland/wildland-client/-/issues/699 is ready
+    @wildland_result()
+    def __container_publish(self, container_id):
+        result, container = self.container_find_by_id(container_id)
+        if not result.success or not container:
+            raise FileNotFoundError(f'Cannot find container {container_id}')
+
+        try:
+            owner_user = self.client.load_object_from_name(WildlandObject.Type.USER,
+                                                           container.owner)
+            if owner_user.has_catalog:
+                logger.info('Publishing container: [%s]', container.get_primary_publish_path())
+                Publisher(self.client, owner_user).republish(container)
+        except WildlandError as ex:
+            raise WildlandError(f"Failed to publish container: {ex}") from ex
 
     def container_unpublish(self, container_id) -> WildlandResult:
         """
@@ -605,6 +635,24 @@ class WildlandCore(WildlandCoreUser, WildlandCoreStorage, WildlandCoreApi):
         :return: WildlandResult
         """
         raise NotImplementedError
+
+    # TODO delete from here as it will be in wildland_core_container
+    #  when https://gitlab.com/wildland/wildland-client/-/issues/699 is ready
+    def container_find_by_id(self, container_id: str) -> Tuple[WildlandResult, Optional[Container]]:
+        """
+        Find container by id.
+        :param container_id: id of the container to be found (user_id:/.uuid/container_uuid)
+        :return: tuple of WildlandResult and, if successful, the Container
+        """
+        result = WildlandResult()
+
+        for container in self.client.load_all(WildlandObject.Type.CONTAINER):
+            if utils.container_to_wlcontainer(container, self.client).id == container_id:
+                return result, container
+
+        result.errors.append(
+            WLError.from_exception(FileNotFoundError(f'Cannot find container {container_id}')))
+        return result, None
 
     def container_find(self, path: str) -> \
             Tuple[WildlandResult, List[Tuple[WLContainer, WLStorage]]]:
@@ -616,6 +664,74 @@ class WildlandCore(WildlandCoreUser, WildlandCoreStorage, WildlandCoreApi):
         """
         raise NotImplementedError
 
+    # TODO move to wildland_core_container when
+    #  https://gitlab.com/wildland/wildland-client/-/issues/699 is ready
+    def container_remount(self, container_id: str) -> WildlandResult:
+        return self.__container_remount(container_id)
+
+    @wildland_result()
+    def __container_remount(self, container_id: str):
+        """
+        Remount container given by path.
+        """
+        result = WildlandResult()
+
+        container_result, container = self.container_find_by_id(container_id)
+        if not container_result.success or not container:
+            return container_result
+
+        if self.client.is_container_mounted(container) and \
+                self.client.fs_client.find_primary_storage_id(container):
+            logger.info('Container is mounted, remounting')
+
+            user_paths = self.client.get_bridge_paths_for_user(container.owner)
+            storages = self.client.get_storages_to_mount(container)
+
+            to_remount, to_unmount = self.client.prepare_remount(
+                container, storages, user_paths, force_remount=True)
+            for storage_id in to_unmount:
+                self.client.fs_client.unmount_storage(storage_id)
+
+            self.client.fs_client.mount_container(container, to_remount, user_paths, remount=True)
+
+        return result
+
+    def container_hard_remount(self,
+                               container_path: Path,
+                               old_manifest: Manifest) -> WildlandResult:
+        """
+        Unmount all storages and then mount new ones.
+
+        :param container_path: is the path to the new container manifest, to be mounted
+        :param old_manifest: manifest before changes, to be unmounted
+        """
+        return self.__container_hard_remount(container_path, old_manifest)
+
+    @wildland_result()
+    def __container_hard_remount(self, container_path: Path, old_manifest: Manifest):
+
+        old_container = WildlandObject.from_manifest(old_manifest, self.client,
+                                                     WildlandObject.Type.CONTAINER,
+                                                     local_owners=self.client.config.get(
+                                                         'local-owners'))
+        if self.client.fs_client.find_primary_storage_id(old_container) is not None:
+            logger.info('Container is mounted, remounting')
+            # unmount old container
+            for path in self.client.fs_client.get_unique_storage_paths(old_container):
+                storage_and_pseudo_ids = \
+                    self.client.find_storage_and_pseudomanifest_storage_ids(path)
+                logger.debug('  Removing storage %s @ id: %d', path, storage_and_pseudo_ids[0])
+                for storage_id in storage_and_pseudo_ids:
+                    self.client.fs_client.unmount_storage(storage_id)
+
+            # mount new container
+            container = self.client.load_object_from_file_path(
+                WildlandObject.Type.CONTAINER, container_path)
+            storages = self.client.get_storages_to_mount(container)
+            user_paths = self.client.get_bridge_paths_for_user(container.owner)
+            self.client.fs_client.mount_container(container, storages, user_paths, remount=True)
+
+        return WildlandResult()
     # TEMPLATES
 
     def template_create(self, name: str) -> Tuple[WildlandResult, Optional[WLTemplateFile]]:

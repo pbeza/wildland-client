@@ -30,13 +30,11 @@ from pathlib import Path, PurePosixPath
 from datetime import datetime
 import errno
 
-import click
-
 from wildland.manifest.schema import Schema
 from wildland.storage_backends.cached import CachedStorageMixin
 from wildland.storage_backends.buffered import FullBufferedFile
-from wildland.storage_backends.base import StorageBackend, Attr, verify_local_access, StorageError, \
-    StorageParam
+from wildland.storage_backends.base import StorageBackend, Attr, \
+    verify_local_access, StorageError, StorageParam
 from wildland.storage_backends.watch import SimpleStorageWatcher
 from wildland.log import get_logger
 
@@ -110,30 +108,23 @@ class ZipArchiveStorageBackend(CachedStorageMixin, StorageBackend):
     @classmethod
     def storage_options(cls) -> List[StorageParam]:
         return [
-            StorageParam('location', display_name='PATH',
+            StorageParam('location',
+                         display_name='PATH',
+                         required=True,
                          description='Location of the ZIP file (filesystem path)',
-                         required=True),
+                         ),
         ]
 
     @classmethod
     def validate_and_parse_params(cls, params) -> Dict[str, Any]:
-        data = {'location': params['location']}
+        data = {
+            'location': params['location']
+        }
+
+        data = cls.remove_non_required_params(data)
+
         cls.SCHEMA.validate(data)
         return data
-
-    @classmethod
-    def cli_options(cls):
-        return [
-            click.Option(['--location'], metavar='PATH',
-                         help='Location of the ZIP file (filesystem path)',
-                         required=True),
-        ]
-
-    @classmethod
-    def cli_create(cls, data):
-        return {
-            'location': data['location'],
-        }
 
     def watcher(self):
         return ZipArchiveWatcher(self)

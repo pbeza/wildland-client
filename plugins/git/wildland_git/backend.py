@@ -31,7 +31,6 @@ from pathlib import PurePosixPath
 from typing import List, Union, Optional, Callable, Iterable, Tuple, Dict, Any
 
 import uuid
-import click
 
 from git import Blob, Tree
 from wildland.storage_backends.base import StorageBackend, Attr, StorageParam
@@ -111,63 +110,38 @@ class GitStorageBackend(DirectoryCachedStorageMixin, StorageBackend):
         return str(uuid.uuid3(uuid.UUID(self.backend_id), str(self.params['url'])))
 
     @classmethod
-    def cli_options(cls):
-        opts = super(GitStorageBackend, cls).cli_options()
-        opts.extend([
-            click.Option(
-                ['--url'], metavar='URL', required=True,
-                help='Git url leading to the repo',
-            ),
-            click.Option(
-                ['--username'], required=False,
-                help='The git username - used for authorization purposes'
-            ),
-            click.Option(
-                ['--password'], required=False,
-                help='The git password/personal access token. Necessary for authorization purposes'
-            )
-        ])
-        return opts
-
-    @classmethod
-    def cli_create(cls, data):
-        result = super(GitStorageBackend, cls).cli_create(data)
-        result.update({
-            'url': data['url'],
-            'username': data['username'],
-            'password': data['password']
-        })
-        return result
-
-    @classmethod
     def storage_options(cls) -> List[StorageParam]:
         opts = super(GitStorageBackend, cls).storage_options()
         opts.extend([
-            StorageParam(
-                'url', display_name='URL', required=True,
-                description='Git url leading to the repo',
-            ),
-            StorageParam(
-                'username', required=False,
-                description='The git username - used for authorization purposes'
-            ),
-            StorageParam(
-                'password', required=False,
-                description='The git password/personal access token. Necessary for authorization'
-                            'purposes')
+            StorageParam('url',
+                         display_name='URL',
+                         required=True,
+                         description='Git url leading to the repo',
+                         ),
+            StorageParam('username',
+                         required=False,
+                         description='The git username - used for authorization purposes'
+                         ),
+            StorageParam('password',
+                         required=False,
+                         description='The git password/personal access token. '
+                                     'Necessary for authorization purposes'
+                         )
         ])
         return opts
 
     @classmethod
     def validate_and_parse_params(cls, params) -> Dict[str, Any]:
-        result = super(GitStorageBackend, cls).validate_and_parse_params(params)
-        result.update({
+        data = super(GitStorageBackend, cls).validate_and_parse_params(params)
+        data.update({
             'url': params['url'],
             'username': params['username'],
             'password': params['password']
         })
-        cls.SCHEMA.validate(result)
-        return result
+        data = cls.remove_non_required_params(data)
+
+        cls.SCHEMA.validate(data)
+        return data
 
     def mount(self) -> None:
         self.client.connect()

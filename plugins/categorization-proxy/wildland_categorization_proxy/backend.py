@@ -30,8 +30,6 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Iterable, Iterator, List, Set, Tuple, FrozenSet, Dict, Any
 
-import click
-
 from wildland.storage_backends.base import StorageBackend, File, Attr, StorageParam, \
     StorageParamType
 from wildland.manifest.schema import Schema
@@ -99,12 +97,12 @@ class CategorizationProxyStorageBackend(StorageBackend):
         return [
             StorageParam('reference_container_url',
                          display_name='URL',
+                         required=True,
                          description='URL for inner container manifest.',
-                         required=True),
+                         ),
             StorageParam('with_unclassified_category',
                          param_type=StorageParamType.BOOLEAN,
                          default_value=False,
-                         required=False,
                          description='Create unclassified directory holding all of the untagged '
                                      'directories.'),
             StorageParam('unclassified_category_path',
@@ -113,7 +111,8 @@ class CategorizationProxyStorageBackend(StorageBackend):
                          required=False,
                          description='Path to directory where unclassified directories are mounted '
                                      '(`/unclassified` by default). This option is ignored unless '
-                                     '`with_unclassified_category` is set.'),
+                                     '`with_unclassified_category` is set.'
+                         ),
         ]
 
     @classmethod
@@ -123,38 +122,10 @@ class CategorizationProxyStorageBackend(StorageBackend):
             'with-unclassified-category': params['with_unclassified_category'],
             'unclassified-category-path': params['unclassified_category_path'],
         }
+        data = cls.remove_non_required_params(data)
+
         cls.SCHEMA.validate(data)
         return data
-
-    @classmethod
-    def cli_options(cls):
-        return [
-            click.Option(['--reference-container-url'],
-                         metavar='URL',
-                         help='URL for inner container manifest.',
-                         required=True),
-            click.Option(['--with-unclassified-category'],
-                         is_flag=True,
-                         default=False,
-                         required=False,
-                         help='Create unclassified directory holding all of the untagged '
-                              'directories.'),
-            click.Option(['--unclassified-category-path'],
-                         metavar='PATH',
-                         default='/unclassified',
-                         required=False,
-                         help='Path to directory where unclassified directories are mounted '
-                              '(`/unclassified` by default). This option is ignored unless '
-                              '`--with-unclassified-category` is set.'),
-        ]
-
-    @classmethod
-    def cli_create(cls, data):
-        return {
-            'reference-container': data['reference_container_url'],
-            'with-unclassified-category': data['with_unclassified_category'],
-            'unclassified-category-path': data['unclassified_category_path'],
-        }
 
     def mount(self) -> None:
         self.inner.request_mount()

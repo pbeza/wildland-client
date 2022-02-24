@@ -27,8 +27,9 @@ import functools
 import click
 
 from wildland.wildland_object.wildland_object import WildlandObject
-from .cli_base import aliased_group, ContextObj
+from .cli_base import aliased_group, ContextObj, CliStorageUserInteraction
 from .cli_exc import CliError
+from .cli_utils import parse_storage_cli_options, param_name_from_cli
 from ..manifest.schema import SchemaError
 from ..manifest.template import TemplateManager
 from ..exc import WildlandError
@@ -74,7 +75,7 @@ def _make_create_command(backend: Type[StorageBackend], create: bool):
         click.Argument(['name'], metavar='NAME', required=True),
     ]
 
-    params.extend(backend.cli_options())
+    params.extend(parse_storage_cli_options(backend.storage_options()))
 
     callback = functools.partial(_do_create, backend=backend, create=create)
 
@@ -122,7 +123,10 @@ def _do_create(
     if default_cache and read_only:
         raise CliError('Cache storage cannot be read-only.')
 
-    params = backend.cli_create(data)
+    data = backend.get_additional_user_data(data, user_interaction_cls=CliStorageUserInteraction)
+    data = {param_name_from_cli(key): data[key] for key in data}
+
+    params = backend.validate_and_parse_params(data)
     params['type'] = backend.TYPE
     params['read-only'] = read_only
 
@@ -154,11 +158,7 @@ def _do_create(
 
     if backend.LOCATION_PARAM:
         params[backend.LOCATION_PARAM] = \
-            (params[backend.LOCATION_PARAM] or '').rstrip('/') + local_dir_postfix
-
-    # remove default, non-required values
-    for param_key in [k for k, v in params.items() if v is None or v == []]:
-        del params[param_key]
+            (params.get(backend.LOCATION_PARAM) or '').rstrip('/') + local_dir_postfix
 
     path = template_manager.create_storage_template(name, params)
 

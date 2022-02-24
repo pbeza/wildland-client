@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import List, Tuple, Callable
 import click
 
+from ..storage_backends.base import StorageUserInteraction
 from ..utils import format_options_required_first, format_multi_command_options, \
     format_command_options
 from ..core.wildland_core import WildlandCore
@@ -174,6 +175,25 @@ class AliasedGroup(click.Group):
     def format_options(self, ctx, formatter):
         format_options_required_first(self, ctx, formatter)
         self.format_commands(ctx, formatter)
+
+
+class CliStorageUserInteraction(StorageUserInteraction):
+    """
+    Click-dependent implementation of user interaction
+    """
+    @staticmethod
+    def display_message(msg):
+        click.echo(msg)
+
+    @staticmethod
+    def get_user_input(prompt, hide_input=False):
+        if hide_input:
+            return click.prompt(prompt, hide_input=True)
+        return click.prompt(prompt)
+
+    @staticmethod
+    def get_user_confirmation(prompt):
+        return click.confirm(prompt)
 
 
 def aliased_group(name=None, **kwargs) -> Callable[[Callable], AliasedGroup]:

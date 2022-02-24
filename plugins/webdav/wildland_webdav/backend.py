@@ -26,7 +26,7 @@ WebDAV storage backend
 """
 
 from pathlib import PurePosixPath
-from typing import Iterable, Tuple
+from typing import Iterable, Tuple, List
 from urllib.parse import urljoin, urlparse, urlunparse, quote, unquote
 import os
 
@@ -34,9 +34,8 @@ import dateutil.parser
 import requests
 import requests.auth
 from lxml import etree
-import click
 
-from wildland.storage_backends.base import StorageBackend, Attr
+from wildland.storage_backends.base import StorageBackend, Attr, StorageParam
 from wildland.storage_backends.buffered import FullBufferedFile, PagedFile
 from wildland.storage_backends.cached import CachedStorageMixin
 from wildland.storage_backends.file_children import FileChildrenMixin
@@ -149,34 +148,49 @@ class WebdavStorageBackend(FileChildrenMixin, CachedStorageMixin, StorageBackend
 
         self.base_path = PurePosixPath(self.params.get('base_path', urlparse(self.public_url).path))
 
+
     @classmethod
-    def cli_options(cls):
-        opts = super(WebdavStorageBackend, cls).cli_options()
+    def storage_options(cls) -> List[StorageParam]:
+        opts = super(WebdavStorageBackend, cls).storage_options()
         opts.extend([
-            click.Option(['--url'], metavar='URL', required=True),
-            click.Option(['--login'], metavar='LOGIN', required=True),
-            click.Option(['--password'], metavar='PASSWORD', required=True,
-                         help='Password (omit for a password prompt)',
-                         prompt=True, hide_input=True),
+            StorageParam('url',
+                         display_name='URL',
+                         required=True,
+                         description='WebDav url'
+                         ),
+            StorageParam('login',
+                         display_name='LOGIN',
+                         required=True,
+                         description='Login'
+                         ),
+            StorageParam('password',
+                         display_name='PASSWORD',
+                         required=True,
+                         private=True,
+                         description="Password (omit for a password prompt)"
+                         ),
         ])
         return opts
 
     @classmethod
-    def cli_create(cls, data):
-        result = super(WebdavStorageBackend, cls).cli_create(data)
-        base_path = urlparse(data['url']).path
-        url = data['url']
-        if urlparse(url).path!='/' and urlparse(url).path!='':
-            url=urlunparse(urlparse(url)._replace(path='/'))
-        result.update({
+    def validate_and_parse_params(cls, params):
+        data = super(WebdavStorageBackend, cls).validate_and_parse_params(params)
+        base_path = urlparse(params['url']).path
+        url = params['url']
+        if urlparse(url).path != '/' and urlparse(url).path != '':
+            url = urlunparse(urlparse(url)._replace(path='/'))
+        data.update({
             'url': url,
             'base_path': base_path,
             'credentials': {
-                'login': data['login'],
-                'password': data['password'],
+                'login': params['login'],
+                'password': params['password'],
             }
         })
-        return result
+        data = cls.remove_non_required_params(data)
+
+        cls.SCHEMA.validate(data)
+        return data
 
     def info_all(self) -> Iterable[Tuple[PurePosixPath, Attr]]:
         path = PurePosixPath('.')

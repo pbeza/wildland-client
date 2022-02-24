@@ -39,7 +39,6 @@ import time
 
 import boto3
 import botocore
-import click
 
 from wildland.link import Link
 from wildland.storage_backends.base import StorageBackend, Attr, StorageParam, StorageParamType
@@ -244,28 +243,40 @@ class S3StorageBackend(FileChildrenMixin, DirectoryCachedStorageMixin, StorageBa
     def storage_options(cls) -> List[StorageParam]:
         opts = super(S3StorageBackend, cls).storage_options()
         opts.extend([
-            StorageParam('endpoint_url', display_name='URL',
-                         description='Override default AWS S3 URL with the given URL.'),
-            StorageParam('s3_url', display_name='URL', required=True,
+            StorageParam('endpoint_url',
+                         display_name='URL',
+                         required=True,
+                         description='Override default AWS S3 URL with the given URL.'
+                         ),
+            StorageParam('s3_url',
+                         display_name='URL',
                          description='S3 url to access the resource in s3://<bucket_name>/path '
-                                     'format'),
-            StorageParam('with_index', param_type=StorageParamType.BOOLEAN,
-                         description='Maintain index.html files with directory listings'),
-            StorageParam('access_key', required=True,
-                         description='S3 access key'),
-            StorageParam('secret_key', required=True,
-                         description='S3 secret key (omit for a prompt)', private=True),
+                                     'format'
+                         ),
+            StorageParam('with_index',
+                         param_type=StorageParamType.BOOLEAN,
+                         description='Maintain index.html files with directory listings'
+                         ),
+            StorageParam('access_key',
+                         required=True,
+                         description='S3 access key'
+                         ),
+            StorageParam('secret_key',
+                         required=True,
+                         private=True,
+                         description='S3 secret key (omit for a prompt)'
+                         ),
         ])
         return opts
 
     @classmethod
     def validate_and_parse_params(cls, params):
-        result = super(S3StorageBackend, cls).validate_and_parse_params(params)
+        data = super(S3StorageBackend, cls).validate_and_parse_params(params)
         base_url = urlparse(params['s3_url']).path.lstrip('/')
         # ensuring that the s3_url entered by the user contains a trailing slash
         if not params['s3_url'].endswith('/'):
             params['s3_url'] = params['s3_url']+'/'
-        result.update({
+        data.update({
             's3_url': params['s3_url'],
             'base_url': base_url,
             'endpoint_url': params['endpoint_url'],
@@ -275,45 +286,10 @@ class S3StorageBackend(FileChildrenMixin, DirectoryCachedStorageMixin, StorageBa
             },
             'with-index': params['with_index'],
         })
-        cls.SCHEMA.validate(result)
-        return result
+        data = cls.remove_non_required_params(data)
 
-    @classmethod
-    def cli_options(cls):
-        opts = super(S3StorageBackend, cls).cli_options()
-        opts.extend([
-            click.Option(['--endpoint-url'], metavar='URL',
-                         help='Override default AWS S3 URL with the given URL.'),
-            click.Option(['--s3-url'], metavar='URL', required=True,
-                         help='S3 url to access the resource in s3://<bucket_name>/path format'),
-            click.Option(['--with-index'], is_flag=True,
-                         help='Maintain index.html files with directory listings'),
-            click.Option(['--access-key'], required=True,
-                         help='S3 access key'),
-            click.Option(['--secret-key'], required=True,
-                         help='S3 secret key (omit for a prompt)',
-                         prompt=True, hide_input=True),
-        ])
-        return opts
-
-    @classmethod
-    def cli_create(cls, data):
-        result = super(S3StorageBackend, cls).cli_create(data)
-        base_url = urlparse(data['s3_url']).path.lstrip('/')
-        # ensuring that the s3_url entered by the user contains a trailing slash
-        if not data['s3_url'].endswith('/'):
-            data['s3_url'] = data['s3_url']+'/'
-        result.update({
-            's3_url': data['s3_url'],
-            'base_url': base_url,
-            'endpoint_url': data['endpoint_url'],
-            'credentials': {
-                'access-key': data['access_key'],
-                'secret-key': data['secret_key'],
-            },
-            'with-index': data['with_index'],
-        })
-        return result
+        cls.SCHEMA.validate(data)
+        return data
 
     def mount(self):
         """

@@ -51,7 +51,7 @@ from .storage_sync.base import SyncEvent, SyncStateEvent, SyncState, SyncConflic
 from .user import User
 from .container import Container, ContainerStub
 from .link import Link
-from .storage import Storage, _get_storage_by_id_or_type
+from .storage import Storage
 from .wlpath import WildlandPath, PathError
 from .manifest.sig import DummySigContext, SodiumSigContext, SigContext
 from .manifest.manifest import ManifestDecryptionKeyUnavailableError, ManifestError, Manifest
@@ -906,6 +906,67 @@ class Client:
         final_order = dependencies_first + final_order
         return final_order, exc_msg
 
+    def is_container_mounted(self, container: Container) -> bool:
+        """
+        Check if given container path is among mounted storages
+        """
+        if not self.fs_client.is_running():
+            return False
+
+        mounted_storages = self.fs_client.get_info().values()
+        for storage in mounted_storages:
+            for path in storage.paths:
+                if path == container.paths[0]:
+                    return True
+
+        return False
+
+    def prepare_remount(self,
+                        container: Container,
+                        storages: List[Storage],
+                        user_paths: Iterable[Iterable[PurePosixPath]],
+                        force_remount: bool = False) -> Tuple[List[Storage], List[int]]:
+        """
+        Return storages to remount and storage IDs to unmount when remounting the container.
+        """
+        logger.debug('Prepare remount')
+        storages_to_remount: List[Storage] = []
+        storages_to_unmount: List[int] = []
+
+        for path in self.fs_client.get_orphaned_container_storage_paths(container, storages):
+            storage_and_pseudo_ids = self.find_storage_and_pseudomanifest_storage_ids(path)
+            logger.debug('  Removing orphan storage %s @ id: %d', path, storage_and_pseudo_ids[0])
+            storages_to_unmount += storage_and_pseudo_ids
+
+        if not force_remount:
+            for storage in storages:
+                if self.fs_client.should_remount(container, storage, user_paths):
+                    logger.debug('  Remounting storage: %s', storage.backend_id)
+                    storages_to_remount.append(storage)
+                else:
+                    logger.debug('  Storage not changed: %s', storage.backend_id)
+        else:
+            storages_to_remount = storages
+
+        return storages_to_remount, storages_to_unmount
+
+    def find_storage_and_pseudomanifest_storage_ids(self, path: PurePosixPath) -> Tuple[int, int]:
+        """
+        Find first storage ID for a given mount path
+        """
+        storage_id = self.fs_client.find_storage_id_by_path(path)
+
+        pm_path = PurePosixPath(str(path) + '-pseudomanifest/.manifest.wildland.yaml')
+        pseudo_storage_id = self.fs_client.find_storage_id_by_path(pm_path)
+        if pseudo_storage_id is None:
+            pm_path = PurePosixPath(str(path) + '/.manifest.wildland.yaml')
+            pseudo_storage_id = self.fs_client.find_storage_id_by_path(pm_path)
+
+        assert storage_id is not None
+        assert pseudo_storage_id is not None
+
+        return storage_id, pseudo_storage_id
+
     @functools.lru_cache
     def get_bridge_paths_for_user(self, user: Union[User, str], owner: Optional[User] = None) \
             -> Iterable[Iterable[PurePosixPath]]:
@@ -1037,6 +1098,18 @@ class Client:
             if skip_numeric_suffix or not path.exists():
                 return path
             i += 1
+
+    @staticmethod
+    def get_storage_by_id_or_type(id_or_type: str, storages):
+        """
+        Helper function to find a storage by listed id or type.
+        """
+        try:
+            return [storage for storage in storages
+                    if id_or_type in (storage.backend_id, storage.storage_type)][0]
+        except IndexError:
+            # pylint: disable=raise-missing-from
+            raise WildlandError(f'Storage {id_or_type} not found')
 
     def cache_storage(self, container: Container) -> Optional[Storage]:
         """
@@ -1322,7 +1395,7 @@ class Client:
         return path
 
     def get_all_storages(self, container: Container, excluded_storage: Optional[str] = None,
-                         only_writable: bool = False):
+                         only_writable: bool = False) -> List[Storage]:
         """
         List of all storages (including cache storages) for the provided container.
 
@@ -1354,7 +1427,7 @@ class Client:
             filtered_storages[s.backend_id] = s
 
         if excluded_storage:
-            storage_to_ignore = _get_storage_by_id_or_type(excluded_storage, all_storages)
+            storage_to_ignore = self.get_storage_by_id_or_type(excluded_storage, all_storages)
             filtered_storages.pop(storage_to_ignore.backend_id, None)
 
         # Sort storages in order to have writable first (python is treating False (0) < True (1))
@@ -1398,7 +1471,7 @@ class Client:
         """
         all_storages = self.get_all_storages(container, excluded_storage, only_writable)
         if local_storage:
-            storage = _get_storage_by_id_or_type(local_storage, all_storages)
+            storage = self.get_storage_by_id_or_type(local_storage, all_storages)
         else:
             try:
                 storage = self.get_local_storages(container, excluded_storage, only_writable)[0]
@@ -1453,7 +1526,7 @@ class Client:
         default_remotes = self.config.get('default-remote-for-container')
 
         if remote_storage:
-            storage = _get_storage_by_id_or_type(remote_storage, all_storages)
+            storage = self.get_storage_by_id_or_type(remote_storage, all_storages)
             default_remotes[container.uuid] = storage.backend_id
             self.config.update_and_save({'default-remote-for-container': default_remotes})
         else:
