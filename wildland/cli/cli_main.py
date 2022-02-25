@@ -127,7 +127,7 @@ main.add_command(cli_transfer.get)
 main.add_command(cli_transfer.put)
 
 
-def _do_mount_containers(obj: ContextObj, to_mount):
+def _do_mount_containers(obj: ContextObj, to_mount, lazy: bool = True):
     """
     Issue a series of .control/mount commands.
     """
@@ -159,7 +159,7 @@ def _do_mount_containers(obj: ContextObj, to_mount):
     click.echo(f'Mounting {len(commands)} containers.')
 
     try:
-        fs_client.mount_multiple_containers(commands)
+        fs_client.mount_multiple_containers(commands, lazy=lazy)
     except WildlandError as e:
         failed.append(f'Failed to mount: {e}')
 
@@ -248,6 +248,9 @@ def start(obj: ContextObj, remount: bool, debug: bool, mount_containers: Sequenc
 
 
 @main.command(short_help='display mounted containers and sync jobs')
+@click.option('--container', metavar='CONTAINER',
+              required=False,
+              help='print information for specified container')
 @click.option('--with-subcontainers/--without-subcontainers', '-w/-W', is_flag=True, default=False,
               help='list subcontainers hidden by default')
 @click.option('--with-pseudomanifests/--without-pseudomanifests', '-p/-P', is_flag=True,
@@ -255,14 +258,26 @@ def start(obj: ContextObj, remount: bool, debug: bool, mount_containers: Sequenc
 @click.option('--all-paths', '-a', is_flag=True, default=False,
               help='print all mountpoint paths, including synthetic ones')
 @click.pass_obj
-def status(obj: ContextObj, with_subcontainers: bool, with_pseudomanifests: bool, all_paths: bool):
+def status(obj: ContextObj, container: Optional[str], with_subcontainers: bool,
+           with_pseudomanifests: bool, all_paths: bool):
     """
-    Display all mounted containers and sync jobs.
+    Display all mounted containers or specified container and sync jobs.
     """
     if not obj.fs_client.is_running():
         click.echo('Wildland is not mounted, use `wl start` to mount it.')
     else:
-        click.echo('Mounted containers:')
+        if container:
+            click.echo(f"Container: {container}")
+
+            container_obj = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER,
+                                                             container)
+
+            storage_id = obj.fs_client.find_primary_storage_id(container_obj)
+            storage_path = obj.fs_client.get_primary_unique_mount_path_from_storage_id(storage_id)
+            container_path = storage_path.parent
+        else:
+            click.echo('Mounted containers:')
+
         click.echo()
 
         mounted_storages: Dict[int, StorageInfo] = obj.fs_client.get_info()
@@ -271,12 +286,13 @@ def status(obj: ContextObj, with_subcontainers: bool, with_pseudomanifests: bool
                 continue
             if storage.hidden and not with_pseudomanifests:
                 continue
-            main_path = storage.paths[0]
-            click.echo(main_path)
-            click.echo(f'  storage: {storage.type}')
-            _print_container_paths(storage, all_paths)
-            if storage.subcontainer_of:
-                click.echo(f'  subcontainer-of: {storage.subcontainer_of}')
+
+            if container:
+                storage_main_path = storage.paths[0]
+                if str(storage_main_path).startswith(str(container_path)):
+                    _print_storage_status(storage, all_paths)
+            else:
+                _print_storage_status(storage, all_paths)
 
     click.echo()
     result = obj.client.run_sync_command('status')
@@ -286,6 +302,15 @@ def status(obj: ContextObj, with_subcontainers: bool, with_pseudomanifests: bool
         click.echo('Sync jobs:')
         for s in result:
             click.echo(s)
+
+
+def _print_storage_status(storage: StorageInfo, all_paths: bool):
+    main_path = storage.paths[0]
+    click.echo(main_path)
+    click.echo(f'  storage: {storage.type}')
+    _print_container_paths(storage, all_paths)
+    if storage.subcontainer_of:
+        click.echo(f'  subcontainer-of: {storage.subcontainer_of}')
 
 
 @main.command(short_help='set the specified storage template as default for container '
@@ -390,7 +415,7 @@ def watch(obj: ContextObj, patterns, with_initial) -> None:
 
     obj.fs_client.ensure_mounted()
 
-    for events in obj.fs_client.watch(patterns, with_initial):
+    for events in obj.fs_client.watch(patterns=patterns, with_initial=with_initial):
         for event in events:
             print(f'{event.event_type}: {event.path}')
 

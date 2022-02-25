@@ -38,13 +38,14 @@ from graphlib import TopologicalSorter
 from pathlib import Path, PurePosixPath
 from subprocess import Popen
 from typing import Dict, Iterable, Iterator, List, Optional, Set, Tuple, Union, Any
-from urllib.parse import urlparse, quote
+from urllib.parse import urlparse, quote, unquote
 
 import requests
 
 from wildland.bridge import Bridge
 from wildland.control_client import ControlClientUnableToConnectError
 from wildland.wildland_object.wildland_object import WildlandObject
+from wildland.cleaner import get_cli_cleaner
 from .control_client import ControlClient
 from .storage_sync.base import SyncEvent, SyncStateEvent, SyncState, SyncConflictEvent, \
     SyncErrorEvent
@@ -67,7 +68,7 @@ from .log import get_logger
 from .utils import yaml_parser
 
 logger = get_logger('client')
-
+cleaner = get_cli_cleaner()
 
 HTTP_TIMEOUT_SECONDS = 5
 
@@ -239,13 +240,20 @@ class Client:
         logger.debug('starting sync daemon: %s', cmd)
         Popen(cmd)
 
+    @property
+    def connected_to_sync_daemon(self):
+        """
+        Check whether a connection to the sync daemon is established.
+        """
+        return self._sync_client is not None
+
     def run_sync_command(self, name, **kwargs) -> Any:
         """
         Run sync command (through the sync daemon).
         """
-        if not self._sync_client:
+        if not self.connected_to_sync_daemon:
             self.connect_sync_daemon()
-        assert self._sync_client is not None
+        assert self._sync_client
         return self._sync_client.run_command(name, **kwargs)
 
     def get_sync_event(self) -> Iterator[SyncEvent]:
@@ -325,7 +333,8 @@ class Client:
                 name = self.config.aliases[name]
 
             if name in self.users:
-                return self.users[name].local_path
+                if self.users[name].local_path:
+                    return self.users[name].local_path
 
             if name.startswith('0x'):
                 for user in self.get_local_users():
@@ -365,8 +374,8 @@ class Client:
             all_storages = self.all_storages(container=container)
 
             for storage_candidate in all_storages:
-                with StorageDriver.from_storage(storage_candidate) as driver:
-                    try:
+                try:
+                    with StorageDriver.from_storage(storage_candidate) as driver:
                         file_candidate = PurePosixPath('forest-owner.user.yaml')
                         file_content = driver.read_file(file_candidate)
 
@@ -375,10 +384,8 @@ class Client:
                             WildlandObject.Type.USER, file_content, expected_owner=user.owner)
 
                         return storage_candidate, file_candidate
-
-                    except (FileNotFoundError, WildlandError) as ex:
-                        logger.debug('Could not read user manifest. Exception: %s', ex)
-
+                except (FileNotFoundError, WildlandError) as ex:
+                    logger.debug('Could not read user manifest. Exception: %s', ex)
         return None
 
     def load_object_from_bytes(self,
@@ -490,22 +497,45 @@ class Client:
         :param expected_owner: expected owner. Will raise a WildlandError if receives a
         different owner.
         """
+        objects = self.load_objects_from_url(object_type, url, owner, expected_owner)
+
+        if object_type == WildlandObject.Type.CONTAINER and WildlandPath.match(url):
+            wlpath = WildlandPath.from_str(url)
+            if len(objects) < 1:
+                raise PathError(f'Container not found for path: {wlpath}')
+            if len(objects) > 1:
+                raise PathError(f'Expected single container, found multiple: {wlpath}')
+
+        return objects[0]
+
+    def load_objects_from_url(self, object_type: Optional[WildlandObject.Type], url: str,
+                              owner: str, expected_owner: Optional[str] = None) -> List[
+        WildlandObject]:
+        """
+        Load and return all Wildland objects matching any URL, including Wildland URLs.
+        :param url: URL. must start with protocol (e.g. wildland: or https:
+        :param object_type: expected object type. If not provided, will try to guess it based
+        on data (although this will not be successful for WL URLs to containers.). If provided
+        will raise an exception if expected type is different than received type.
+        :param owner: owner in whose context we should resolve the URL
+        :param expected_owner: expected owner. Will raise a WildlandError if receives a
+        different owner.
+        """
 
         if object_type == WildlandObject.Type.CONTAINER and WildlandPath.match(url):
             # special treatment for WL paths: they can refer to a file or to a container
             wlpath = WildlandPath.from_str(url)
             if wlpath.file_path is None:
                 containers = self.load_containers_from(wlpath, {'default': owner})
-                result = None
-                for c in containers:
-                    if not result:
-                        result = c
-                    else:
-                        if c.owner != result.owner or c.uuid != result.uuid:
-                            raise PathError(f'Expected single container, found multiple: {wlpath}')
-                if not result:
-                    raise PathError(f'Container not found for path: {wlpath}')
-                return result
+                containers_dict: Dict[str, Container] = {}
+                for container in containers:
+                    # same container can be present multiple times. Take only the first one, to
+                    # match the current behavior of load_object_from_url.
+                    container_id = f'{container.uuid}:{container.owner}'
+                    if containers_dict.get(container_id) is not None:
+                        continue
+                    containers_dict[container_id] = container
+                return [containers_dict[c_id] for c_id in containers_dict]
 
         content = self.read_from_url(url, owner, True)
 
@@ -518,7 +548,7 @@ class Client:
         if expected_owner and obj_.owner != expected_owner:
             raise WildlandError(f'Unexpected owner: expected {expected_owner}, got {obj_.owner}')
 
-        return obj_
+        return [obj_]
 
     def load_object_from_file_path(self, object_type: WildlandObject.Type, path: Path,
                                    decrypt: bool = True):
@@ -617,8 +647,10 @@ class Client:
                 # save the original manifest, don't risk the need to re-sign
                 path = self.new_path(WildlandObject.Type.USER, user.owner)
                 path.write_bytes(user.manifest.to_bytes())
+                cleaner.add_path(path)
                 path = self.new_path(WildlandObject.Type.BRIDGE, user.owner)
                 path.write_bytes(step.bridge.manifest.to_bytes())
+                cleaner.add_path(path)
 
         # load encountered users to the current context - may be needed for subcontainers
         self.recognize_users_and_bridges(
@@ -633,7 +665,7 @@ class Client:
                              include_manifests_catalog: bool = False,
                              ) -> Iterator[Container]:
         """
-        Load a list of containers. Currently supports WL paths, glob patterns (*) and
+        Load a list of containers. Currently, supports WL paths, glob patterns (*) and
         tilde (~), but only in case of local files.
 
         :param name: containers to load - can be a local path (including glob) or a Wildland path
@@ -698,19 +730,32 @@ class Client:
         if failed:
             raise ManifestError(exc_msg)
 
-    def add_storage_to_container(self, container: Container, storage: Storage, inline: bool = True,
-                                 storage_name: Optional[str] = None):
+    def add_storage_to_container(self, container: Container, storages: List[Storage],
+                                 inline: bool = True, storage_name: Optional[str] = None):
         """
-        Add storage to container, save any changes. If the given storage exists in the container
-        (as determined by backend_id), it gets updated (if possible).
+        Add one or more storages to container, save any changes. If any of the given storages
+        exists in the container (as determined by backend_id), it gets updated (if possible).
         If not, it is added. If the passed Storage exists in a container but is referenced by an
         url, it can only be saved for file URLS, for other URLs a WildlandError will be raised.
         :param container: Container to add to
-        :param storage: Storage to be added
+        :param storages: list of Storages to be added
         :param inline: add as inline or standalone storage (ignored if storage exists)
-        :param storage_name: optional name to save storage under if inline == False
+        :param storage_name: optional name to save storage under if inline == False; if multiple
+        storages will be added, they will be named storage_name, storage_name.1 etc.
         """
-        container.add_storage_from_obj(storage, inline, storage_name)
+        added_storages = []
+        error_msg = None
+        for storage in storages:
+            try:
+                container.add_storage_from_obj(storage, inline, storage_name)
+                added_storages.append(storage)
+            except WildlandError as we:
+                error_msg = str(we)
+                break
+        if error_msg:
+            for storage in added_storages:
+                container.del_storage(storage.backend_id)
+            raise WildlandError(f'Failed to add some storages: {error_msg}')
         self.save_object(WildlandObject.Type.CONTAINER, container)
 
     def load_all(self, object_type: WildlandObject.Type, decrypt: bool = True,
@@ -829,7 +874,7 @@ class Client:
                 if 'reference-container' not in storage.params:
                     continue
 
-                backend_cls = StorageBackend.types()[storage.params['type']]
+                backend_cls = StorageBackend.types()[storage.storage_type]
                 if not backend_cls.MOUNT_REFERENCE_CONTAINER:
                     continue
 
@@ -935,6 +980,7 @@ class Client:
                 storage_driver.write_file(path, data)
         else:
             path.write_bytes(data)
+            cleaner.add_path(path)
 
         if object_type == WildlandObject.Type.BRIDGE:
             # cache_clear is added by a decorator, which pylint doesn't see
@@ -1025,7 +1071,7 @@ class Client:
         """
         Select and load a storage to mount for a container.
 
-        In case of proxy storage, this will also load an reference storage and
+        In case of proxy storage, this will also load a reference storage and
         inline the manifest.
         """
         try:
@@ -1116,13 +1162,9 @@ class Client:
                                                expected_owner=container.owner)
         return subcontainer_obj.get_container(container)
 
-    def all_subcontainers(self, container: Container) -> Iterator[Union[Container, Bridge]]:
+    def get_subcontainer_storage(self, container: Container):
         """
-        List subcontainers of this container.
-
-        This takes only the first backend that is capable of sub-containers functionality.
-        :param container:
-        :return:
+        Returns only the first backend that is capable of sub-containers functionality.
         """
         for storage in self.all_storages(container):
             try:
@@ -1135,15 +1177,32 @@ class Client:
                     # Storage backend does not support subcontainers, skip mounting
                     continue
                 with backend:
-                    for _, subcontainer in backend.get_children(self):
-                        yield self.load_subcontainer_object(container, storage, subcontainer)
+                    backend.get_children(self, paths_only=True)
+                return storage
             except NotImplementedError:
                 continue
-            except (WildlandError, ManifestError) as ex:
-                logger.warning('Container %s: cannot load subcontainer: %s',
-                               container.uuid, str(ex))
-            else:
-                return
+
+        return None
+
+    def all_subcontainers(self, container: Container) -> Iterator[Union[Container, Bridge]]:
+        """
+        List subcontainers of this container.
+
+        This takes only the first backend that is capable of sub-containers functionality.
+        :param container:
+        :return:
+        """
+        storage = self.get_subcontainer_storage(container)
+        if storage:
+            with StorageBackend.from_params(storage.params, deduplicate=True) as backend:
+                for _, subcontainer in backend.get_children(self):
+                    assert subcontainer is not None
+                    try:
+                        yield self.load_subcontainer_object(container, storage, subcontainer)
+                    except (WildlandError, ManifestError) as ex:
+                        logger.warning('Container %s: cannot load subcontainer: %s',
+                                       container.uuid, str(ex))
+
 
     @staticmethod
     def is_url(s: str):
@@ -1163,7 +1222,7 @@ class Client:
         if isinstance(storage, StorageBackend):
             storage = storage.TYPE
         elif isinstance(storage, Storage):
-            storage = storage.params['type']
+            storage = storage.storage_type or storage.params['type']
 
         return storage in ['local', 'local-cached', 'local-dir-cached']
 
@@ -1268,7 +1327,7 @@ class Client:
                 url, local_hostname)
             return None
 
-        path = Path(parse_result.path)
+        path = Path(unquote(parse_result.path))
 
         try:
             verify_local_access(path, owner, owner in local_owners)
@@ -1333,7 +1392,7 @@ class Client:
         """
         all_storages = self.get_all_storages(container, excluded_storage, only_writable)
         local_storages = [storage for storage in all_storages
-                          if self.is_local_storage(storage.params['type'])]
+                          if self.is_local_storage(storage.storage_type)]
         return local_storages
 
     def get_local_storage(self, container: Container, local_storage: Optional[str] = None,
@@ -1385,7 +1444,8 @@ class Client:
         remote_storages = [storage for storage in all_storages
                            if target_remote_id == storage.backend_id or
                            (not target_remote_id and
-                            not self.is_local_storage(storage.params['type']))]
+                            not self.is_local_storage(storage.storage_type) and
+                            not storage.storage_type == 'delegate')]
         return remote_storages
 
     def get_remote_storage(self, container: Container, remote_storage: Optional[str] = None,
@@ -1421,7 +1481,8 @@ class Client:
         return storage
 
     def do_sync(self, container_name: str, job_id: str, source: dict, target: dict,
-                one_shot: bool, unidir: bool, active_events: List[str] = None) -> str:
+                one_shot: bool, unidir: bool, active_events: List[str] = None,
+                wait_if_already_running: bool = False) -> str:
         """
         Start sync between source and target storages
         """
@@ -1429,6 +1490,8 @@ class Client:
                   'unidirectional': unidir, 'source': source, 'target': target}
         if active_events:
             kwargs['active-events'] = active_events
+        if wait_if_already_running and self.connected_to_sync_daemon:
+            self.wait_for_sync(job_id, stop_on_finish=True)
         return self.run_sync_command('start', **kwargs)
 
     def wait_for_sync(self, job_id: str, stop_on_finish: bool = True) -> Tuple[str, bool]:

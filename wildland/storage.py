@@ -25,6 +25,7 @@
 Storage class
 """
 import os
+import sys
 from pathlib import PurePosixPath
 from typing import Dict, Any, Optional, List
 from copy import deepcopy
@@ -79,15 +80,17 @@ class Storage(PublishableWildlandObject, obj_type=WildlandObject.Type.STORAGE):
         """
         Return string representation
         """
+        if self._str_repr:
+            return self._str_repr
         fields = self.to_repr_fields(include_sensitive=include_sensitive)
         array_repr = []
         for field in ['owner', 'storage-type', 'backend-id', 'container-path', 'trusted',
                       'container-path', 'local-path', 'access', 'location',
                       'read-only']:
-            if fields.get(field, None):
+            if fields.get(field):
                 array_repr += [f"{field}={fields[field]!r}"]
-        str_repr = "storage(" + ", ".join(array_repr) + ")"
-        return str_repr
+        self._str_repr = "storage(" + ", ".join(array_repr) + ")"
+        return self._str_repr
 
     def get_unique_publish_id(self) -> str:
         assert self.container, 'Storages without Container are not publishable'
@@ -152,6 +155,7 @@ class Storage(PublishableWildlandObject, obj_type=WildlandObject.Type.STORAGE):
         """
         Sets primary param to True.
         """
+        self._str_repr = None
         self.primary = True
 
     @classmethod
@@ -161,14 +165,27 @@ class Storage(PublishableWildlandObject, obj_type=WildlandObject.Type.STORAGE):
         storage_type = params['type']
 
         if 'reference-container' in params:
-            referenced_path_and_storage_params = client.select_reference_storage(
-                params['reference-container'],
-                params['owner'],
-                params.get('trusted', False))
+            old_recursion_limit = sys.getrecursionlimit()
+            try:
+                sys.setrecursionlimit(200)
+                referenced_path_and_storage_params = client.select_reference_storage(
+                    params['reference-container'],
+                    params['owner'],
+                    params.get('trusted', False))
+            except RecursionError:
+                # pylint: disable=raise-missing-from
+                raise WildlandError(
+                    'Cannot load storage: recursive reference container definition found.')
+            finally:
+                sys.setrecursionlimit(old_recursion_limit)
             if referenced_path_and_storage_params:
                 referenced_path, params['storage'] = referenced_path_and_storage_params
 
-        storage_cls = StorageBackend.types()[storage_type]
+        try:
+            storage_cls = StorageBackend.types()[storage_type]
+        except KeyError:
+            # pylint: disable=raise-missing-from
+            raise WildlandError(f'Unknown storage backend type: {storage_type}')
 
         if storage_cls.MOUNT_REFERENCE_CONTAINER:
             assert referenced_path
@@ -244,7 +261,7 @@ class Storage(PublishableWildlandObject, obj_type=WildlandObject.Type.STORAGE):
         manifest_fields = self.to_manifest_fields(inline=True, str_repr_only=True)
         if not include_sensitive:
             for field in nonsensitive_storage_fields:
-                if manifest_fields.get(field, None):
+                if manifest_fields.get(field):
                     fields[field] = manifest_fields[field]
         else:
             fields = manifest_fields
@@ -285,7 +302,7 @@ def _get_storage_by_id_or_type(id_or_type: str, storages: List[Storage]) -> Stor
     """
     try:
         return [storage for storage in storages
-                if id_or_type in (storage.backend_id, storage.params['type'])][0]
+                if id_or_type in (storage.backend_id, storage.storage_type)][0]
     except IndexError:
         # pylint: disable=raise-missing-from
         raise WildlandError(f'Storage {id_or_type} not found')

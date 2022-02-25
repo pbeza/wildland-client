@@ -25,11 +25,12 @@
 Watching for changes.
 """
 from enum import Enum
-from typing import Optional, List, Callable, Dict
+from typing import Optional, List, Callable, Dict, Iterable
 from pathlib import PurePosixPath
 import threading
 from dataclasses import dataclass
 import abc
+import os
 
 from .base import StorageBackend, Attr
 from ..log import get_logger
@@ -120,7 +121,7 @@ class StorageWatcher(metaclass=abc.ABCMeta):
         """
 
     @abc.abstractmethod
-    def wait(self) -> Optional[List[FileEvent]]:
+    def wait(self) -> Optional[Iterable[FileEvent]]:
         """
         Wait for a list of change events. This should return as soon as
         self.stop_event is set.
@@ -135,11 +136,12 @@ class StorageWatcher(metaclass=abc.ABCMeta):
 
 class SimpleStorageWatcher(StorageWatcher, metaclass=abc.ABCMeta):
     """
-    An implementation of storage watcher that uses the backend to enumerate all
-    files.
+    An abstract storage watcher that checks information every `interval` of seconds.
+
+    At least `_get_info()` must be overwritten to return the information we want to watch.
 
     Default implementation polls the storage every 10s for changes. To improve, override
-    get_token() with something that will change when the storage needs to be examined again
+    `get_token()` with something that will change when the storage needs to be examined again
     (such as last modification time of backing storage).
     """
 
@@ -183,6 +185,28 @@ class SimpleStorageWatcher(StorageWatcher, metaclass=abc.ABCMeta):
     def shutdown(self):
         pass
 
+    @abc.abstractmethod
+    def _get_info(self) -> Dict[PurePosixPath, Attr]:
+        raise NotImplementedError()
+
+    @staticmethod
+    def _compare_info(current_info, new_info):
+        current_paths = set(current_info)
+        new_paths = set(new_info)
+        for path in current_paths - new_paths:
+            yield FileEvent(FileEventType.DELETE, path)
+        for path in new_paths - current_paths:
+            yield FileEvent(FileEventType.CREATE, path)
+        for path in current_paths & new_paths:
+            if current_info[path] != new_info[path]:
+                yield FileEvent(FileEventType.MODIFY, path)
+
+
+class SimpleFileWatcher(SimpleStorageWatcher, metaclass=abc.ABCMeta):
+    """
+    An implementation of storage watcher that uses the backend to enumerate all files.
+    """
+
     def _get_info(self) -> Dict[PurePosixPath, Attr]:
         return dict(self._walk(PurePosixPath('.')))
 
@@ -205,14 +229,20 @@ class SimpleStorageWatcher(StorageWatcher, metaclass=abc.ABCMeta):
             if attr.is_dir():
                 yield from self._walk(file_path)
 
-    @staticmethod
-    def _compare_info(current_info, new_info):
-        current_paths = set(current_info)
-        new_paths = set(new_info)
-        for path in current_paths - new_paths:
-            yield FileEvent(FileEventType.DELETE, path)
-        for path in new_paths - current_paths:
-            yield FileEvent(FileEventType.CREATE, path)
-        for path in current_paths & new_paths:
-            if current_info[path] != new_info[path]:
-                yield FileEvent(FileEventType.MODIFY, path)
+
+class SimpleSubcontainerWatcher(SimpleStorageWatcher, metaclass=abc.ABCMeta):
+    """
+    An implementation of storage watcher that uses the backend to enumerate all subcontainers.
+    """
+
+    def _get_info(self):
+        to_return: Dict[PurePosixPath, Optional[float]] = {}
+        paths = self.backend.get_children_paths()
+        logger.debug("watcher %s", str(self.backend))
+        for path in paths:
+            if os.path.exists(path):
+                mtime = os.path.getmtime(path)
+                to_return[path] = mtime
+            else:
+                to_return[path] = None
+        return to_return

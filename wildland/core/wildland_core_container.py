@@ -147,10 +147,10 @@ class WildlandCoreContainer(WildlandCoreApi):
             return result, storage_ids
         try:
             for mount_path in self.client.fs_client.get_unique_storage_paths(container):
-                storage_id = self.client.fs_client.find_storage_id_by_path(mount_path)
+                storage_and_pseudo_ids = self.client.fs_client.find_storage_id_by_path(
+                    mount_path)
 
-                if storage_id:
-                    storage_ids.append(storage_id)
+                storage_ids.extend(storage_and_pseudo_ids)
 
                 for storage_id in self.client.fs_client.find_all_subcontainers_storage_ids(
                         container):

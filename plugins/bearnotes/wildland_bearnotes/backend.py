@@ -42,7 +42,7 @@ from wildland.storage_backends.generated import (
     GeneratedStorageMixin,
     StaticFileEntry,
 )
-from wildland.storage_backends.watch import SimpleStorageWatcher
+from wildland.storage_backends.watch import SimpleFileWatcher
 from wildland.manifest.schema import Schema
 from wildland.container import ContainerStub
 from wildland.log import get_logger
@@ -185,7 +185,7 @@ class BearDB:
             return self.db.get_note(ident)
 
 
-class BearDBWatcher(SimpleStorageWatcher):
+class BearDBWatcher(SimpleFileWatcher):
     """
     A watcher for the Bear database.
     """
@@ -286,11 +286,18 @@ class BearDBStorageBackend(GeneratedStorageMixin, StorageBackend):
     def can_have_children(self) -> bool:
         return True
 
-    def get_children(self, client=None, query_path: PurePosixPath = PurePosixPath('*')) -> \
-            Iterable[Tuple[PurePosixPath, ContainerStub]]:
+    def get_children(
+            self,
+            client=None,
+            query_path: PurePosixPath = PurePosixPath('*'),
+            paths_only: bool = False
+    ) -> Iterable[Tuple[PurePosixPath, Optional[ContainerStub]]]:
         for ident, title, tags, _timestamp in \
                 self.bear_db.get_notes_with_metadata():
-            yield PurePosixPath('/' + ident), self._make_note_container(ident, title, tags)
+            if not paths_only:
+                yield PurePosixPath('/' + ident), self._make_note_container(ident, title, tags)
+            else:
+                yield PurePosixPath('/' + ident), None
 
     def get_root(self):
         return self.root
