@@ -552,7 +552,7 @@ def modify(ctx: click.Context,
     assert isinstance(container, Container)
 
     if modified:
-        _publish_container_after_modification(ctx.obj.client, container, publish)
+        _publish_container_after_modification(ctx, container, publish)
 
 
 def _option_check(ctx, add_path, del_path, add_category, del_category, title, add_access,
@@ -1419,6 +1419,7 @@ def edit(ctx: click.Context, path: str, publish: bool, editor: Optional[str], re
 
     if modified:
         _publish_container_after_modification(ctx, container, publish)
+
 
 def _publish_container_after_modification(
             ctx: click.Context,
