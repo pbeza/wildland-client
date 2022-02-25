@@ -519,8 +519,7 @@ def get_user_manifests_catalog(obj, catalog_container):
 
         fields = storage.to_manifest_fields(inline=True)
         if not storage.access:
-            fields['access'] = catalog_container.access
-
+            fields['access'] = deepcopy(catalog_container.access)
         link_obj['storage'] = fields
         if storage.owner != catalog_container.owner:
             link_obj['storage-owner'] = storage.owner
@@ -581,7 +580,7 @@ def _bootstrap_forest(ctx: click.Context, user: str, manifest_storage_template_n
         # If a writeable catalog storage doesn't have manifest_pattern defined,
         # forcibly set manifest pattern for all storages in this container.
         # TODO: improve support for more complex forms of writeable storages and more complex
-        # manifest-patterns
+        #  manifest-patterns
 
         catalog_backend = StorageBackend.from_params(catalog_storage.params)
         if isinstance(catalog_backend, FileChildrenMixin) and \
