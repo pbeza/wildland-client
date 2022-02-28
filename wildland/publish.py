@@ -96,7 +96,7 @@ class Publisher:
         published = []
         try:
             for catalog_storage in self.get_catalog_storages():
-                if catalog_storage.has_child(wl_object.get_primary_publish_path()):
+                if catalog_storage.has_child(wl_object):
                     published.append(catalog_storage)
         except WildlandError:
             pass
@@ -125,15 +125,13 @@ class Publisher:
 
         return not_published
 
-    @staticmethod
-    def is_published(client: Client, owner: str, uuid_path: PurePosixPath) -> bool:
+    def is_published(self, wl_object: PublishableWildlandObject) -> bool:
         """
         Check if the wildland object is published in any storage.
         """
-        user = client.load_object_from_name(WildlandObject.Type.USER, owner)
         try:
-            for storage in Publisher(client, user).get_catalog_storages(writable_only=False):
-                if storage.has_child(uuid_path):
+            for storage in self.get_catalog_storages(writable_only=False):
+                if storage.has_child(wl_object):
                     return True
         except WildlandError:
             pass
@@ -300,17 +298,18 @@ class _UnpublishedWildlandObjectCache:
         wl_objects = self._load_all_object_manifests()
 
         cache = set()
-        for path, publish_path, owner in wl_objects:
-            user = self.client.load_object_from_name(WildlandObject.Type.USER, owner)
+        for path, wl_object in wl_objects:
+            owner_obj = self.client.load_object_from_name(
+                WildlandObject.Type.USER, wl_object.manifest.owner)
             # ensure that a user has a catalog where we can actually publish the objects
-            if publish_path and user.has_catalog and \
-                    not Publisher.is_published(self.client, owner, publish_path):
+            if owner_obj.has_catalog and \
+                    not Publisher(self.client, owner_obj).is_published(wl_object):
                 cache.add(str(path))
 
         self._save(cache)
 
     def _load_all_object_manifests(self) \
-            -> Generator[Tuple[Path, Optional[PurePosixPath], str], None, None]:
+            -> Generator[Tuple[Path, PublishableWildlandObject], None, None]:
         for path in sorted(self.file.parent.glob('*.yaml')):
             try:
                 wl_object = self.client.load_object_from_name(
@@ -320,12 +319,8 @@ class _UnpublishedWildlandObjectCache:
 
                 assert isinstance(wl_object, PublishableWildlandObject)
                 assert isinstance(wl_object.manifest, Manifest)
-
-                publish_path = wl_object.get_primary_publish_path()
-                owner = wl_object.manifest.owner
-
             except WildlandError as e:
                 logger.warning('error loading %s manifest: %s: %s',
                                self.obj_type.value, path, e)
             else:
-                yield path, publish_path, owner
+                yield path, wl_object

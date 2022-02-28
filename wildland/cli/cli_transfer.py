@@ -64,11 +64,14 @@ def get(obj: ContextObj, wlpath, local_file):
     """
 
     try:
-        wlpath = WildlandPath.from_str(wlpath)
+        path = WildlandPath.from_str(wlpath)
     except PathError as ex:
         raise CliError(f"Path error: {ex}") from ex
-    search = Search(obj.client, wlpath, obj.client.config.aliases)
-    data = search.read_file()
+    try:
+        search = Search(obj.client, path, obj.client.config.aliases)
+        data = search.read_file()
+    except FileNotFoundError as ex:
+        raise CliError(f'Not found {wlpath}') from ex
     try:
         local_file.write(data)
     except PathError as ex:

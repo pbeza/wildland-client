@@ -511,9 +511,7 @@ def get_user_manifests_catalog(obj, catalog_container):
         storage_backend = StorageBackend.from_params(storage.params)
         assert isinstance(storage_backend, FileChildrenMixin), \
             'Unsupported catalog storage type.'
-        rel_path = storage_backend.get_relpaths(
-            catalog_container.get_primary_publish_path(),
-            catalog_container.get_publish_paths())
+        rel_path = storage_backend.get_relpaths(catalog_container)
 
         link_obj: Dict[str, Any] = {'object': 'link', 'file': f'/{list(rel_path)[0]}'}
 

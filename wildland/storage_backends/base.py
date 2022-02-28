@@ -695,7 +695,7 @@ class StorageBackend(metaclass=abc.ABCMeta):
         """
         return False
 
-    def has_child(self, wl_object_uuid_path: PurePosixPath) -> bool:
+    def has_child(self, wl_object: PublishableWildlandObject) -> bool:
         """
         Check if the given Wildland Object is a subcontainer of this storage.
         """
