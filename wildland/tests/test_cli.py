@@ -1644,9 +1644,8 @@ def test_container_modify_publish_with_flag(cli, base_dir, tmp_path):
 
     assert not tuple(tmp_path.glob('*.container.yaml'))
 
-    result = cli('container', 'modify', '--title', 'PUBLISHED', 'Container',
-                 '--publish', capture=True)
-    out_lines = result.splitlines()
+    out_lines = wl_call_output(base_dir, 'container', 'modify', '--title', 'PUBLISHED', 'Container',
+                               '--publish', stderr=subprocess.STDOUT).decode().splitlines()
     assert len(out_lines) == 2
     assert re.match('Saved: .*/Container.container.yaml', out_lines[0])
     assert 'Publishing container' in out_lines[1]
