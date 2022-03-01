@@ -1379,9 +1379,8 @@ def test_container_publish_after_edit_with_publish_flag(cli, tmp_path, base_dir)
     editor = r'sed -i s,PATH,HTAP,g'
     result = cli('container', 'edit', 'Container', '--editor', editor, '--publish', capture=True)
     out_lines = result.splitlines()
-    assert len(out_lines) == 2
+    assert len(out_lines) == 1
     assert re.match('Saved: .*/Container.container.yaml', out_lines[0])
-    assert 'Publishing container' in out_lines[1]
 
     assert len(tuple(tmp_path.glob('*.container.yaml'))) == 1
 
@@ -1412,9 +1411,8 @@ def test_container_republish_after_edit_if_published(cli, tmp_path, base_dir):
 
     result = cli('container', 'edit', 'Container', '--editor', editor, capture=True)
     out_lines = result.splitlines()
-    assert len(out_lines) == 2
+    assert len(out_lines) == 1
     assert re.match('Saved: .*/Container.container.yaml', out_lines[0])
-    assert 'Re-publishing container: [/.uuid/' in out_lines[1]
 
     assert len(tuple(tmp_path.glob('*.container.yaml'))) == 1
 
@@ -1647,9 +1645,8 @@ def test_container_modify_publish_with_flag(cli, base_dir, tmp_path):
     result = cli('container', 'modify', '--title', 'PUBLISHED', 'Container',
                  '--publish', capture=True)
     out_lines = result.splitlines()
-    assert len(out_lines) == 2
+    assert len(out_lines) == 1
     assert re.match('Saved: .*/Container.container.yaml', out_lines[0])
-    assert 'Publishing container' in out_lines[1]
 
     assert len(tuple(tmp_path.glob('*.container.yaml'))) == 1
 
@@ -1678,9 +1675,8 @@ def test_container_modify_republish_if_published(cli, base_dir, tmp_path):
 
     result = cli('container', 'modify', '--title', 'REPUBLISHED', 'Container', capture=True)
     out_lines = result.splitlines()
-    assert len(out_lines) == 2
+    assert len(out_lines) == 1
     assert re.match('Saved: .*/Container.container.yaml', out_lines[0])
-    assert 'Re-publishing container: [/.uuid/' in out_lines[1]
 
     assert len(tuple(tmp_path.glob('*.container.yaml'))) == 1
 
@@ -2402,7 +2398,7 @@ def test_publish_warning(monkeypatch, cli, tmp_path, base_dir, control_client):
         # Resolve '%s %s %s' % ('foo', 'bar', 'baz')
         output.extend([args[0] % args[1:]])
 
-    monkeypatch.setattr('wildland.cli.cli_common.LOGGER.warning', capture)
+    monkeypatch.setattr('wildland.core.wildland_core.logger.warning', capture)
     cli('container', 'publish', 'mycapsule')
     assert any((o.startswith("Some local containers (or container updates) "
                              "are not published:") for o in output))
@@ -2602,9 +2598,8 @@ def test_container_dont_republish_if_not_modified(cli, tmp_path):
 
     result = cli('container', 'modify', 'Container', '--add-path', '/PA/TH1', capture=True)
     out_lines = result.splitlines()
-    assert len(out_lines) == 2
+    assert len(out_lines) == 1
     assert re.match('Saved: .*/Container.container.yaml', out_lines[0])
-    assert 'Re-publishing container: [/.uuid/' in out_lines[1]
 
     result = cli('container', 'modify', 'Container', '--add-path', '/PA/TH1', capture=True)
     out_lines = result.splitlines()
