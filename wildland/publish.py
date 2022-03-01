@@ -303,7 +303,7 @@ class _UnpublishedWildlandObjectCache:
         cache = set()
         for path, wl_object in wl_objects:
             owner_obj = self.client.load_object_from_name(
-                WildlandObject.Type.USER, wl_object.manifest.owner)
+                WildlandObject.Type.USER, wl_object.manifest.owner)  # type: ignore
             # ensure that a user has a catalog where we can actually publish the objects
             if owner_obj.has_catalog and \
                     not Publisher(self.client, owner_obj).is_published(wl_object):

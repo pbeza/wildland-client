@@ -204,7 +204,6 @@ expected_pcre="Created base path: /.manifests/$UUID_PCRE
 Adding storage $UUID_PCRE to container.
 Adding storage $UUID_PCRE to container.
 Saved container /home/user/.config/wildland/containers/caroline-forest-catalog.container.yaml
-Saved: /home/user/.config/wildland/users/caroline.user.yaml
 Saved: /home/user/.config/wildland/users/caroline.user.yaml"
 run wl forest create --access '*' --owner caroline carolines-s3
 
