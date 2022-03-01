@@ -423,7 +423,7 @@ def _sync_removed_storages(obj, manifest_type, original_data, edited_s, path):
         try:
             new_storages = yaml.safe_load(edited_s)['backends']['storage']
         except Exception as error:
-            click.echo("Could not load storages from the new manifest: ",error)
+            click.echo(f"Could not load storages from the new manifest: {error}")
             return
     elif status[0] != SyncState.SYNCED:
         click.echo(f"Syncing of {container.uuid} is in progress.")
