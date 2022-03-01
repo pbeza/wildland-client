@@ -26,7 +26,7 @@ Stuff related to publishing and unpublishing wildland objects.
 """
 
 import functools
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Optional, Generator, List, Set, Tuple
 
 from wildland.wildland_object.wildland_object import WildlandObject, PublishableWildlandObject
@@ -277,7 +277,7 @@ class _UnpublishedWildlandObjectCache:
                 lines = f.readlines()
                 cache = set(line.rstrip() for line in lines)
             return cache
-        except FileNotFoundError as ex:
+        except FileNotFoundError:
             return set()
 
     def _save(self, cache: Set[str]) -> None:

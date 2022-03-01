@@ -639,6 +639,10 @@ def _create_container(obj: ContextObj,
                           backends=[], client=obj.client, access=access)
 
     obj.client.save_new_object(WildlandObject.Type.CONTAINER, container, container_name)
-    do_create_storage_from_templates(obj.client, container, storage_templates, storage_local_dir, no_publish=True)
+    do_create_storage_from_templates(obj.client,
+                                     container,
+                                     storage_templates,
+                                     storage_local_dir,
+                                     no_publish=True)
 
     return container
