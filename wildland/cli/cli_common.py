@@ -30,13 +30,12 @@ import logging
 import subprocess
 import sys
 import tempfile
-
 from pathlib import Path
-
 from typing import Callable, List, Any, Optional, Dict, Tuple, Union
 
 import click
 import progressbar
+
 import yaml
 import wildland.log
 
