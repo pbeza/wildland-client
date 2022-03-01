@@ -51,6 +51,9 @@ from .cli_base import aliased_group, ContextObj
 from .cli_exc import CliError
 from .cli_storage import do_create_storage_from_templates
 from ..container import Container
+from ..core import core_utils
+from ..core.wildland_core import WildlandCore
+from ..core.wildland_objects_api import WLObjectType
 from ..exc import WildlandError
 from ..manifest.manifest import ManifestError
 from ..manifest.template import TemplateManager
@@ -549,7 +552,10 @@ def modify(ctx: click.Context,
     assert isinstance(container, Container)
 
     if modified:
-        _publish_container_after_modification(ctx.obj.client, container, publish)
+        # TODO delete this as we should have already container_id
+        #  when https://gitlab.com/wildland/wildland-client/-/issues/699 is done
+        wl_container_id = core_utils.container_to_wlcontainer(container).id
+        __publish_container_after_modification(ctx.obj.wlcore, wl_container_id, publish)
 
 
 def _option_check(ctx, add_path, del_path, add_category, del_category, title, add_access,
@@ -1401,25 +1407,35 @@ def edit(ctx: click.Context, path: str, publish: bool, editor: Optional[str], re
     assert isinstance(container, Container)
 
     if modified:
-        _publish_container_after_modification(ctx.obj.client, container, publish)
+        # TODO delete this as we should have already container_id
+        #  when https://gitlab.com/wildland/wildland-client/-/issues/699 is done
+        wl_container_id = core_utils.container_to_wlcontainer(container).id
+        __publish_container_after_modification(ctx.obj.wlcore, wl_container_id, publish)
 
 
-def _publish_container_after_modification(
-            client: Client,
-            container: Container,
+def __publish_container_after_modification(
+            wlcore: WildlandCore,
+            container_id: str,
             publish: bool
         ) -> None:
     """
     Republish container if it's published and no --no-publish flag was specified
     or publish it if it's not published and --publish flag is present
     """
-    owner = container.owner
+    result, published = wlcore.object_check_published(WLObjectType.CONTAINER, container_id)
 
-    if Publisher.is_published(client, owner, container.get_primary_publish_path()):
+    if not result.success:
+        raise CliError(str(result))
+
+    if published:
         if publish or publish is None:
-            cli_common.republish_object(client, container)
+            republish_result = wlcore.object_republish(WLObjectType.CONTAINER, container_id)
+
+            if not republish_result.success:
+                raise CliError(str(republish_result))
     else:
         if publish:
-            user = client.load_object_from_name(WildlandObject.Type.USER, owner)
-            click.echo('Publishing container')
-            Publisher(client, user).publish(container)
+            publish_result = wlcore.object_publish(WLObjectType.CONTAINER, container_id)
+
+            if not publish_result.success:
+                raise CliError(str(publish_result))

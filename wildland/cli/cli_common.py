@@ -44,6 +44,7 @@ from .cli_base import ContextObj
 from .cli_exc import CliError
 from ..client import Client
 from ..container import Container
+from ..core.wildland_objects_api import WLObjectType
 from ..manifest.sig import SigError
 from ..manifest.manifest import (
     HEADER_SEPARATOR,
@@ -443,33 +444,29 @@ def publish(ctx: click.Context, files: List[str]):
     """
     Publish Wildland Object manifest to a publishable storage from manifests catalog.
     """
+
     object_types = set()
-    wl_objects: List[PublishableWildlandObject] = []
-    for file in files:
-        wl_objects.extend(_get_publishable_object_from_file_or_path(ctx, file))
+    wl_objects_ids_type_and_path: List[Tuple[List[str], WLObjectType, str]]\
+        = __get_objects_ids_and_type_from_files(ctx, files)
 
-    for wl_object in wl_objects:
-        assert isinstance(wl_object.manifest, Manifest)
-        user = ctx.obj.client.load_object_from_name(WildlandObject.Type.USER,
-                                                    wl_object.manifest.owner)
+    for object_ids, object_type, path in wl_objects_ids_type_and_path:
+        if ctx.obj.client.is_url(path) or Path(path).exists():
+            publish_result = ctx.obj.wlcore.object_publish_by_path(object_type, path)
+            if not publish_result.success:
+                raise CliError(str(publish_result))
+        else:
+            for object_id in object_ids:
+                publish_result = ctx.obj.wlcore.object_publish(object_type, object_id)
+                if not publish_result.success:
+                    raise CliError(str(publish_result))
 
-        click.echo(f'Publishing {wl_object.type.value}: [{wl_object.get_primary_publish_path()}]')
-        Publisher(ctx.obj.client, user).publish(wl_object)
-        object_types.add(wl_object.type)
+        object_types.add(object_type)
 
     for object_type in object_types:
-        # check if all objects are published
-        not_published = Publisher.list_unpublished_objects(ctx.obj.client, object_type)
-        n_objects = len(list(ctx.obj.client.dirs[object_type].glob('*.yaml')))
+        check_result = ctx.obj.wlcore.check_if_all_published(object_type)
 
-        # if all objects of the given type are unpublished DO NOT print warning
-        if not_published and len(not_published) != n_objects:
-            LOGGER.warning(
-                "Some local %ss (or %s updates) are not published:\n%s",
-                object_type.value,
-                object_type.value,
-                '\n'.join(sorted(not_published))
-            )
+        if not check_result.success:
+            raise CliError(str(check_result))
 
 
 @click.command(short_help='unpublish a manifest')
@@ -479,71 +476,35 @@ def unpublish(ctx: click.Context, files: List[str]):
     """
     Unpublish Wildland Object manifest from all matchin manifest catalogs.
     """
-    wl_objects: List[PublishableWildlandObject] = []
+
+    wl_objects_ids_type_and_path: List[Tuple[List[str], WLObjectType, str]] = \
+        __get_objects_ids_and_type_from_files(ctx, files)
+
+    for object_ids, object_type, path in wl_objects_ids_type_and_path:
+        if ctx.obj.client.is_url(path) or Path(path).exists():
+            publish_result = ctx.obj.wlcore.object_unpublish_by_path(object_type, path)
+            if not publish_result.success:
+                raise CliError(str(publish_result))
+        else:
+            for object_id in object_ids:
+                publish_result = ctx.obj.wlcore.object_unpublish(object_type, object_id)
+                if not publish_result.success:
+                    raise CliError(str(publish_result))
+
+
+def __get_objects_ids_and_type_from_files(ctx: click.Context, files: List[str]):
+    wl_objects_ids_type_and_path: List[Tuple[List[str], WLObjectType, str]] = []
+
     for file in files:
-        wl_objects.extend(_get_publishable_object_from_file_or_path(ctx, file))
+        manifest_type = _get_expected_manifest_type(ctx)
 
-    for wl_object in wl_objects:
-        assert isinstance(wl_object.manifest, Manifest)
-        user = ctx.obj.client.load_object_from_name(WildlandObject.Type.USER,
-                                                    wl_object.manifest.owner)
+        result, ids, object_type = ctx.obj.wlcore.get_publishable_object_ids_from_file_or_path(file, manifest_type)
+        if not result.success:
+            raise CliError(str(result))
 
-        click.echo(f'Unpublishing {wl_object.type.value}: [{wl_object.get_primary_publish_path()}]')
-        Publisher(ctx.obj.client, user).unpublish(wl_object)
+        wl_objects_ids_type_and_path.append((ids, object_type, file))
 
-
-def republish_object(client: Client, wl_object: PublishableWildlandObject):
-    """
-    Republishes wildland object
-    This method is to be used by cli_* components but not as a command itself.
-    """
-    obj_type = wl_object.type.value
-
-    try:
-        assert isinstance(wl_object.manifest, Manifest)
-        user = client.load_object_from_name(WildlandObject.Type.USER, wl_object.manifest.owner)
-        click.echo(f'Re-publishing {obj_type}: [{wl_object.get_primary_publish_path()}]')
-        Publisher(client, user).republish(wl_object)
-    except WildlandError as ex:
-        raise WildlandError(f"Failed to republish {obj_type}: {ex}") from ex
-
-
-def _get_publishable_object_from_file_or_path(
-        ctx: click.Context,
-        path: str
-        ) -> List[PublishableWildlandObject]:
-    obj: ContextObj = ctx.obj
-
-    manifest_type = _get_expected_manifest_type(ctx)
-
-    if manifest_type is None:
-        # Publish command was used without parent context (ie. wl publish)
-        # Only absolute paths to manifest file are supported
-        manifest_path = obj.client.find_local_manifest(None, path)
-
-        if not manifest_path:
-            raise click.ClickException(f'Manifest not found: {path}. Consider using the command '
-                                       'including specific context (eg. wl container <cmd>)')
-
-        manifest = Manifest.from_file(manifest_path, obj.client.session.sig)
-        manifest_type = manifest.fields['object']  # In case publish was called via wl publish <f>
-        path = str(manifest_path)
-
-    wl_object_type = WildlandObject.Type(manifest_type)
-
-    if obj.client.is_url(path):
-        return obj.client.load_objects_from_url(wl_object_type, path,
-                                                obj.client.config.get('@default'))
-
-    wl_object = obj.client.load_object_from_name(wl_object_type, path)
-
-    if not isinstance(wl_object, PublishableWildlandObject):
-        raise CliError(f'{manifest_type} is not a publishable object')
-
-    if not isinstance(wl_object.manifest, Manifest):
-        raise CliError('Publishable Wildland Object must have a manifest')
-
-    return [wl_object]
+    return wl_objects_ids_type_and_path
 
 
 def remount_container(ctx_obj: ContextObj, path: Path):

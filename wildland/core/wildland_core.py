@@ -26,11 +26,13 @@ import wildland.core.core_utils as utils
 from wildland.manifest.manifest import Manifest
 from wildland.log import get_logger
 from ..client import Client
+from ..exc import WildlandError
+from ..publish import Publisher
 from ..user import User
 from ..container import Container
 from ..bridge import Bridge
 from ..storage import Storage
-from ..wildland_object.wildland_object import WildlandObject
+from ..wildland_object.wildland_object import WildlandObject, PublishableWildlandObject
 from .wildland_result import WildlandResult, WLError, wildland_result, WLErrorType
 from .wildland_core_api import WildlandCoreApi, ModifyMethod
 from .wildland_objects_api import WLStorageBackend, WLStorage, WLContainer, WLObject, \
@@ -123,7 +125,20 @@ class WildlandCore(WildlandCoreBridge, WildlandCoreUser, WildlandCoreApi):
         :return: tuple of WildlandResult and publish status, if available
         :rtype:
         """
-        raise NotImplementedError
+        return self.__object_check_published(object_type, object_id)
+
+    @wildland_result()
+    def __object_check_published(self, object_type: WLObjectType, object_id: str) -> \
+            Tuple[WildlandResult, Optional[bool]]:
+        check_result = WildlandResult()
+        result, wl_object = self.object_get_by_id(object_type, object_id)
+
+        if not result.success or not wl_object:
+            return result, None
+
+        published = Publisher.is_published(self.client, wl_object.owner, wl_object.get_primary_publish_path())
+        
+        return check_result, published
 
     def object_get_local_path(self, object_type: WLObjectType, object_id: str) -> \
             Tuple[WildlandResult, Optional[str]]:
@@ -186,6 +201,172 @@ class WildlandCore(WildlandCoreBridge, WildlandCoreUser, WildlandCoreApi):
         if object_type == WLObjectType.STORAGE:
             return utils.storage_to_wl_storage(wildland_object)
         return None
+
+    def get_publishable_object_ids_from_file_or_path(self, path: str, manifest_type: str) \
+            -> Tuple[WildlandResult, List[str], WLObjectType]:
+        return self.__get_publishable_object_ids_from_file_or_path(path, manifest_type)
+
+    @wildland_result()
+    def __get_publishable_object_ids_from_file_or_path(self, path: str, manifest_type: str):
+        if manifest_type is None:
+            # Publish command was used without parent context (ie. wl publish)
+            # Only absolute paths to manifest file are supported
+            manifest_path = self.client.find_local_manifest(None, path)
+
+            if not manifest_path:
+                raise WildlandError(f'Manifest not found: {path}. Consider using the command '
+                                    'including specific context (eg. wl container <cmd>)')
+
+            manifest = Manifest.from_file(manifest_path, self.client.session.sig)
+            manifest_type = manifest.fields['object']  # In case publish was called via wl publish <f>
+            path = str(manifest_path)
+
+        wl_object_type = WildlandObject.Type(manifest_type)
+
+        if self.client.is_url(path):
+            wl_objects = self.client.load_objects_from_url(wl_object_type, path,
+                                                    self.client.config.get('@default'))
+            wl_objects_ids: List[str] = []
+
+            for wl_object in wl_objects:
+                wl_objects_ids.append(utils.wildland_object_to_wl_object(wl_object, self.client).id)
+
+            return wl_objects_ids, WLObjectType(manifest_type)
+
+        wl_object = self.client.load_object_from_name(wl_object_type, path)
+
+        if not isinstance(wl_object, PublishableWildlandObject):
+            raise WildlandError(f'{manifest_type} is not a publishable object')
+
+        if not isinstance(wl_object.manifest, Manifest):
+            raise WildlandError('Publishable Wildland Object must have a manifest')
+
+        return [utils.wildland_object_to_wl_object(wl_object, self.client).id], WLObjectType(manifest_type)
+
+    def object_get_by_id(self, object_type: WLObjectType, object_id: str) -> Tuple[WildlandResult, PublishableWildlandObject]:
+        return self.__object_get_by_id(object_type, object_id)
+
+    @wildland_result()
+    def __object_get_by_id(self, object_type: WLObjectType, object_id: str):
+        result = WildlandResult()
+
+        for wildland_object in self.client.load_all(WildlandObject.Type(object_type.value)):
+            if utils.wildland_object_to_wl_object(wildland_object, self.client).id == object_id:
+                return result, wildland_object
+
+        raise FileNotFoundError(f'Cannot find wildland object {object_id}')
+
+    def object_publish_by_path(self, object_type: WLObjectType, object_path: str) -> WildlandResult:
+        return self.__object_publish_by_path(object_type, object_path)
+
+    @wildland_result()
+    def __object_publish_by_path(self, object_type: WLObjectType, object_path: str):
+        if self.client.is_url(object_path):
+            wl_objects = self.client.load_objects_from_url(WildlandObject.Type(object_type.value), object_path, self.client.config.get('@default'))
+        else:
+            wl_objects = [self.client.load_object_from_name(WildlandObject.Type(object_type.value), object_path)]
+
+        for wl_object in wl_objects:
+            if isinstance(wl_object, PublishableWildlandObject):
+                self.__object_do_publish(wl_object)
+
+    def object_publish(self, object_type: WLObjectType, object_id: str) -> WildlandResult:
+        return self.__object_publish(object_type, object_id)
+
+    @wildland_result()
+    def __object_publish(self, object_type: WLObjectType, object_id: str):
+        result, wl_object = self.object_get_by_id(object_type, object_id)
+
+        if not result.success:
+            return result
+
+        return self.__object_do_publish(wl_object)
+
+    @wildland_result()
+    def __object_do_publish(self, wl_object: PublishableWildlandObject):
+        assert isinstance(wl_object.manifest, Manifest)
+        user = self.client.load_object_from_name(WildlandObject.Type.USER,
+                                                    wl_object.manifest.owner)
+
+        logger.info(f'Publishing {wl_object.type.value}: [{wl_object.get_primary_publish_path()}]')
+        Publisher(self.client, user).publish(wl_object)
+
+    def object_unpublish_by_path(self, object_type: WLObjectType, object_path: str) -> WildlandResult:
+        return self.__object_unpublish_by_path(object_type, object_path)
+
+    @wildland_result()
+    def __object_unpublish_by_path(self, object_type: WLObjectType, object_path: str):
+        if self.client.is_url(object_path):
+            wl_objects = self.client.load_objects_from_url(WildlandObject.Type(object_type.value), object_path, self.client.config.get('@default'))
+        else:
+            wl_objects = [self.client.load_object_from_name(WildlandObject.Type(object_type.value), object_path)]
+
+        for wl_object in wl_objects:
+            if isinstance(wl_object, PublishableWildlandObject):
+                self.__object_do_unpublish(wl_object)
+
+    def object_unpublish(self, object_type: WLObjectType, object_id: str) -> WildlandResult:
+        return self.__object_unpublish(object_type, object_id)
+
+    @wildland_result()
+    def __object_unpublish(self, object_type: WLObjectType, object_id: str):
+        result, wl_object = self.object_get_by_id(object_type, object_id)
+
+        if not result.success or not wl_object:
+            return result
+
+        return self.__object_do_unpublish(wl_object)
+
+    @wildland_result()
+    def __object_do_unpublish(self, wl_object: PublishableWildlandObject):
+        assert isinstance(wl_object.manifest, Manifest)
+
+        if Publisher.is_published(self.client, wl_object.owner, wl_object.get_primary_publish_path()):
+            user = self.client.load_object_from_name(WildlandObject.Type.USER,
+                                                     wl_object.manifest.owner)
+
+            logger.info(f'Unpublishing %s: [%s]', wl_object.type.value, wl_object.get_primary_publish_path())
+            Publisher(self.client, user).unpublish(wl_object)
+
+    def check_if_all_published(self, object_type: WLObjectType) -> WildlandResult:
+        return self.__check_if_all_published(object_type)
+
+    @wildland_result()
+    def __check_if_all_published(self, object_type: WLObjectType):
+        # check if all objects are published
+        internal_wl_type = WildlandObject.Type(object_type.value)
+        not_published = Publisher.list_unpublished_objects(self.client, internal_wl_type)
+        n_objects = len(list(self.client.dirs[internal_wl_type].glob('*.yaml')))
+
+        # if all objects of the given type are unpublished DO NOT print warning
+        if not_published and len(not_published) != n_objects:
+            logger.warning(
+                "Some local %ss (or %s updates) are not published:\n%s",
+                object_type.value,
+                object_type.value,
+                '\n'.join(sorted(not_published))
+            )
+
+    def object_republish(self, object_type: WLObjectType, object_id: str) -> WildlandResult:
+        return self.__object_republish(object_type, object_id)
+
+    @wildland_result()
+    def __object_republish(self, object_type: WLObjectType, object_id: str):
+        republish_result = WildlandResult()
+        result, wl_object = self.object_get_by_id(object_type, object_id)
+
+        if not result.success or not wl_object:
+            return result
+
+        try:
+            assert isinstance(wl_object.manifest, Manifest)
+            user = self.client.load_object_from_name(WildlandObject.Type.USER, wl_object.manifest.owner)
+            logger.info(f'Re-publishing {object_type}: [{wl_object.get_primary_publish_path()}]')
+            Publisher(self.client, user).republish(wl_object)
+        except WildlandError as ex:
+            raise WildlandError(f"Failed to republish {object_type}: {ex}")
+
+        return republish_result
 
     def object_import_from_yaml(self, yaml_data: bytes, object_name: Optional[str]) -> \
             Tuple[WildlandResult, Optional[WLObject]]:
