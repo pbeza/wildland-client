@@ -224,7 +224,6 @@ class _UnpublishedWildlandObjectCache:
         self.client = client
         self.obj_type = obj_type
         self.file: Path = client.dirs[obj_type] / '.unpublished'
-        self.file.touch(exist_ok=True)
 
     def load_cache(self) -> Set[str]:
         """
@@ -239,6 +238,10 @@ class _UnpublishedWildlandObjectCache:
         Cache wildland object's local path (if exist).
         """
         to_add = self._get_changed(wl_object)
+
+        if self._is_invalid(ignore=to_add):
+            self._update()
+
         if not to_add:
             return
         cache = self._load()
@@ -266,16 +269,16 @@ class _UnpublishedWildlandObjectCache:
             # we tried to modify a file that's not actually in the local dir
             return None
 
-        if self._is_invalid(ignore=changed):
-            self._update()
-
         return changed
 
     def _load(self) -> Set[str]:
-        with open(self.file, 'r') as f:
-            lines = f.readlines()
-            cache = set(line.rstrip() for line in lines)
-        return cache
+        try:
+            with open(self.file, 'r') as f:
+                lines = f.readlines()
+                cache = set(line.rstrip() for line in lines)
+            return cache
+        except FileNotFoundError as ex:
+            return set()
 
     def _save(self, cache: Set[str]) -> None:
         with open(self.file, 'w') as f:

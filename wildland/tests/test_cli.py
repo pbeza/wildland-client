@@ -6452,19 +6452,19 @@ def test_forest_user_ensure_manifest_pattern_tc_2(cli, tmp_path):
     cli('template', 'create', 'local', '--location', f'{tmp_path}/wl-forest',
         '--read-only', 'forest-tpl')
     cli('template', 'add', 'local', '--location', f'{tmp_path}/wl-forest',
-        '--manifest-pattern', '/foo.yaml', 'forest-tpl')
+        '--manifest-pattern', '/foo.{object-type}.yaml', 'forest-tpl')
 
     cli('forest', 'create', '--access', '*', '--owner', 'Alice', 'forest-tpl')
 
     catalog_path = Path(f'/{tmp_path}/wl-forest/.manifests/')
     uuid_dir = list(catalog_path.glob('*'))[0].resolve()
 
-    with open(uuid_dir / 'foo.yaml') as f:
+    with open(uuid_dir / 'foo.container.yaml') as f:
         data = list(yaml_parser.safe_load_all(f))[1]
 
     storage = data['backends']['storage']
-    assert storage[0]['manifest-pattern'] == {'type': 'glob', 'path': '/foo.yaml'}
-    assert storage[1]['manifest-pattern'] == {'type': 'glob', 'path': '/foo.yaml'}
+    assert storage[0]['manifest-pattern'] == {'type': 'glob', 'path': '/foo.{object-type}.yaml'}
+    assert storage[1]['manifest-pattern'] == {'type': 'glob', 'path': '/foo.{object-type}.yaml'}
 
 
 def test_forest_user_ensure_manifest_pattern_tc_3(cli, tmp_path):
