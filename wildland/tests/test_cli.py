@@ -152,7 +152,7 @@ def test_edit(cli, cli_fail, base_dir):
     #remove Standalone.storage.yaml line to test storage sync
     editor = r'sed -i 16d'
     result = cli('edit', container_path, '--editor', editor, capture=True)
-    assert "Outdated storage for container" in result.splitlines()[2]
+    assert "Outdated storage for container" in result.splitlines()[0]
 
 # Users
 
@@ -1383,9 +1383,9 @@ def test_container_publish_after_edit_with_publish_flag(cli, tmp_path, base_dir)
     editor = r'sed -i s,PATH,HTAP,g'
     result = cli('container', 'edit', 'Container', '--editor', editor, '--publish', capture=True)
     out_lines = result.splitlines()
-    assert len(out_lines) == 3
-    assert re.match('Saved: .*/Container.container.yaml', out_lines[1])
-    assert 'Publishing container' in out_lines[2]
+    assert len(out_lines) == 2
+    assert re.match('Saved: .*/Container.container.yaml', out_lines[0])
+    assert 'Publishing container' in out_lines[1]
 
     assert len(tuple(tmp_path.glob('*.container.yaml'))) == 1
 
@@ -1416,9 +1416,9 @@ def test_container_republish_after_edit_if_published(cli, tmp_path, base_dir):
 
     result = cli('container', 'edit', 'Container', '--editor', editor, capture=True)
     out_lines = result.splitlines()
-    assert len(out_lines) == 3
-    assert re.match('Saved: .*/Container.container.yaml', out_lines[1])
-    assert 'Re-publishing container: [/.uuid/' in out_lines[2]
+    assert len(out_lines) == 2
+    assert re.match('Saved: .*/Container.container.yaml', out_lines[0])
+    assert 'Re-publishing container: [/.uuid/' in out_lines[1]
 
     assert len(tuple(tmp_path.glob('*.container.yaml'))) == 1
 
@@ -1447,8 +1447,8 @@ def test_container_not_publish_after_edit_if_not_published(cli, tmp_path, base_d
     editor = r'sed -i s,PATH,REPUBLISH,g'
     result = cli('container', 'edit', 'Container', '--editor', editor, capture=True)
     out_lines = result.splitlines()
-    assert len(out_lines) == 2
-    assert re.match('Saved: .*/Container.container.yaml', out_lines[1])
+    assert len(out_lines) == 1
+    assert re.match('Saved: .*/Container.container.yaml', out_lines[0])
 
     assert not tuple(tmp_path.glob('*.container.yaml'))
 

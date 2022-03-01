@@ -447,7 +447,6 @@ def _sync_removed_storages(obj, manifest_type, original_data, edited_s, path):
     #check old manifest's list of storage ids
     old_storage_ids = []
     for i in obj.client.get_all_storages(container):
-        click.echo(i)
         old_storage_ids.append(i.backend_id)
 
     #if any old storage not on the new list, synchronize
