@@ -47,7 +47,7 @@ from ..storage_backends.file_children import FileChildrenMixin
 from ..utils import yaml_parser
 from ..wildland_object.wildland_object import WildlandObject
 from ..cli.cli_user import _user_create, _user_import
-from ..cli.cli_bridge import _bridge_create, _bridge_import
+from ..cli.cli_bridge import _bridge_create, do_bridge_import
 
 
 def modify_file(path, pattern, replacement):
@@ -1383,9 +1383,9 @@ def test_container_publish_after_edit_with_publish_flag(cli, tmp_path, base_dir)
     editor = r'sed -i s,PATH,HTAP,g'
     result = cli('container', 'edit', 'Container', '--editor', editor, '--publish', capture=True)
     out_lines = result.splitlines()
-    assert len(out_lines) == 2
-    assert re.match('Saved: .*/Container.container.yaml', out_lines[0])
-    assert 'Publishing container' in out_lines[1]
+    assert len(out_lines) == 3
+    assert re.match('Saved: .*/Container.container.yaml', out_lines[1])
+    assert 'Publishing container' in out_lines[2]
 
     assert len(tuple(tmp_path.glob('*.container.yaml'))) == 1
 
@@ -1416,9 +1416,9 @@ def test_container_republish_after_edit_if_published(cli, tmp_path, base_dir):
 
     result = cli('container', 'edit', 'Container', '--editor', editor, capture=True)
     out_lines = result.splitlines()
-    assert len(out_lines) == 2
-    assert re.match('Saved: .*/Container.container.yaml', out_lines[0])
-    assert 'Re-publishing container: [/.uuid/' in out_lines[1]
+    assert len(out_lines) == 3
+    assert re.match('Saved: .*/Container.container.yaml', out_lines[1])
+    assert 'Re-publishing container: [/.uuid/' in out_lines[2]
 
     assert len(tuple(tmp_path.glob('*.container.yaml'))) == 1
 
@@ -1447,8 +1447,8 @@ def test_container_not_publish_after_edit_if_not_published(cli, tmp_path, base_d
     editor = r'sed -i s,PATH,REPUBLISH,g'
     result = cli('container', 'edit', 'Container', '--editor', editor, capture=True)
     out_lines = result.splitlines()
-    assert len(out_lines) == 1
-    assert re.match('Saved: .*/Container.container.yaml', out_lines[0])
+    assert len(out_lines) == 2
+    assert re.match('Saved: .*/Container.container.yaml', out_lines[1])
 
     assert not tuple(tmp_path.glob('*.container.yaml'))
 
@@ -5681,10 +5681,10 @@ def test_remove_files_when_bridge_import_fails(cli, base_dir, tmpdir):
                 "local-owners:\n- '0xddd'\n- '0xaaa'")
 
     def side_effect(*args, **kwargs):
-        _bridge_import(*args, **kwargs)
+        do_bridge_import(*args, **kwargs)
         raise Exception('My error')
 
-    with mock.patch('wildland.cli.cli_bridge._bridge_import', side_effect=side_effect):
+    with mock.patch('wildland.cli.cli_bridge.do_bridge_import', side_effect=side_effect):
         try:
             cli('bridge', 'import', 'wildland:0xddd:/ALICE:/IMPORT:')
         except:
