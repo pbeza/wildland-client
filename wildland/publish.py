@@ -255,9 +255,12 @@ class _UnpublishedWildlandObjectCache:
         to_remove = self._get_changed(wl_object)
         if not to_remove:
             return
-        cache = self._load()
-        cache.discard(str(to_remove))
-        self._save(cache)
+        try:
+            cache = self._load()
+            cache.discard(str(to_remove))
+            self._save(cache)
+        except FileNotFoundError:
+            pass
 
     def _get_changed(self, wl_object: PublishableWildlandObject) -> Optional[Path]:
         path = wl_object.local_path
@@ -272,13 +275,10 @@ class _UnpublishedWildlandObjectCache:
         return changed
 
     def _load(self) -> Set[str]:
-        try:
-            with open(self.file, 'r') as f:
-                lines = f.readlines()
-                cache = set(line.rstrip() for line in lines)
-            return cache
-        except FileNotFoundError:
-            return set()
+        with open(self.file, 'r') as f:
+            lines = f.readlines()
+            cache = set(line.rstrip() for line in lines)
+        return cache
 
     def _save(self, cache: Set[str]) -> None:
         with open(self.file, 'w') as f:
