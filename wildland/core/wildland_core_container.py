@@ -313,6 +313,8 @@ class WildlandCoreContainer(WildlandCoreApi):
     @wildland_result()
     def __container_add_storage(self, container_id: str, storage_names: List[str]):
         result, container = self.container_find_by_id(container_id)
+        if not result.success or not container:
+            raise FileNotFoundError(f'Cannot find container {container_id}')
 
         if container.local_path is None:
             raise WildlandError('Can only update a local manifest')

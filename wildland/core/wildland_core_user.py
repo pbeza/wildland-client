@@ -228,9 +228,12 @@ class WildlandCoreUser(WildlandCoreApi):
     @wildland_result()
     def __user_remove_container_catalog_entry(self, container_id: str):
         result, container = self.container_find_by_id(container_id)
-        if not result.success:
+        if not result.success or not container:
             raise WildlandError(f'Container {container_id} could not be found')
-        user = self.object_get(WLObjectType.USER, container.owner)
+        user = self.client.load_object_from_name(WildlandObject.Type.USER, container.owner)
+        if not user:
+            raise WildlandError(f'The owner of the container: {container_id} could not be found')
+
         user.remove_catalog_entry(self.client.local_url(container.local_path))
         self.client.save_object(WildlandObject.Type.USER, user)
 
@@ -253,7 +256,7 @@ class WildlandCoreUser(WildlandCoreApi):
         logger.info('Attaching container to user [%s]', owner_user.owner)
 
         result, container = self.container_find_by_id(container_id)
-        if not result.success:
+        if not result.success or not container:
             raise WildlandError(f'Container {container_id} could not be found')
 
         owner_user.add_catalog_entry(str(self.client.local_url(container.local_path)))

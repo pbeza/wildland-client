@@ -209,8 +209,8 @@ def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Opt
             raise WildlandError(f'Failed to create storage from template. {ex}') from ex
 
     if update_user:
-        result = obj.wlcore.user_add_container_catalog_entry(container.id,
-                                                             owner or '@default-owner')
+        result = obj.wlcore.user_add_container_catalog_entry(owner or '@default-owner',
+                                                             container.id)
         if not result.success:
             raise WildlandError(str(result))
 
@@ -443,7 +443,7 @@ def _delete(obj: ContextObj, name: str, force: bool, cascade: bool, no_unpublish
     if cascade:
         result = obj.wlcore.user_remove_container_catalog_entry(container.id)
         if not result.success:
-            logger.warning('Failed to remove catalog entry: %s', e)
+            logger.warning('Failed to remove catalog entry: %s', str(result))
             if not force:
                 logger.debug('Cannot remove container. ')
             raise WildlandError(str(result))

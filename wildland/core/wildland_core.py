@@ -20,6 +20,7 @@
 """
 Wildland core implementation
 """
+from pathlib import Path
 from typing import List, Tuple, Optional, Callable, Dict
 
 import wildland.core.core_utils as utils
@@ -151,7 +152,7 @@ class WildlandCore(WildlandCoreContainer, WildlandCoreBridge, WildlandCoreUser, 
         return result, None
 
     def object_get_manifest_path(self, object_type: WLObjectType, object_id: str) -> \
-            Tuple[WildlandResult, Optional[str]]:
+            Tuple[WildlandResult, Optional[Path]]:
         """
         Return local path to object, if available.
         :param object_id: object_id of the object

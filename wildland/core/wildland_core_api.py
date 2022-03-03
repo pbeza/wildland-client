@@ -135,7 +135,7 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def object_get_manifest_path(self, object_type: WLObjectType, object_id: str) -> \
-            Tuple[WildlandResult, Optional[str]]:
+            Tuple[WildlandResult, Optional[Path]]:
         """
         Return local path to object, if available.
         :param object_id: object_id of the object
