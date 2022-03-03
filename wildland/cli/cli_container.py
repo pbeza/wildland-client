@@ -209,15 +209,10 @@ def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Opt
             raise WildlandError(f'Failed to create storage from template. {ex}') from ex
 
     if update_user:
-        owner_user = obj.client.load_object_from_name(
-            WildlandObject.Type.USER, owner or '@default-owner')
-
-        if not owner_user.local_path:
-            raise WildlandError('Cannot update user because the manifest path is unknown')
-        click.echo(f'Attaching container to user [{owner_user.owner}]')
-
-        owner_user.add_catalog_entry(str(obj.client.local_url(container_path)))
-        obj.client.save_object(WildlandObject.Type.USER, owner_user)
+        result = obj.wlcore.user_add_container_catalog_entry(container.id,
+                                                             owner or '@default-owner')
+        if not result.success:
+            raise WildlandError(str(result))
 
     if no_publish:
         return
@@ -236,26 +231,24 @@ def update(obj: ContextObj, storage, cont):
     """
     Update a container manifest.
     """
-
-    container = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, cont)
-    if container.local_path is None:
-        raise WildlandError('Can only update a local manifest')
+    result, wl_container = obj.wlcore.object_get(WLObjectType.CONTAINER, cont)
+    if not result.success or not wl_container:
+        raise WildlandError(str(result))
 
     if not storage:
         click.echo('No change')
         return
 
-    for storage_name in storage:
-        storage = obj.client.load_object_from_name(WildlandObject.Type.STORAGE, storage_name)
-        assert storage.local_path
-        click.echo(f'Adding storage: {storage.local_path}')
-        container.add_storage_from_obj(storage, inline=False, storage_name=storage_name)
-
-    obj.client.save_object(WildlandObject.Type.CONTAINER, container)
+    result = obj.wlcore.container_add_storage(wl_container.id, storage)
+    if not result.success:
+        raise WildlandError(str(result))
 
 
 def _container_info(obj, wl_container, users_and_bridge_paths):
-    container = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, wl_container.id)
+    container_result, container = obj.wlcore.container_find_by_id(wl_container.id)
+    if not container_result.success or not container:
+        raise WildlandError(str(container_result))
+
     container_fields = container.to_repr_fields(include_sensitive=False)
     bridge_paths = []
     try:
@@ -390,8 +383,8 @@ def _delete(obj: ContextObj, name: str, force: bool, cascade: bool, no_unpublish
         if force:
             logger.warning('Failed to load manifest: %s', str(result))
             try:
-                path = obj.client.find_local_manifest(WildlandObject.Type.CONTAINER, name)
-                if path:
+                result, path = obj.wlcore.object_get_manifest_path(WLObjectType.CONTAINER, name)
+                if result.success and path:
                     click.echo(f'Deleting file {path}')
                     path.unlink()
             except ManifestError:
@@ -448,15 +441,12 @@ def _delete(obj: ContextObj, name: str, force: bool, cascade: bool, no_unpublish
         obj.wlcore.container_unpublish(container.id)
 
     if cascade:
-        try:
-            user = obj.client.load_object_from_name(WildlandObject.Type.USER, _container.owner)
-            user.remove_catalog_entry(obj.client.local_url(_container.local_path))
-            obj.client.save_object(WildlandObject.Type.USER, user)
-        except WildlandError as e:
+        result = obj.wlcore.user_remove_container_catalog_entry(container.id)
+        if not result.success:
             logger.warning('Failed to remove catalog entry: %s', e)
             if not force:
                 logger.debug('Cannot remove container. ')
-            raise e
+            raise WildlandError(str(result))
 
     delete_result = obj.wlcore.container_delete(container.id, force)
 

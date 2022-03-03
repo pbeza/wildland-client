@@ -300,6 +300,31 @@ class WildlandCoreContainer(WildlandCoreApi):
         """
         raise NotImplementedError
 
+    def container_add_storage(self, container_id: str, storage_names: List[str]) -> WildlandResult:
+        """
+        Add storages to container
+        :param container_id: id of the container to be modified, in the form of
+        user_id:/.uuid/container_uuid
+        :param storage_names: list of storage names
+        :return: WildlandResult
+        """
+        return self.__container_add_storage(container_id, storage_names)
+
+    @wildland_result()
+    def __container_add_storage(self, container_id: str, storage_names: List[str]):
+        result, container = self.container_find_by_id(container_id)
+
+        if container.local_path is None:
+            raise WildlandError('Can only update a local manifest')
+
+        for storage_name in storage_names:
+            storage = self.client.load_object_from_name(WildlandObject.Type.STORAGE, storage_name)
+            assert storage.local_path
+            logger.info('Adding storage: %s', storage.local_path)
+            container.add_storage_from_obj(storage, inline=False, storage_name=storage_name)
+
+        self.client.save_object(WildlandObject.Type.CONTAINER, container)
+
     def container_publish(self, container_id) -> WildlandResult:
         """
         Publish the given container.
@@ -410,13 +435,8 @@ class WildlandCoreContainer(WildlandCoreApi):
         :param container_id: id of the container to be found (user_id:/.uuid/container_uuid)
         :return: tuple of WildlandResult and, if successful, the Container
         """
+        return self.__container_find_by_id(container_id)
 
-        result = WildlandResult()
-
-        for container in self.client.load_all(WildlandObject.Type.CONTAINER):
-            if utils.container_to_wlcontainer(container).id == container_id:
-                return result, container
-
-        result.errors.append(
-            WLError.from_exception(FileNotFoundError(f'Cannot find container {container_id}')))
-        return result, None
+    @wildland_result()
+    def __container_find_by_id(self, container_id: str):
+        return self.client.load_object_from_name(WildlandObject.Type.CONTAINER, container_id)

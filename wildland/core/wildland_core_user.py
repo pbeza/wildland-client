@@ -32,7 +32,7 @@ from ..user import User
 from ..wildland_object.wildland_object import WildlandObject
 from .wildland_result import WildlandResult, WLError, wildland_result, WLErrorType
 from .wildland_core_api import WildlandCoreApi, ModifyMethod
-from .wildland_objects_api import WLUser, WLObject
+from .wildland_objects_api import WLUser, WLObject, WLObjectType
 from ..wlenv import WLEnv
 
 
@@ -215,6 +215,49 @@ class WildlandCoreUser(WildlandCoreApi):
         if not user.local_path:
             raise FileNotFoundError('Can only delete a local manifest')
         user.local_path.unlink()
+
+    def user_remove_container_catalog_entry(self, container_id: str) -> WildlandResult:
+        """
+        Remove container from user catalog
+        :param container_id: id of the container to be duplicated, in the form of
+        owner_id:/.uuid/container_uuid
+        :return: WildlandResult
+        """
+        return self.__user_remove_container_catalog_entry(container_id)
+
+    @wildland_result()
+    def __user_remove_container_catalog_entry(self, container_id: str):
+        result, container = self.container_find_by_id(container_id)
+        if not result.success:
+            raise WildlandError(f'Container {container_id} could not be found')
+        user = self.object_get(WLObjectType.USER, container.owner)
+        user.remove_catalog_entry(self.client.local_url(container.local_path))
+        self.client.save_object(WildlandObject.Type.USER, user)
+
+    def user_add_container_catalog_entry(self, user_name: str, container_id: str) -> WildlandResult:
+        """
+        Add a container to user catalog
+        :param user_name: the name of the user
+        :param container_id: id of the container to be duplicated, in the form of
+        owner_id:/.uuid/container_uuid
+        :return: WildlandResult
+        """
+        return self.__user_add_container_catalog_entry(user_name, container_id)
+
+    @wildland_result()
+    def __user_add_container_catalog_entry(self, user_name: str, container_id: str):
+        owner_user = self.client.load_object_from_name(WildlandObject.Type.USER, user_name)
+
+        if not owner_user.local_path:
+            raise WildlandError('Cannot update user because the manifest path is unknown')
+        logger.info('Attaching container to user [%s]', owner_user.owner)
+
+        result, container = self.container_find_by_id(container_id)
+        if not result.success:
+            raise WildlandError(f'Container {container_id} could not be found')
+
+        owner_user.add_catalog_entry(str(self.client.local_url(container.local_path)))
+        self.client.save_object(WildlandObject.Type.USER, owner_user)
 
     def user_refresh(self, user_ids: Optional[List[str]] = None) -> WildlandResult:
         """

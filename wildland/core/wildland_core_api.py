@@ -134,6 +134,16 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         """
 
     @abc.abstractmethod
+    def object_get_manifest_path(self, object_type: WLObjectType, object_id: str) -> \
+            Tuple[WildlandResult, Optional[str]]:
+        """
+        Return local path to object, if available.
+        :param object_id: object_id of the object
+        :param object_type: type of the object
+        :return: tuple of WildlandResult and local file path or equivalent, if available
+        """
+
+    @abc.abstractmethod
     def object_update(self, updated_object: WLObject) -> Tuple[WildlandResult, Optional[str]]:
         """
         Perform a batch of upgrades on an object. Currently just able to replace an existing object
@@ -262,6 +272,23 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         """
         Delete provided user.
         :param user_id: User ID (in the form of user fingerprint)
+        :return: WildlandResult
+        """
+
+    def user_remove_container_catalog_entry(self, container_id: str) -> WildlandResult:
+        """
+        Remove container from user catalog entry
+        :param container_id: id of the container to be duplicated, in the form of
+        owner_id:/.uuid/container_uuid
+        :return: WildlandResult
+        """
+
+    def user_add_container_catalog_entry(self, user_name: str, container_id: str) -> WildlandResult:
+        """
+        Add a container to user catalog
+        :param user_name: the name of the user
+        :param container_id: id of the container to be duplicated, in the form of
+        owner_id:/.uuid/container_uuid
         :return: WildlandResult
         """
 
@@ -543,6 +570,16 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
             - access
         :param operation: operation to perform on field ('add', 'delete' or 'set')
         :param modify_data: list of values to be added/removed
+        :return: WildlandResult
+        """
+
+    @abc.abstractmethod
+    def container_add_storage(self, container_id: str, storage_names: List[str]) -> WildlandResult:
+        """
+        Add storages to container
+        :param container_id: id of the container to be modified, in the form of
+        user_id:/.uuid/container_uuid
+        :param storage_names: list of storage names
         :return: WildlandResult
         """
 

@@ -150,6 +150,28 @@ class WildlandCore(WildlandCoreContainer, WildlandCoreBridge, WildlandCoreUser, 
                 return result, str(obj.local_path)
         return result, None
 
+    def object_get_manifest_path(self, object_type: WLObjectType, object_id: str) -> \
+            Tuple[WildlandResult, Optional[str]]:
+        """
+        Return local path to object, if available.
+        :param object_id: object_id of the object
+        :param object_type: type of the object
+        :return: tuple of WildlandResult and local file path or equivalent, if available
+        """
+        return self._object_get_manifest_path(object_type, object_id)
+
+    @wildland_result()
+    def _object_get_manifest_path(self, object_type: WLObjectType, object_name: str):
+        result = WildlandResult()
+
+        obj_type = utils.wl_obj_to_wildland_object_type(object_type)
+        if not obj_type:
+            result.errors.append(WLError(WLErrorType.UNKNOWN_OBJECT_TYPE,
+                                         "Unknown object type", False, object_type, object_name))
+            return result, None
+
+        return result, self.client.find_local_manifest(obj_type, object_name)
+
     def object_update(self, updated_object: WLObject) -> Tuple[WildlandResult, Optional[str]]:
         """
         Perform a batch of upgrades on an object. Currently just able to replace an existing object
