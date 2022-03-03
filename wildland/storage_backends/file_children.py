@@ -56,25 +56,6 @@ class FileChildrenMixin(StorageBackend):
     Furthermore, classes using this mixin should remember to use super() call in storage_options
     and validate_and_parse_params (see LocalStorageBackend as an example).
     """
-    # pylint: disable=abstract-method
-    def __init__(self, *,
-                 params: Optional[Dict[str, Any]] = None,
-                 read_only: bool = False,
-                 **_kwds):
-        if params:
-            if params.get('subcontainer_manifest'):
-                params['manifest_pattern'] = {
-                    'type': 'list',
-                    'paths': list(params['subcontainer_manifest'])
-                }
-                del params['subcontainer_manifest']
-            elif params.get('manifest_pattern') and type(params['manifest_pattern']):
-                params['manifest_pattern'] = {
-                    'type': 'glob',
-                    'path': params['manifest_pattern']
-                }
-        super().__init__(params=params, read_only=read_only, **_kwds)
-
     DEFAULT_MANIFEST_PATTERN = {'type': 'glob', 'path': '/*.{object-type}.yaml'}
 
     @classmethod

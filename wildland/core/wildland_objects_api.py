@@ -21,7 +21,7 @@ API for Wildland Core Objects
 """
 from enum import Enum
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 
 class WLObjectType(Enum):
@@ -114,6 +114,7 @@ class WLStorage(WLObject):
     """
     Wildland storage
     """
+    #: location param for local paths
     location: str
     #: storage backend type
     storage_type: str
@@ -153,10 +154,8 @@ class WLStorageBackend:
     name: str
     #: human-readable description of the storage backend
     description: str
-    #: list of fields this backend supports
-    supported_fields: List[str]
-    #: description of fields this backend supports; must be in the same order as supported_fields
-    field_descriptions: List[str]
+    #: list of fields this backend supports with their description
+    supported_fields_with_description: Dict[str, Optional[str]]
     #: subset of supported_fields that is required for the backend to work
     required_fields: List[str] = field(default_factory=list)
 

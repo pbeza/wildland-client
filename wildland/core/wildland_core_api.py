@@ -20,13 +20,14 @@
 API for Wildland Core
 """
 import abc
-from typing import List, Tuple, Optional, Callable, Dict, Any
+from typing import List, Tuple, Optional, Callable, Dict, Any, Type
 from enum import Enum
 from .wildland_result import WildlandResult
 from .wildland_objects_api import WLObject, WLTemplateFile, WLBridge, WLObjectType, WLUser, \
     WLStorageBackend, WLStorage, WLContainer
 from ..container import Container
 from ..storage import Storage
+from ..storage_backends.base import StorageUserInteraction
 
 
 class ModifyMethod(Enum):
@@ -564,7 +565,8 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def storage_create(self, backend_type: str, backend_params: Dict[str, Any],
-                       container_id: str, name: Optional[str], trusted: bool = False,
+                       container_id: str, user_interaction_cls: Type[StorageUserInteraction],
+                       name: Optional[str], trusted: bool = False,
                        watcher_interval: Optional[int] = 0, inline: bool = True,
                        access_users: Optional[List[str]] = None, encrypt_manifest: bool = True) -> \
             Tuple[WildlandResult, Optional[WLStorage]]:
@@ -575,6 +577,8 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         They must conform to parameter names as provided by supported_storage_backends
         :param container_id: container this storage is for
         :param name: name of the storage to be created, used in naming storage file
+        :param user_interaction_cls: class for getting additional data from user in the middle
+         of the process i.e. dropbox refresh token
         :param trusted: should the storage be trusted
         :param watcher_interval: set the storage watcher-interval in seconds
         :param inline: Add the storage directly to container manifest,
@@ -616,18 +620,6 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         :param cascade: remove reference from containers
         :param force: delete even if used by containers or if manifest cannot be loaded
         :return: WildlandResult
-        """
-
-    @abc.abstractmethod
-    def storage_import_from_data(self, yaml_data: str, overwrite: bool = True) -> \
-            Tuple[WildlandResult, Optional[WLStorage]]:
-        """
-        Import storage from provided yaml data.
-        :param yaml_data: yaml data to be imported
-        :param overwrite: if a storage of provided uuid already exists in the appropriate container,
-        overwrite it; default: True. If this is False and the storage already exists, this
-         operation will fail.
-        :return: tuple of WildlandResult, imported WLStorage (if import was successful)
         """
 
     @abc.abstractmethod

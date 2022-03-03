@@ -35,7 +35,7 @@ from ..exc import WildlandError
 from ..manifest.manifest import ManifestError
 from ..manifest.template import StorageTemplate, TemplateManager
 from ..storage import Storage
-from ..storage_backends.base import StorageBackend
+from ..storage_backends.base import StorageBackend, StorageUserInteraction
 from ..storage_backends.dispatch import get_storage_backends
 from ..storage_sync.base import SyncState
 from ..wildland_object.wildland_object import WildlandObject
@@ -45,7 +45,7 @@ from ..wlpath import WildlandPath
 logger = get_logger('core-storage')
 
 
-def get_backend(backend_type: str) -> Type[StorageBackend]:
+def get_storage_backend_cls(backend_type: str) -> Type[StorageBackend]:
     """
     Search for backend from existing backends. Throw an error if backend not found.
     """
@@ -91,10 +91,54 @@ class WildlandCoreStorage(WildlandCoreApi):
         List all supported storage backends.
         :return: WildlandResult and a list of supported storage backends.
         """
-        raise NotImplementedError
+        return self.__supported_storage_backends()
+
+    @staticmethod
+    @wildland_result(default_output=[])
+    def __supported_storage_backends():
+        def append_nested_required_fields(required):
+            required = required or []
+            nested_required = backend_schema.get('oneOf')
+            if nested_required:
+                for nested in nested_required:
+                    for k, v in nested.items():
+                        if k == 'required':
+                            required.extend([v] if isinstance(v, str) else v)
+            return required
+
+        def get_supported_fields(properties):
+            fields = None
+            if properties:
+                fields = dict((k, v.get('description'))
+                              for k, v in backend_schema.get('properties').items())
+            return fields
+
+        wl_storage_backends: List[WLStorageBackend] = []
+        backends = get_storage_backends()
+        for name, backend_cls in backends.items():
+            backend_schema = backend_cls.SCHEMA.schema
+
+            description = backend_schema.get('title')
+            supported_fields_with_description = get_supported_fields(
+                backend_schema.get('properties')
+            )
+            required_fields = append_nested_required_fields(
+                backend_schema.get('required')
+            )
+
+            wl_storage_backend = WLStorageBackend(
+                name,
+                description,
+                supported_fields_with_description,
+                required_fields
+            )
+            wl_storage_backends.append(wl_storage_backend)
+
+        return wl_storage_backends
 
     def storage_create(self, backend_type: str, backend_params: Dict[str, Any],
-                       container_id: str, name: Optional[str], trusted: bool = False,
+                       container_id: str, user_interaction_cls: Type[StorageUserInteraction],
+                       name: Optional[str], trusted: bool = False,
                        watcher_interval: Optional[int] = 0, inline: bool = True,
                        access_users: Optional[List[str]] = None, encrypt_manifest: bool = True) -> \
             Tuple[WildlandResult, Optional[WLStorage]]:
@@ -105,6 +149,8 @@ class WildlandCoreStorage(WildlandCoreApi):
         They must conform to parameter names as provided by supported_storage_backends
         :param container_id: container this storage is for
         :param name: name of the storage to be created, used in naming storage file
+        :param user_interaction_cls: class for getting additional data from user in the middle
+         of the process i.e. dropbox refresh token
         :param trusted: should the storage be trusted
         :param watcher_interval: set the storage watcher-interval in seconds
         :param inline: Add the storage directly to container manifest,
@@ -118,12 +164,14 @@ class WildlandCoreStorage(WildlandCoreApi):
         :return: Tuple of WildlandResult and, if creation was successful, WLStorage that was
         created
         """
-        return self.__storage_create(backend_type, backend_params, container_id, name, trusted,
-                                     watcher_interval, inline, access_users, encrypt_manifest)
+        return self.__storage_create(backend_type, backend_params, container_id,
+                                     name, user_interaction_cls, trusted, watcher_interval,
+                                     inline, access_users, encrypt_manifest)
 
     @wildland_result(default_output=None)
     def __storage_create(self, backend_type: str, backend_params: Dict[str, Any],
-                         container_id: str, name: Optional[str], trusted: bool = False,
+                         container_id: str, name: Optional[str],
+                         user_interaction_cls: Type[StorageUserInteraction], trusted: bool = False,
                          watcher_interval: Optional[int] = 0, inline: bool = True,
                          access_users: Optional[List[str]] = None, encrypt_manifest: bool = True):
 
@@ -134,9 +182,10 @@ class WildlandCoreStorage(WildlandCoreApi):
         container_mount_path = container.paths[0]
         logger.info('Using container: %s (%s)', str(container.local_path),
                     str(container_mount_path))
-        backend = get_backend(backend_type)
+        backend = get_storage_backend_cls(backend_type)
 
-        backend_params = backend.validate_and_parse_params(backend_params)
+        data = backend.get_additional_user_data(backend_params, user_interaction_cls)
+        backend_params = backend.validate_and_parse_params(data)
 
         if watcher_interval:
             backend_params['watcher-interval'] = watcher_interval
@@ -547,18 +596,6 @@ class WildlandCoreStorage(WildlandCoreApi):
                     ))
 
         return sync_result
-
-    def storage_import_from_data(self, yaml_data: str, overwrite: bool = True) -> \
-            Tuple[WildlandResult, Optional[WLStorage]]:
-        """
-        Import storage from provided yaml data.
-        :param yaml_data: yaml data to be imported
-        :param overwrite: if a storage of provided uuid already exists in the appropriate container,
-        overwrite it; default: True. If this is False and the storage already exists, this
-         operation will fail.
-        :return: tuple of WildlandResult, imported WLStorage (if import was successful)
-        """
-        raise NotImplementedError
 
     def storage_modify(self, storage_id: str, manifest_field: str, operation: ModifyMethod,
                        modify_data: List[str]) -> WildlandResult:

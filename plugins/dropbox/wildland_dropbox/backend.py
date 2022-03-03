@@ -138,7 +138,7 @@ class DropboxStorageBackend(FileChildrenMixin, DirectoryCachedStorageMixin, Stor
                 "type": ["string"],
                 "description": "Dropbox OAuth 2.0 refresh token. "
                                "You can generate it using the following "
-                               "https://www.dropbox.com/developers/documentation/http/documentation"
+                               "https://www.dropbox.com/developers/documentation/http/documentation "
                                "at '/oauth2/token' endpoint section. "
                                "Please note that this is optional as the procedure is performed "
                                "when a storage is created.",

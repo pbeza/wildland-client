@@ -131,12 +131,12 @@ def _do_create(
         raise CliError(str(wl_container_result))
     container_id = wl_container.id
 
-    data = backend.get_additional_user_data(data, user_interaction_cls=CliStorageUserInteraction)
     data = {param_name_from_cli(key): data[key] for key in data}
 
+    user_interaction_cls = CliStorageUserInteraction
     create_result, wl_storage = obj.wlcore.storage_create(
-        backend.TYPE, data, container_id, name, trusted,
-        watcher_interval, inline, access, encrypt_manifest
+        backend.TYPE, data, container_id, user_interaction_cls, name,
+        trusted, watcher_interval, inline, access, encrypt_manifest
     )
 
     if not create_result.success or not wl_storage:
