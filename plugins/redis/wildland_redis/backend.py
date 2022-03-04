@@ -202,6 +202,7 @@ class RedisStorageBackend(FileChildrenMixin, DirectoryCachedStorageMixin, Storag
         if paths_only:
             for res_path, _ in children:
                 yield res_path, None
+            return
 
         keys = [self._generate_key(path) for path, _ in children]
         manifests = self.redis.mget(keys)
