@@ -32,7 +32,7 @@ from ..user import User
 from ..wildland_object.wildland_object import WildlandObject
 from .wildland_result import WildlandResult, WLError, wildland_result, WLErrorType
 from .wildland_core_api import WildlandCoreApi, ModifyMethod
-from .wildland_objects_api import WLUser, WLObject, WLObjectType
+from .wildland_objects_api import WLUser, WLObject
 from ..wlenv import WLEnv
 
 
