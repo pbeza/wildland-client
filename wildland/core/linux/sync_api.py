@@ -31,11 +31,12 @@ from subprocess import Popen
 from typing import Optional, Any
 
 from wildland.client import Client
-from wildland.core.sync_api import WildlandSync, SyncApiEvent
+from wildland.core.sync_api_base import WildlandSync, SyncApiEvent
 from wildland.core.sync_internal import POLL_TIMEOUT, WlSyncCommandType
 from wildland.core.wildland_result import wildland_result, WLErrorType, WildlandResult
+from wildland.core.wildland_sync_api import SyncApiEventType
 from wildland.log import get_logger, init_logging
-from wildland.storage_sync.base import SyncEvent
+from wildland.storage_sync.base import SyncEvent, SyncState
 
 logger = get_logger('sync-api-linux')
 
@@ -65,7 +66,55 @@ class WildlandSyncLinux(WildlandSync):
         if len(data) == 0:
             return None
 
-        return pickle.loads(data)
+        x = pickle.loads(data)
+        return x
+
+    def __try_recv(self, conn: socket):
+        """
+        Try receiving messages from the manager.
+        """
+        ready, _, _ = select.select([conn], [], [], POLL_TIMEOUT)
+        if len(ready) == 0:
+            return
+
+        msg = self._recv_msg(conn)
+
+        assert isinstance(msg, tuple), 'Invalid message from manager'
+
+        if isinstance(msg[1], SyncEvent):
+            # (handler_id, event)
+            self.event_queue.put((msg[0], SyncApiEvent.from_raw(msg[1])))
+        else:
+            # reply for some request: (cmd_id, (WildlandResult, data))
+            cmd_id = msg[0]
+            with self.requests_lock:
+                assert isinstance(msg[1], tuple), 'Invalid message from manager'
+                if cmd_id in self.requests.keys():
+                    logger.debug('completing request %d', cmd_id)
+                    request = self.requests[cmd_id]
+                    request.response = msg[1]
+                    request.ready.set()
+                else:
+                    logger.warning('Unexpected response from manager: cmd %d -> %s',
+                                   cmd_id, msg[1])
+
+    def __try_send(self, conn: socket):
+        """
+        Try sending queued messages to the manager.
+        """
+        with self.requests_lock:
+            if self.to_send.empty():
+                return
+
+            cmd_id = self.to_send.get()
+            request = self.requests[cmd_id]
+            conn.sendall(pickle.dumps(request.cmd))
+
+            # special case: we don't expect a response for this command
+            # response can arrive sometimes, but will be ignored
+            if request.cmd.type == WlSyncCommandType.SHUTDOWN:
+                request.response = WildlandResult.OK(), None
+                request.ready.set()
 
     def _manager_thread(self, conn: socket):
         """
@@ -75,46 +124,9 @@ class WildlandSyncLinux(WildlandSync):
         logger.debug('manager thread started')
         while self.manager:
             try:
-                try:
-                    with self.requests_lock:
-                        cmd_id = self.to_send.get(timeout=POLL_TIMEOUT)
-                        request = self.requests[cmd_id]
-                        conn.sendall(pickle.dumps(request.cmd))
-
-                        # special case: we don't expect a response for this command
-                        # response can arrive sometimes, but will be ignored
-                        if request.cmd.type == WlSyncCommandType.SHUTDOWN:
-                            request.response = WildlandResult.OK(), None
-                            request.ready.set()
-                except Empty:
-                    # nothing to send, check if there's data to receive
-                    rl, _, _ = select.select([conn], [], [], POLL_TIMEOUT)
-                    if len(rl) == 0:
-                        continue
-
-                    msg = self._recv_msg(conn)
-                    if msg is None:
-                        continue
-
-                    assert isinstance(msg, tuple), 'Invalid message from manager'
-
-                    if isinstance(msg[1], SyncEvent):
-                        # (handler_id, event)
-                        self.event_queue.put((msg[0], SyncApiEvent.from_raw(msg[1])))
-                    else:
-                        # reply for some request: (cmd_id, (WildlandResult, data))
-                        cmd_id = msg[0]
-                        with self.requests_lock:
-                            assert isinstance(msg[1], tuple), 'Invalid message from manager'
-                            if cmd_id in self.requests.keys():
-                                logger.debug('completing request %d', cmd_id)
-                                request = self.requests[cmd_id]
-                                request.response = msg[1]
-                                request.ready.set()
-                            else:
-                                logger.warning('Unexpected response from manager: cmd %d -> %s',
-                                               cmd_id, msg[1])
-            except (OSError, ValueError):
+                self.__try_recv(conn)
+                self.__try_send(conn)
+            except (OSError, ValueError, BrokenPipeError):
                 logger.info('manager disconnected')
                 break
             except Exception:
@@ -219,18 +231,27 @@ class WildlandSyncLinux(WildlandSync):
         assert self.event_thread
         self.event_thread.join()
         self.event_thread = None
+
+        # since we don't expect a reply for this command, manually make sure the manager is stopped
+        # to not create any race conditions
+        while Path(self.socket_path).exists():
+            # TODO timeout and kill
+            time.sleep(0.01)
+
         logger.info('manager stopped')
         return result
 
 
 # TODO this is just a quick test
 import click
+import shutil
 
 from pathlib import Path
 from wildland.core.core_utils import parse_wl_storage_id
 
 BASE_DIR = PurePosixPath('/home/user/.config/wildland')
 client = Client(base_dir=BASE_DIR)
+stop = threading.Event()
 
 
 def api_client(num: int):
@@ -258,6 +279,8 @@ def multi_test():
 
 def callback(event: SyncApiEvent):
     logger.info('API event: %s', event)
+    if event.state == SyncState.SYNCED or event.state == SyncState.ERROR:
+        stop.set()
 
 
 @click.command()
@@ -266,23 +289,49 @@ def callback(event: SyncApiEvent):
 def main(s1: str, s2: str):
     api = WildlandSyncLinux(client)
 
-    ret = api.syncer_start()
-    logger.info('main: start = %s', ret)
+    status = api.syncer_start()
+    logger.info('main: start = %s', status)
 
     _, cont, _ = parse_wl_storage_id(s1)
-    logger.info(f's1 {s1}, cont {cont}')
 
-    ret = api.start_container_sync(cont, s1, s2, True, False)
-    logger.info('main: sync = %s', ret)
+    status, handler_id = api.register_event_handler(cont, {SyncApiEventType.STATE,
+                                                           SyncApiEventType.PROGRESS}, callback)
+    logger.info('main: register = %s, %d', status, handler_id)
 
-    ret = api.register_event_handler(cont, set(), callback)
-    logger.info('main: register = %s', ret)
+    Path('/home/user/storage/s1/subdir').mkdir(parents=True)
+    Path('/home/user/storage/s1/subdir/f1').touch()
+    Path('/home/user/storage/s1/subdir/f2').touch()
+    Path('/home/user/storage/s1/subdir/f3').touch()
+
+    status = api.start_container_sync(cont, s1, s2, True, False)
+    logger.info('main: sync = %s', status)
+
+    status = api.get_file_sync_state(cont, 'testfile')
+    logger.info(f'main: sync state = {status}')
+
+    logger.info('main: wait for stop')
+    stop.wait()
+    time.sleep(1)
     Path('/home/user/storage/s1/testfile').touch()
+    stop.clear()
+    stop.wait()
 
-    time.sleep(5)
+    status = api.get_file_sync_state(cont, 'testfile')
+    logger.info(f'main: file info = {status}')
 
-    ret = api.syncer_stop()
-    logger.info('main: stop = %s', ret)
+    status = api.remove_event_handler(handler_id)
+    logger.info(f'main: remove handler = {status}')
+
+    Path('/home/user/storage/s1/testfile').write_bytes(b'test')
+
+    status = api.syncer_stop()
+    logger.info('main: stop = %s', status)
+
+    Path('/home/user/storage/s1/testfile').unlink()
+    shutil.rmtree('/home/user/storage/s1/subdir')
+    Path('/home/user/storage/s2/testfile').unlink()
+    Path('/home/user/storage/s2/x').unlink()
+    shutil.rmtree('/home/user/storage/s2/subdir')
 
 
 if __name__ == '__main__':

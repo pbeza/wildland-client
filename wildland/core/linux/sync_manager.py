@@ -27,7 +27,7 @@ import threading
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from queue import Empty, Queue
+from queue import Queue
 from socket import socket, AF_UNIX, SHUT_RDWR
 from typing import Optional, Tuple, Any
 
@@ -101,6 +101,31 @@ class WlSyncManagerLinux(WlSyncManager):
 
         return pickle.loads(data)
 
+    def __try_recv(self, conn: socket, client_id: int):
+        """
+        Try receiving messages from a client.
+        """
+        rl, _, _ = select.select([conn], [], [], POLL_TIMEOUT)
+        if len(rl) == 0:
+            return
+
+        cmd = self._recv_msg(conn)
+        if cmd is not None:
+            self.requests.put(WlSyncManager.Request(client_id, cmd))
+
+    @staticmethod
+    def __try_send(conn: socket, responses: Queue):
+        """
+        Try sending queued messages to a client.
+        """
+        if responses.empty():
+            return
+
+        msg = responses.get(timeout=POLL_TIMEOUT)
+        if msg is not None:
+            x = pickle.dumps(msg)
+            conn.sendall(x)
+
     def _client_thread(self, client_id: int, conn: socket):
         """
         Communicates with a single client.
@@ -114,20 +139,9 @@ class WlSyncManagerLinux(WlSyncManager):
 
         while self.active:
             try:
-                try:
-                    msg = responses.get(timeout=POLL_TIMEOUT)
-                    if msg is not None:
-                        conn.sendall(pickle.dumps(msg))
-                except Empty:
-                    # nothing to send, try receiving commands
-                    rl, _, _ = select.select([conn], [], [], POLL_TIMEOUT)
-                    if len(rl) == 0:
-                        continue
-
-                    cmd = self._recv_msg(conn)
-                    if cmd is not None:
-                        self.requests.put(WlSyncManager.Request(client_id, cmd))
-            except BrokenPipeError:
+                self.__try_recv(conn, client_id)
+                self.__try_send(conn, responses)
+            except (OSError, ValueError, BrokenPipeError):
                 logger.info('disconnected')
                 break
             except Exception:
@@ -226,6 +240,7 @@ class WlSyncManagerLinux(WlSyncManager):
         if not self.active:
             return WildlandResult.error(WLErrorType.SYNC_MANAGER_NOT_ACTIVE)
 
+        init_event = threading.Event()
         with self.jobs_lock:
             if container_id in self.jobs.keys():
                 return WildlandResult.error(WLErrorType.SYNC_FOR_CONTAINER_ALREADY_RUNNING,
@@ -236,11 +251,13 @@ class WlSyncManagerLinux(WlSyncManager):
                                           args=(container_id, source_params, target_params,
                                                 continuous, unidirectional,
                                                 partial(self._event_handler, container_id),
-                                                job.stop_event))
+                                                job.stop_event, init_event))
 
             self.jobs[container_id] = job
             job.thread.start()
-            return WildlandResult.OK()
+
+        init_event.wait()  # wait for syncer initialization
+        return WildlandResult.OK()
 
     @WlSyncCommand.handler(WlSyncCommandType.JOB_STOP)
     def cmd_job_stop(self, container_id: str, force: bool) -> WildlandResult:

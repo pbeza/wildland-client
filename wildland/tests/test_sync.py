@@ -595,6 +595,12 @@ def test_find_syncer(tmpdir):
         def iter_conflicts(self):
             pass
 
+        def get_file_info(self, path: PurePosixPath):
+            pass
+
+        def iter_files(self):
+            pass
+
     class TestSyncer2(BaseSyncer):
         SYNCER_NAME = "test2"
         SOURCE_TYPES = ["type1"]
@@ -608,6 +614,12 @@ def test_find_syncer(tmpdir):
             pass
 
         def iter_conflicts(self):
+            pass
+
+        def get_file_info(self, path: PurePosixPath):
+            pass
+
+        def iter_files(self):
             pass
 
     BaseSyncer._types['test1'] = TestSyncer1
@@ -831,7 +843,7 @@ def test_sync_events_oneshot_progress(base_dir, cli):
     assert_state(client, job_id, SyncState.ONE_SHOT)
     wait_for_event(client, lambda ev: ev.type == SyncProgressEvent.type and
                    ev.job_id == job_id and
-                   ev.value == 'MODIFY testfile')
+                   ev.value == '100% testfile')
     wait_for_state(client, job_id, SyncState.SYNCED)
 
 
@@ -848,28 +860,25 @@ def test_sync_events_continuous_progress(base_dir, cli):
 
     wait_for_event(client, lambda ev: ev.type == SyncProgressEvent.type and
                    ev.job_id == job_id and
-                   ev.value == 'CREATE testfile')
-    wait_for_event(client, lambda ev: ev.type == SyncProgressEvent.type and
-                   ev.job_id == job_id and
-                   ev.value == 'MODIFY testfile')
+                   ev.value == '100% testfile')
     wait_for_state(client, job_id, SyncState.SYNCED)
 
     os.unlink(path1)
     wait_for_event(client, lambda ev: ev.type == SyncProgressEvent.type and
                    ev.job_id == job_id and
-                   ev.value == 'DELETE testfile')
+                   ev.value == '100% testfile')
     wait_for_state(client, job_id, SyncState.SYNCED)
 
     os.mkdir(path1.parent / 'dir1')
     wait_for_event(client, lambda ev: ev.type == SyncProgressEvent.type and
                    ev.job_id == job_id and
-                   ev.value == 'CREATE dir1')
+                   ev.value == '100% dir1')
     wait_for_state(client, job_id, SyncState.SYNCED)
 
     os.rmdir(path1.parent / 'dir1')
     wait_for_event(client, lambda ev: ev.type == SyncProgressEvent.type and
                    ev.job_id == job_id and
-                   ev.value == 'DELETE dir1')
+                   ev.value == '100% dir1')
 
 
 # pylint: disable=unused-argument
@@ -895,7 +904,7 @@ def test_sync_events_filter(base_dir, cli):
     make_file(path1.parent / 'file2', 'file2')
     wait_for_event(client, lambda ev: ev.type == SyncProgressEvent.type and
                    ev.job_id == job_id and
-                   ev.value == 'MODIFY file2')
+                   ev.value == '100% file2')
     wait_for_state(client, job_id, SyncState.SYNCED)
 
     # disable multiple events

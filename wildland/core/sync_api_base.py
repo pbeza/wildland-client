@@ -28,15 +28,15 @@ from typing import Any, List, Dict, Tuple, Optional, Callable, Set
 from wildland.client import Client
 from wildland.core.core_utils import parse_wl_storage_id
 from wildland.core.sync_internal import WlSyncCommand, WlSyncCommandType
-from wildland.core.sync_types import SyncApiEvent, SyncApiEventType, SyncApiFileState
 from wildland.core.wildland_result import WildlandResult, WLErrorType, wildland_result
+from wildland.core.wildland_sync_api import WildlandSyncApi, SyncApiEvent, SyncApiEventType
 from wildland.log import get_logger
-from wildland.storage_sync.base import SyncState, SyncConflict
+from wildland.storage_sync.base import SyncState, SyncConflict, SyncFileState
 
 logger = get_logger('sync-api')
 
 
-class WildlandSync(metaclass=abc.ABCMeta):
+class WildlandSync(WildlandSyncApi, abc.ABC):
     """
     Base class for the sync API. Acts as a client sending commands to a sync manager.
     """
@@ -103,20 +103,6 @@ class WildlandSync(metaclass=abc.ABCMeta):
             self.requests.pop(cmd.id)
 
         return request.response
-
-    @abc.abstractmethod
-    def syncer_start(self) -> WildlandResult:
-        """
-        Initialize sync manager, its threads if needed etc.
-        :return: WildlandResult showing if it was successful.
-        """
-
-    @abc.abstractmethod
-    def syncer_stop(self) -> WildlandResult:
-        """
-        Stop sync manager and all its jobs.
-        :return: WildlandResult showing if it was successful.
-        """
 
     @wildland_result()
     def start_container_sync(self, container_id: str, source_storage_id: str,
@@ -203,6 +189,7 @@ class WildlandSync(metaclass=abc.ABCMeta):
             -> Tuple[WildlandResult, Optional[int]]:
         """
         Register handler for events; only receives events listed in filters.
+        Can be called before a sync is started for the given container.
         :param container_id: Container for which to receive events, all containers if None
         :param filters: Set of event types to be given to handler (empty means all)
         :param callback: function that takes SyncApiEvent as param and returns nothing
@@ -217,6 +204,7 @@ class WildlandSync(metaclass=abc.ABCMeta):
         if not result.success:
             return result, None
 
+        logger.debug('register = %d', handler_id)
         with self.event_lock:
             self.event_callbacks[handler_id] = callback
 
@@ -231,7 +219,7 @@ class WildlandSync(metaclass=abc.ABCMeta):
         with self.event_lock:
             if handler_id not in self.event_callbacks.keys():
                 return WildlandResult.error(WLErrorType.SYNC_CALLBACK_NOT_FOUND,
-                                            diagnostic_info=str(handler_id))
+                                            offender_id=str(handler_id))
 
         cmd = self._new_cmd(WlSyncCommandType.JOB_CLEAR_CALLBACK,
                             callback_id=handler_id)
@@ -257,7 +245,7 @@ class WildlandSync(metaclass=abc.ABCMeta):
         return result, state
 
     def get_container_sync_details(self, container_id: str) -> \
-            Tuple[WildlandResult, List[SyncApiFileState]]:
+            Tuple[WildlandResult, List[SyncFileState]]:
         """
         Get current sync state of all files in the given container.
         :param container_id: container_id in the format as in Wildland Core API.
@@ -283,7 +271,7 @@ class WildlandSync(metaclass=abc.ABCMeta):
         return result, data
 
     def get_file_sync_state(self, container_id: str, path: str) -> \
-            Tuple[WildlandResult, Optional[SyncApiFileState]]:
+            Tuple[WildlandResult, Optional[SyncFileState]]:
         """
         Get sync state of a given file.
         :param container_id: container_id in the format as in Wildland Core API.

@@ -26,13 +26,13 @@ Storage syncing.
 import abc
 import json
 import threading
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional, Iterable, Dict, Type, List, Callable
 from pathlib import Path, PurePosixPath
 from wildland.storage import StorageBackend
 from ..storage_backends.base import OptionalError
 from ..exc import WildlandError
-from ..storage_backends.watch import FileEventType
 
 
 class SyncConflict:
@@ -175,15 +175,15 @@ class SyncProgressEvent(SyncEvent):
         obj = json.loads(s)
         assert obj['type'] == SyncProgressEvent.type
         vals = obj['value'].split(' ', 1)
-        event_type = FileEventType[vals[0]]
+        progress = int(vals[0][:-1])
         path = PurePosixPath(vals[1])
-        return SyncProgressEvent(event_type, path)
+        return SyncProgressEvent(progress, path)
 
-    def __init__(self, event_type: FileEventType, path: PurePosixPath,
+    def __init__(self, progress: int, path: PurePosixPath,
                  job_id: Optional[str] = None):
-        self.event_type = event_type
+        self.progress = progress
         self.path = path
-        self.value = f'{event_type.name} {path}'
+        self.value = f'{progress}% {path}'
         self.job_id = job_id
 
 
@@ -225,6 +225,36 @@ class SyncErrorEvent(SyncEvent):
     def __init__(self, message: str, job_id: Optional[str] = None):
         self.value = message
         self.job_id = job_id
+
+
+class SyncFileState(Enum):
+    """
+    Current sync state of a single file.
+    """
+    UNKNOWN = 1  # syncer haven't chacked file state yet
+    SYNCING = 2  # file is being synced
+    SYNCED = 3  # file is synced
+    CONFLICT = 4  # conflict detected for this file
+    ERROR = 5  # error/exception occured during sync, file not synced
+
+    def __str__(self):
+        return str(self.name)
+
+    def __repr__(self):
+        return self.__str__()
+
+
+@dataclass
+class SyncFileInfo:
+    """
+    Sync state of a single file.
+    """
+    path: str
+    state: SyncFileState = SyncFileState.UNKNOWN
+    size: Optional[int] = None
+    conflicts: List[SyncConflict] = field(default_factory=list)
+    error: Optional[str] = None
+    progress: int = 0
 
 
 class BaseSyncer(metaclass=abc.ABCMeta):
@@ -357,6 +387,18 @@ class BaseSyncer(metaclass=abc.ABCMeta):
     def iter_conflicts(self) -> Iterable[SyncConflict]:
         """
         Iterate over discovered sync conflicts. Requires that the sync is/was running.
+        """
+
+    @abc.abstractmethod
+    def iter_files(self) -> Iterable[SyncFileInfo]:
+        """
+        Iterate over all files that are being synced. Requires that the sync is/was running.
+        """
+
+    @abc.abstractmethod
+    def get_file_info(self, path: PurePosixPath) -> Optional[SyncFileInfo]:
+        """
+        Return sync state of a single file. Requires that the sync is/was running.
         """
 
     @classmethod

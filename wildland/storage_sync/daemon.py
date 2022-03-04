@@ -39,7 +39,6 @@ from wildland.log import init_logging
 from wildland.control_server import ControlServer, control_command, ControlHandler
 from wildland.manifest.schema import Schema
 from wildland.storage_backends.base import StorageBackend, OptionalError
-from wildland.storage_backends.watch import FileEvent
 from wildland.storage_sync.base import BaseSyncer, SyncState, SyncEvent, SyncStateEvent, \
     SyncConflictEvent, SyncErrorEvent, SyncProgressEvent
 from wildland.log import get_logger
@@ -71,7 +70,7 @@ class SyncJob:
         self.control_handler = control_handler
         # daemon manages fields below because they come from the event queue
         self._state = SyncState.STOPPED
-        self._current_item: Optional[FileEvent] = None
+        self._current_item: Optional[Tuple[str, int]] = None  # path, progress
         self._conflicts: List[str] = []
         self._error: Optional[str] = None
 
@@ -105,12 +104,12 @@ class SyncJob:
         self._error = value
 
     @property
-    def current_item(self) -> Optional[FileEvent]:
+    def current_item(self) -> Optional[Tuple[str, int]]:
         """Current item (file/directory) being synced."""
         return self._current_item
 
     @current_item.setter
-    def current_item(self, value: FileEvent):
+    def current_item(self, value: Tuple[str, int]):
         """Current item setter."""
         self._current_item = value
 
@@ -150,7 +149,7 @@ class SyncJob:
             ret += ' [one-shot]'
 
         if self.current_item and self.state in [SyncState.RUNNING, SyncState.ONE_SHOT]:
-            ret += f'\n   currently syncing: {self.current_item}'
+            ret += f'\n   currently syncing: {self.current_item[0]} {self.current_item[1]}%'
 
         try:
             if len(self._conflicts) > 0:
@@ -260,7 +259,7 @@ class SyncDaemon:
                 if isinstance(event, SyncStateEvent):
                     job.state = event.state
                 elif isinstance(event, SyncProgressEvent):
-                    job.current_item = FileEvent(event.event_type, event.path)
+                    job.current_item = (str(event.path), event.progress)
                 elif isinstance(event, SyncConflictEvent):
                     job.add_conflict(event.value)
                 elif isinstance(event, SyncErrorEvent):

@@ -23,9 +23,9 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Any, get_type_hints, Tuple, Optional, Set, Union, List
 
-from wildland.core.sync_types import SyncApiFileState, SyncApiEventType
 from wildland.core.wildland_result import WildlandResult
-from wildland.storage_sync.base import SyncState
+from wildland.core.wildland_sync_api import SyncApiEventType
+from wildland.storage_sync.base import SyncState, SyncFileInfo
 
 POLL_TIMEOUT = 0.00001  # timeout (seconds) for connection polling
 
@@ -46,9 +46,9 @@ class WlSyncCommandType(Enum):
     JOB_RESUME = 4, {'container_id': str, 'return': WildlandResult}
     JOB_STATE = 5, {'container_id': str, 'return': Tuple[WildlandResult, Optional[SyncState]]}
     JOB_DETAILS = 6, {'container_id': str,
-                      'return': Tuple[WildlandResult, List[SyncApiFileState]]}
+                      'return': Tuple[WildlandResult, List[SyncFileInfo]]}
     JOB_FILE_DETAILS = 7, {'container_id': str, 'path': str,
-                           'return': Tuple[WildlandResult, Optional[SyncApiFileState]]}
+                           'return': Tuple[WildlandResult, Optional[SyncFileInfo]]}
     JOB_SET_CALLBACK = 8, {'container_id': Optional[str], 'filters': Set[SyncApiEventType],
                            'return': Tuple[WildlandResult, Optional[int]]}
     JOB_CLEAR_CALLBACK = 9, {'callback_id': int, 'return': WildlandResult}
@@ -89,8 +89,8 @@ class WlSyncCommand:
             assert name in kwargs, f'Missing argument {name} for command {cmd}'
 
             # TODO Subscripted generics cannot be used with class and instance checks
-            #assert isinstance(kwargs[name], sig), \
-            #    f'Invalid argument {name} type for command {cmd}'
+            # assert isinstance(kwargs[name], sig), \
+            #     f'Invalid argument {name} type for command {cmd}'
 
         return WlSyncCommand(cmd_id, cmd, kwargs)
 

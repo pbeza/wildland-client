@@ -20,20 +20,20 @@
 Internal API for Wildland sync operations: sync manager.
 """
 import abc
-import logging
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from queue import Queue, Empty
 from typing import Callable, Dict, Any, Tuple, Optional, Set, List
 
 from wildland.core.sync_internal import WlSyncCommand, WlSyncCommandType, POLL_TIMEOUT
 from wildland.core.wildland_result import WildlandResult, wildland_result, WLError, WLErrorType
-from wildland.core.sync_api import SyncApiFileState, SyncApiEventType
+from wildland.core.wildland_sync_api import SyncApiEventType
 from wildland.log import get_logger
 from wildland.storage_backends.base import StorageBackend
 from wildland.storage_sync.base import SyncState, BaseSyncer, SyncEvent, SyncErrorEvent, \
-    SyncStateEvent
+    SyncStateEvent, SyncFileState, SyncFileInfo
 
 logger = get_logger('sync-manager')
 
@@ -221,7 +221,7 @@ class WlSyncManager(metaclass=abc.ABCMeta):
                     else:
                         logger.warning('no response queue for client %d', filter_data.client_id)
 
-    # TODO decorate handlers here in the base class instead of the subclasses
+    # TODO decorate abstract handlers here in the base class instead of the subclasses
     # needs rework of the decorator to support that
 
     @abc.abstractmethod
@@ -272,10 +272,10 @@ class WlSyncManager(metaclass=abc.ABCMeta):
                 return WildlandResult.OK(), job.syncer.state
             except KeyError:
                 return WildlandResult.error(WLErrorType.SYNC_FOR_CONTAINER_NOT_RUNNING,
-                                            diagnostic_info=container_id), None
+                                            offender_id=container_id), None
 
     @WlSyncCommand.handler(WlSyncCommandType.JOB_DETAILS)
-    def cmd_job_details(self, container_id: str) -> Tuple[WildlandResult, List[SyncApiFileState]]:
+    def cmd_job_details(self, container_id: str) -> Tuple[WildlandResult, List[SyncFileInfo]]:
         """
         Handler for the JOB_DETAILS command. Returns state of all files in the job.
         """
@@ -284,12 +284,23 @@ class WlSyncManager(metaclass=abc.ABCMeta):
 
     @WlSyncCommand.handler(WlSyncCommandType.JOB_FILE_DETAILS)
     def cmd_job_file_details(self, container_id: str, path: str) \
-            -> Tuple[WildlandResult, Optional[SyncApiFileState]]:
+            -> Tuple[WildlandResult, Optional[SyncFileInfo]]:
         """
         Handler for the JOB_FILE_DETAILS command. Returns state of a particular file in the job.
         """
-        # TODO need base syncer changes
-        return WildlandResult.error(WLErrorType.NOT_IMPLEMENTED), None
+        if not self.active:
+            return WildlandResult.error(WLErrorType.SYNC_MANAGER_NOT_ACTIVE,
+                                        diagnostic_info=container_id), None
+
+        logger.debug('details: %s %s', container_id, path)
+        with self.jobs_lock:
+            try:
+                job = self.jobs[container_id]
+                assert job.syncer
+                return WildlandResult.OK(), job.syncer.get_file_info(PurePosixPath(path))
+            except KeyError:
+                return WildlandResult.error(WLErrorType.SYNC_FOR_CONTAINER_NOT_RUNNING,
+                                            offender_id=container_id), None
 
     @WlSyncCommand.handler(WlSyncCommandType.JOB_SET_CALLBACK, client_id=True)
     def cmd_job_set_callback(self, client_id: int, container_id: Optional[str],
@@ -342,7 +353,7 @@ class WlSyncManager(metaclass=abc.ABCMeta):
     def _job_worker(self, job_id: str, source_params: dict, target_params: dict,
                     continuous: bool, unidirectional: bool,
                     event_handler: Callable[[SyncEvent], None],
-                    stop_event: threading.Event) -> WildlandResult:
+                    stop_event: threading.Event, init_event: threading.Event) -> WildlandResult:
         """
         Internal method that hosts a sync job. Normally runs in a background thread.
         Returns only after the job is finished/stopped.
@@ -353,6 +364,7 @@ class WlSyncManager(metaclass=abc.ABCMeta):
         :param unidirectional: should sync go both ways or one-way only
         :param event_handler: callback that receives all sync events from this job
         :param stop_event: event that stops the job asynchronously
+        :param init_event: event that will be set when the job syncer is initialized
         :return: WildlandResult showing if it was successful.
         """
         result = WildlandResult()
@@ -379,9 +391,10 @@ class WlSyncManager(metaclass=abc.ABCMeta):
                 assert job_id in self.jobs.keys(), f'job {job_id} not initialized correctly'
                 self.jobs[job_id].syncer = syncer
 
+            init_event.set()
+
             if continuous:
                 syncer.start_sync()
-                logger.debug('worker wait')
                 stop_event.wait()
                 #if self.test_error:
                 #    raise WildlandError('Test sync exception')
@@ -400,5 +413,4 @@ class WlSyncManager(metaclass=abc.ABCMeta):
             if continuous and syncer:
                 syncer.stop_sync()
 
-        logger.debug('worker end')
         return result
