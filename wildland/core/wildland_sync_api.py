@@ -22,7 +22,7 @@ API for Wildland sync operations.
 import abc
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Tuple, Optional, Callable, Set, Any
+from typing import List, Tuple, Optional, Callable, Set
 
 from wildland.core.wildland_result import WildlandResult
 from wildland.storage_sync.base import SyncState, SyncConflict, SyncFileState, SyncEvent, \
@@ -46,12 +46,16 @@ class SyncApiEventType(Enum):
         """
         if isinstance(raw, SyncStateEvent):
             return SyncApiEventType.STATE
+
         if isinstance(raw, SyncProgressEvent):
             return SyncApiEventType.PROGRESS
+
         if isinstance(raw, SyncConflictEvent):
             return SyncApiEventType.CONFLICT
+
         if isinstance(raw, SyncErrorEvent):
             return SyncApiEventType.ERROR
+
         raise ValueError
 
     def __str__(self):
@@ -68,7 +72,10 @@ class SyncApiEvent:
     """
     container_id: str
     type: SyncApiEventType
-    value: Any  # TODO?
+    state: Optional[SyncState] = None  # for STATE events
+    progress: Optional[Tuple[str, int]] = None  # for PROGRESS events: path, progress%
+    conflict: Optional[SyncConflict] = None  # for CONFLICT events
+    error: Optional[str] = None  # for ERROR events
 
     @staticmethod
     def from_raw(raw: SyncEvent) -> 'SyncApiEvent':
@@ -76,9 +83,27 @@ class SyncApiEvent:
         Convert SyncEvent to SyncApiEvent.
         """
         assert raw.job_id, f'No job_id in event {raw}'
-        return SyncApiEvent(container_id=raw.job_id,
-                            type=SyncApiEventType.from_raw(raw),
-                            value=raw.value)
+        if isinstance(raw, SyncStateEvent):
+            return SyncApiEvent(container_id=raw.job_id,
+                                type=SyncApiEventType.from_raw(raw),
+                                state=raw.state)
+
+        if isinstance(raw, SyncProgressEvent):
+            return SyncApiEvent(container_id=raw.job_id,
+                                type=SyncApiEventType.from_raw(raw),
+                                progress=(str(raw.path), raw.progress))
+
+        if isinstance(raw, SyncConflictEvent):
+            return SyncApiEvent(container_id=raw.job_id,
+                                type=SyncApiEventType.from_raw(raw),
+                                conflict=None)  # TODO when removing legacy events
+
+        if isinstance(raw, SyncErrorEvent):
+            return SyncApiEvent(container_id=raw.job_id,
+                                type=SyncApiEventType.from_raw(raw),
+                                error=raw.value)
+
+        raise ValueError
 
 
 class WildlandSyncApi(metaclass=abc.ABCMeta):
