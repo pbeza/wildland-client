@@ -35,7 +35,7 @@ import stat
 from dataclasses import dataclass
 from pathlib import PurePosixPath, Path
 from uuid import UUID
-from typing import Optional, Dict, Type, Any, List, Iterable, Tuple, Union, TYPE_CHECKING
+from typing import Optional, Dict, Type, Any, List, Iterable, Tuple, Union, TYPE_CHECKING, Generator
 
 import click
 
@@ -740,7 +740,7 @@ class StorageBackend(metaclass=abc.ABCMeta):
             self,
             client: wildland.client.Client = None,
             query_path: PurePosixPath = PurePosixPath('*')
-    ) -> Iterable[PurePosixPath]:
+    ) -> Generator[PurePosixPath, None, None]:
         for path, _ in self.get_children(client, query_path, paths_only=True):
             yield path
 
