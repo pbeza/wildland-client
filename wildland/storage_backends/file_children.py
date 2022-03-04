@@ -56,6 +56,8 @@ class FileChildrenMixin(StorageBackend):
     Furthermore, classes using this mixin should remember to use super() call in storage_options
     and validate_and_parse_params (see LocalStorageBackend as an example).
     """
+    # pylint: disable=abstract-method
+
     DEFAULT_MANIFEST_PATTERN = {'type': 'glob', 'path': '/*.{object-type}.yaml'}
 
     @classmethod
