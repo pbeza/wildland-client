@@ -319,6 +319,9 @@ def main(s1: str, s2: str):
     status = api.get_file_sync_state(cont, 'testfile')
     logger.info(f'main: file info = {status}')
 
+    status = api.get_container_sync_details(cont)
+    logger.info(f'main: details = {status}')
+
     status = api.remove_event_handler(handler_id)
     logger.info(f'main: remove handler = {status}')
 

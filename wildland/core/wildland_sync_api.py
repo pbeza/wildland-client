@@ -105,6 +105,31 @@ class SyncApiEvent:
 
         raise ValueError
 
+    @property
+    def value(self) -> str:
+        """
+        Return human-readable event data.
+        """
+        if self.state is not None:
+            return str(self.state)
+
+        if self.progress is not None:
+            return f'{self.progress[1]}% {self.progress[0]}'
+
+        if self.conflict is not None:
+            return str(self.conflict)
+
+        if self.error is not None:
+            return self.error
+
+        raise ValueError
+
+    def __str__(self):
+        return f'{self.type}: {self.value} ({self.container_id})'
+
+    def __repr__(self):
+        return self.__str__()
+
 
 class WildlandSyncApi(metaclass=abc.ABCMeta):
     """

@@ -254,7 +254,6 @@ class WildlandSync(WildlandSyncApi, abc.ABC):
         cmd = self._new_cmd(WlSyncCommandType.JOB_DETAILS,
                             container_id=container_id)
         result, data = self._execute_cmd(cmd)
-        # TODO
         return result, data
 
     def get_container_sync_conflicts(self, container_id: str) -> \

@@ -33,7 +33,7 @@ from wildland.core.wildland_sync_api import SyncApiEventType
 from wildland.log import get_logger
 from wildland.storage_backends.base import StorageBackend
 from wildland.storage_sync.base import SyncState, BaseSyncer, SyncEvent, SyncErrorEvent, \
-    SyncStateEvent, SyncFileState, SyncFileInfo
+    SyncStateEvent, SyncFileInfo
 
 logger = get_logger('sync-manager')
 
@@ -279,8 +279,20 @@ class WlSyncManager(metaclass=abc.ABCMeta):
         """
         Handler for the JOB_DETAILS command. Returns state of all files in the job.
         """
-        # TODO need base syncer changes
-        return WildlandResult.error(WLErrorType.NOT_IMPLEMENTED), []
+        if not self.active:
+            return WildlandResult.error(WLErrorType.SYNC_MANAGER_NOT_ACTIVE,
+                                        diagnostic_info=container_id), []
+
+        logger.debug('job details: %s', container_id)
+        with self.jobs_lock:
+            try:
+                job = self.jobs[container_id]
+                assert job.syncer
+                files = list(job.syncer.iter_files())
+                return WildlandResult.OK(), files
+            except KeyError:
+                return WildlandResult.error(WLErrorType.SYNC_FOR_CONTAINER_NOT_RUNNING,
+                                            offender_id=container_id), []
 
     @WlSyncCommand.handler(WlSyncCommandType.JOB_FILE_DETAILS)
     def cmd_job_file_details(self, container_id: str, path: str) \
@@ -292,7 +304,7 @@ class WlSyncManager(metaclass=abc.ABCMeta):
             return WildlandResult.error(WLErrorType.SYNC_MANAGER_NOT_ACTIVE,
                                         diagnostic_info=container_id), None
 
-        logger.debug('details: %s %s', container_id, path)
+        logger.debug('file details: %s %s', container_id, path)
         with self.jobs_lock:
             try:
                 job = self.jobs[container_id]
