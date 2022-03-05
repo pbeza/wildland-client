@@ -21,7 +21,6 @@ Internal API for Wildland sync operations: sync manager.
 """
 import abc
 import threading
-import time
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from queue import Queue, Empty
@@ -118,7 +117,7 @@ class WlSyncManager(metaclass=abc.ABCMeta):
         """
         assert self.active
         try:
-            return WildlandResult.OK(), self.requests.get_nowait()
+            return WildlandResult.OK(), self.requests.get(timeout=POLL_TIMEOUT)
         except Empty:
             return WildlandResult.OK(), None
 
@@ -160,7 +159,6 @@ class WlSyncManager(metaclass=abc.ABCMeta):
                 return result
 
             if request is None:
-                time.sleep(POLL_TIMEOUT)  # TODO no sleeping
                 continue
 
             logger.debug('processing %s (%d/%d)', request, request.client_id, request.cmd.id)
@@ -381,6 +379,18 @@ class WlSyncManager(metaclass=abc.ABCMeta):
         Handler for the SHUTDOWN command. Stops the manager and all sync jobs.
         """
         return self.stop()
+
+    @WlSyncCommand.handler(WlSyncCommandType.JOB_LIST)
+    def cmd_get_jobs(self) -> Tuple[WildlandResult, Dict[str, SyncState]]:
+        """
+        Handler for the JOB_LIST command. Return status of all current sync jobs.
+        """
+        if not self.active:
+            return WildlandResult.error(WLErrorType.SYNC_MANAGER_NOT_ACTIVE), {}
+
+        logger.debug('get jobs')
+        with self.jobs_lock:
+            return WildlandResult.OK(), {cid: job.syncer.state for (cid, job) in self.jobs.items()}
 
     def _job_worker(self, job_id: str, source_params: dict, target_params: dict,
                     continuous: bool, unidirectional: bool,

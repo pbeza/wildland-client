@@ -323,6 +323,9 @@ def main(s1: str, s2: str):
     stop.clear()
     stop.wait()
 
+    status = api.get_current_sync_jobs()
+    logger.info(f'main: all jobs = {status}')
+
     status = api.get_file_sync_state(cont, 'testfile')
     logger.info(f'main: file info = {status}')
 
@@ -342,6 +345,8 @@ def main(s1: str, s2: str):
     Path('/home/user/storage/s2/testfile').unlink()
     Path('/home/user/storage/s2/x').unlink()
     shutil.rmtree('/home/user/storage/s2/subdir')
+    Path('/home/user/storage/s1/conf1').unlink()
+    Path('/home/user/storage/s2/conf1').unlink()
 
 
 if __name__ == '__main__':

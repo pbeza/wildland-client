@@ -22,7 +22,7 @@ API for Wildland sync operations.
 import abc
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Tuple, Optional, Callable, Set
+from typing import List, Tuple, Optional, Callable, Set, Dict
 
 from wildland.core.wildland_result import WildlandResult
 from wildland.storage_sync.base import SyncState, SyncConflict, SyncFileState, SyncEvent, \
@@ -213,6 +213,13 @@ class WildlandSyncApi(metaclass=abc.ABCMeta):
         De-register event handler with the provided id.
         :param handler_id: value returned by register_event_handler
         :return: WildlandResult showing if it was successful.
+        """
+
+    @abc.abstractmethod
+    def get_current_sync_jobs(self) -> Tuple[WildlandResult, Dict[str, SyncState]]:
+        """
+        Get current state of all running sync jobs.
+        :return: WildlandResult and dictionary {container_uuid: sync_state}.
         """
 
     @abc.abstractmethod

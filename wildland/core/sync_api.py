@@ -304,6 +304,15 @@ class WildlandSync(WildlandSyncApi, abc.ABC):
         result, _ = self._execute_cmd(cmd)
         return result
 
+    def get_current_sync_jobs(self) -> Tuple[WildlandResult, Dict[str, SyncState]]:
+        """
+        Get current state of all running sync jobs.
+        :return: WildlandResult and dictionary {container_uuid: sync_state}.
+        """
+        cmd = self._new_cmd(WlSyncCommandType.JOB_LIST)
+        result, data = self._execute_cmd(cmd)
+        return result, data
+
 
 def sync_api(client: Client) -> Optional[WildlandSync]:
     """

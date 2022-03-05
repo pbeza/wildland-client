@@ -62,6 +62,9 @@ class SyncState(Enum):
     def __str__(self):
         return str(self.name)
 
+    def __repr__(self):
+        return self.__str__()
+
 
 class SyncEvent(metaclass=abc.ABCMeta):
     """

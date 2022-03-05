@@ -21,7 +21,7 @@ Internal API for Wildland sync operations (sync commands).
 """
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable, Any, get_type_hints, Tuple, Optional, Set, Union, List
+from typing import Callable, Any, get_type_hints, Tuple, Optional, Set, Union, List, Dict
 
 from wildland.core.wildland_result import WildlandResult
 from wildland.core.wildland_sync_api import SyncApiEventType
@@ -56,7 +56,8 @@ class WlSyncCommandType(Enum):
     JOB_CLEAR_CALLBACK = 10, {'callback_id': int, 'return': WildlandResult}
     FORCE_FILE = 11, {'container_id': str, 'path': str, 'source_storage_id': str,
                       'target_storage_id': str, 'return': WildlandResult}
-    SHUTDOWN = 12, {'return': WildlandResult}
+    JOB_LIST = 12, {'return': Tuple[WildlandResult, Dict[str, SyncState]]}
+    SHUTDOWN = 13, {'return': WildlandResult}
 
     # handler for particular command type
     handler: Callable[..., Union[WildlandResult, Tuple[WildlandResult, Any]]]
