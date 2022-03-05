@@ -23,6 +23,9 @@ setup(
         ],
         'wildland.storage_sync': [
             'naive = wildland.storage_sync.naive_sync:NaiveSyncer'
+        ],
+        'wildland.core.sync_api': [
+            'linux = wildland.core.linux.sync_api:WildlandSyncLinux'
         ]
     }
 )

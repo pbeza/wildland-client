@@ -23,7 +23,9 @@ import abc
 import threading
 from dataclasses import dataclass
 from queue import Queue
-from typing import Any, List, Dict, Tuple, Optional, Callable, Set
+from typing import Any, List, Dict, Tuple, Optional, Callable, Set, Type
+
+import entrypoints
 
 from wildland.client import Client
 from wildland.core.core_utils import parse_wl_storage_id
@@ -301,3 +303,18 @@ class WildlandSync(WildlandSyncApi, abc.ABC):
                             target_storage_id=target_storage_id)
         result, _ = self._execute_cmd(cmd)
         return result
+
+
+def sync_api(client: Client) -> Optional[WildlandSync]:
+    """
+    Instantiate a sync API implementation.
+    """
+    for ep in entrypoints.get_group_all('wildland.core.sync_api'):
+        try:
+            cls: Type[WildlandSync] = ep.load()
+            return cls(client)
+        except Exception:
+            logger.exception('Failed to load API %s', ep)
+
+    logger.error('No sync API implementation found')
+    return None
