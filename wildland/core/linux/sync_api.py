@@ -31,7 +31,7 @@ from subprocess import Popen
 from typing import Optional, Any
 
 from wildland.client import Client
-from wildland.core.sync_api_base import WildlandSync, SyncApiEvent
+from wildland.core.sync_api import WildlandSync, SyncApiEvent
 from wildland.core.sync_internal import POLL_TIMEOUT, WlSyncCommandType
 from wildland.core.wildland_result import wildland_result, WLErrorType, WildlandResult
 from wildland.core.wildland_sync_api import SyncApiEventType
