@@ -78,8 +78,10 @@ class WildlandSyncLinux(WildlandSync):
             return
 
         msg = self._recv_msg(conn)
+        if msg is None:  # can happen when disconnecting
+            return
 
-        assert isinstance(msg, tuple), 'Invalid message from manager'
+        assert isinstance(msg, tuple), f'Invalid message from manager: {msg}'
 
         if isinstance(msg[1], SyncEvent):
             # (handler_id, event)
@@ -116,7 +118,7 @@ class WildlandSyncLinux(WildlandSync):
                 request.response = WildlandResult.OK(), None
                 request.ready.set()
 
-    def _manager_thread(self, conn: socket):
+    def _manager_thread(self):
         """
         Communicates with the manager: sends commands, receives replies/events.
         """
@@ -124,8 +126,8 @@ class WildlandSyncLinux(WildlandSync):
         logger.debug('manager thread started')
         while self.manager:
             try:
-                self.__try_recv(conn)
-                self.__try_send(conn)
+                self.__try_recv(self.manager)
+                self.__try_send(self.manager)
             except (OSError, ValueError, BrokenPipeError):
                 logger.info('manager disconnected')
                 break
@@ -133,12 +135,6 @@ class WildlandSyncLinux(WildlandSync):
                 logger.exception('manager thread:')
                 break
 
-        try:
-            conn.shutdown(SHUT_RDWR)
-        except (OSError, ValueError):  # already disconnected
-            pass
-
-        conn.close()
         logger.debug('manager thread finished')
 
     def _event_thread(self):
@@ -188,11 +184,11 @@ class WildlandSyncLinux(WildlandSync):
         if self.manager:
             return WildlandResult.OK()
 
-        logger.info('initializing manager')
+        logger.info('initializing sync manager')
         conn = self._connect_manager(wait=False)
         if not conn:
             cmd = [sys.executable, '-m', 'wildland.core.linux.sync_manager',
-                   '-b', str(self.client.base_dir), '-l', '-']  # TODO remove console log
+                   '-b', str(self.client.base_dir)]
             logger.debug('Starting sync manager: %s', cmd)
             Popen(cmd)
             conn = self._connect_manager(wait=True)
@@ -201,24 +197,55 @@ class WildlandSyncLinux(WildlandSync):
             logger.warning('Failed to connect to sync manager')
             return WildlandResult.error(WLErrorType.SYNC_FAILED_TO_COMMUNICATE_WITH_MANAGER)
 
-        self.manager = conn
+        conn.close()
+
+        logger.info('sync manager initialized')
+        return WildlandResult.OK()
+
+    def syncer_stop(self) -> WildlandResult:
+        if self.manager is None:
+            return WildlandResult.OK()
+
+        logger.info('stopping sync manager')
+        cmd = self._new_cmd(WlSyncCommandType.SHUTDOWN)
+        result, _ = self._execute_cmd(cmd)
+
+        self.detach()
+
+        # since we don't expect a reply for this command, manually make sure the manager is stopped
+        # to not create any race conditions
+        while Path(self.socket_path).exists():
+            # TODO timeout and kill
+            time.sleep(0.01)
+
+        logger.info('sync manager stopped')
+        return result
+
+    def attach(self) -> WildlandResult:
+        if self.manager:
+            return WildlandResult.OK()
+
+        if not self.syncer_start().success:
+            logger.warning('Failed to connect to sync manager')
+            return WildlandResult.error(WLErrorType.SYNC_FAILED_TO_COMMUNICATE_WITH_MANAGER)
+
+        self.manager = self._connect_manager(wait=False)
+        if not self.manager:
+            logger.warning('Failed to connect to sync manager')
+            return WildlandResult.error(WLErrorType.SYNC_FAILED_TO_COMMUNICATE_WITH_MANAGER)
 
         self.event_thread = threading.Thread(target=self._event_thread)
         self.event_thread.start()
 
-        self.manager_thread = threading.Thread(target=self._manager_thread, args=(conn,))
+        self.manager_thread = threading.Thread(target=self._manager_thread)
         self.manager_thread.start()
-
-        logger.info('manager initialized')
         return WildlandResult.OK()
 
-    def syncer_stop(self) -> WildlandResult:
-        if not self.manager:
+    def detach(self) -> WildlandResult:
+        if self.manager is None:
             return WildlandResult.OK()
 
-        logger.info('stopping manager')
-        cmd = self._new_cmd(WlSyncCommandType.SHUTDOWN)
-        result, _ = self._execute_cmd(cmd)
+        self.manager.shutdown(SHUT_RDWR)
         self.manager.close()
         self.manager = None
 
@@ -232,19 +259,13 @@ class WildlandSyncLinux(WildlandSync):
         self.event_thread.join()
         self.event_thread = None
 
-        # since we don't expect a reply for this command, manually make sure the manager is stopped
-        # to not create any race conditions
-        while Path(self.socket_path).exists():
-            # TODO timeout and kill
-            time.sleep(0.01)
-
-        logger.info('manager stopped')
-        return result
+        return WildlandResult.OK()
 
 
 # TODO this is just a quick test
 import click
 import shutil
+import typing
 
 from pathlib import Path
 from wildland.core.core_utils import parse_wl_storage_id
@@ -286,11 +307,12 @@ def callback(event: SyncApiEvent):
 @click.command()
 @click.option('--s1', help='first storage ID', required=True)
 @click.option('--s2', help='second storage ID', required=True)
+@typing.no_type_check  # `status` variable has different types between calls
 def main(s1: str, s2: str):
     api = WildlandSyncLinux(client)
 
-    status = api.syncer_start()
-    logger.info('main: start = %s', status)
+    status = api.attach()
+    logger.info('main: attach = %s', status)
 
     _, cont, _ = parse_wl_storage_id(s1)
 
@@ -336,6 +358,12 @@ def main(s1: str, s2: str):
     logger.info(f'main: remove handler = {status}')
 
     Path('/home/user/storage/s1/testfile').write_bytes(b'test')
+
+    status = api.detach()
+    logger.info('main: detach = %s', status)
+
+    status = api.attach()
+    logger.info('main: attach = %s', status)
 
     status = api.syncer_stop()
     logger.info('main: stop = %s', status)

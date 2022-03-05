@@ -150,6 +150,23 @@ class WildlandSyncApi(metaclass=abc.ABCMeta):
         """
 
     @abc.abstractmethod
+    def attach(self) -> WildlandResult:
+        """
+        Connect to sync manager, start it if not running. Needed before calling any sync methods.
+        API implementations may start various threads in the background, call `detach()`
+        to clean up gracefully after using API methods (otherwise current process may be waiting
+        for these threads to end).
+        :return: WildlandResult showing if it was successful.
+        """
+
+    @abc.abstractmethod
+    def detach(self) -> WildlandResult:
+        """
+        Detach from sync manager.
+        :return: WildlandResult showing if it was successful.
+        """
+
+    @abc.abstractmethod
     def start_container_sync(self, container_id: str, source_storage_id: str,
                              target_storage_id: str, continuous: bool, unidirectional: bool) \
             -> WildlandResult:
