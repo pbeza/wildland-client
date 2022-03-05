@@ -116,14 +116,14 @@ class NaiveSyncer(BaseSyncer):
         logger.warning("%s: conflict between storages detected: storages %s and %s "
                        "differ on file %s.",
                        self.log_prefix, storage_1.backend_id, storage_2.backend_id, path)
-        conflict = SyncConflict(Path(path), self.source_storage.backend_id,
-                                self.target_storage.backend_id)
+        conflict = SyncConflict(self.source_storage.backend_id, self.target_storage.backend_id,
+                                str(path))
         self.conflicts.append(conflict)
 
         info = self._file_info(path)
         info.conflicts.append(conflict)
         info.state = SyncFileState.CONFLICT
-        self.notify_event(SyncConflictEvent(str(conflict)))
+        self.notify_event(SyncConflictEvent(conflict))
 
     def _progress(self, progress: int, path: PurePosixPath):
         """
@@ -582,17 +582,18 @@ class NaiveSyncer(BaseSyncer):
                 continue
 
             if attr.is_dir() != attr2.is_dir():
-                yield SyncConflict(Path(path), self.source_storage.backend_id,
-                                   self.target_storage.backend_id)
+                yield SyncConflict(self.source_storage.backend_id, self.target_storage.backend_id,
+                                   str(path))
 
             if attr.is_dir():
                 continue
 
             if self.source_storage.get_hash(path) != self.target_storage.get_hash(path):
-                yield SyncConflict(Path(path), self.source_storage.backend_id,
-                                   self.target_storage.backend_id)
+                yield SyncConflict(self.source_storage.backend_id, self.target_storage.backend_id,
+                                   str(path))
 
     def iter_files(self) -> Iterable[SyncFileInfo]:
+        # TODO what if this changes during iteration
         yield from self.file_info.values()
 
     def get_file_info(self, path: PurePosixPath) -> Optional[SyncFileInfo]:

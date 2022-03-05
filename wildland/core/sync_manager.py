@@ -33,7 +33,7 @@ from wildland.core.wildland_sync_api import SyncApiEventType
 from wildland.log import get_logger
 from wildland.storage_backends.base import StorageBackend
 from wildland.storage_sync.base import SyncState, BaseSyncer, SyncEvent, SyncErrorEvent, \
-    SyncStateEvent, SyncFileInfo
+    SyncStateEvent, SyncFileInfo, SyncConflict
 
 logger = get_logger('sync-manager')
 
@@ -290,6 +290,26 @@ class WlSyncManager(metaclass=abc.ABCMeta):
                 assert job.syncer
                 files = list(job.syncer.iter_files())
                 return WildlandResult.OK(), files
+            except KeyError:
+                return WildlandResult.error(WLErrorType.SYNC_FOR_CONTAINER_NOT_RUNNING,
+                                            offender_id=container_id), []
+
+    @WlSyncCommand.handler(WlSyncCommandType.JOB_CONFLICTS)
+    def cmd_job_conflicts(self, container_id: str) -> Tuple[WildlandResult, List[SyncConflict]]:
+        """
+        Handler for the JOB_CONFLICTS command. Returns all known conflicts in the sync job.
+        """
+        if not self.active:
+            return WildlandResult.error(WLErrorType.SYNC_MANAGER_NOT_ACTIVE,
+                                        diagnostic_info=container_id), []
+
+        logger.debug('job conflicts: %s', container_id)
+        with self.jobs_lock:
+            try:
+                job = self.jobs[container_id]
+                assert job.syncer
+                conflicts = list(job.syncer.iter_conflicts())
+                return WildlandResult.OK(), conflicts
             except KeyError:
                 return WildlandResult.error(WLErrorType.SYNC_FOR_CONTAINER_NOT_RUNNING,
                                             offender_id=container_id), []

@@ -40,7 +40,7 @@ from wildland.control_server import ControlServer, control_command, ControlHandl
 from wildland.manifest.schema import Schema
 from wildland.storage_backends.base import StorageBackend, OptionalError
 from wildland.storage_sync.base import BaseSyncer, SyncState, SyncEvent, SyncStateEvent, \
-    SyncConflictEvent, SyncErrorEvent, SyncProgressEvent
+    SyncConflictEvent, SyncErrorEvent, SyncProgressEvent, SyncConflict
 from wildland.log import get_logger
 
 logger = get_logger('sync-daemon')
@@ -71,7 +71,7 @@ class SyncJob:
         # daemon manages fields below because they come from the event queue
         self._state = SyncState.STOPPED
         self._current_item: Optional[Tuple[str, int]] = None  # path, progress
-        self._conflicts: List[str] = []
+        self._conflicts: List[SyncConflict] = []
         self._error: Optional[str] = None
 
     @property
@@ -85,11 +85,11 @@ class SyncJob:
         self._state = value
 
     @property
-    def conflicts(self) -> List[str]:
+    def conflicts(self) -> List[SyncConflict]:
         """Conflicts getter."""
         return self._conflicts
 
-    def add_conflict(self, conflict: str):
+    def add_conflict(self, conflict: SyncConflict):
         """Add a conflict to the list of conflicts of this job."""
         self._conflicts.append(conflict)
 
@@ -261,7 +261,7 @@ class SyncDaemon:
                 elif isinstance(event, SyncProgressEvent):
                     job.current_item = (str(event.path), event.progress)
                 elif isinstance(event, SyncConflictEvent):
-                    job.add_conflict(event.value)
+                    job.add_conflict(event.conflict)
                 elif isinstance(event, SyncErrorEvent):
                     job.error = event.value
                 else:

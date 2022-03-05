@@ -263,10 +263,9 @@ class WildlandSync(WildlandSyncApi, abc.ABC):
         :param container_id: container_id in the format as in Wildland Core API.
         :return: WildlandResult and list of file conflicts.
         """
-        cmd = self._new_cmd(WlSyncCommandType.JOB_DETAILS,
+        cmd = self._new_cmd(WlSyncCommandType.JOB_CONFLICTS,
                             container_id=container_id)
         result, data = self._execute_cmd(cmd)
-        # TODO: process result and extract conflicts
         return result, data
 
     def get_file_sync_state(self, container_id: str, path: str) -> \

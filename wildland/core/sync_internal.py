@@ -25,7 +25,7 @@ from typing import Callable, Any, get_type_hints, Tuple, Optional, Set, Union, L
 
 from wildland.core.wildland_result import WildlandResult
 from wildland.core.wildland_sync_api import SyncApiEventType
-from wildland.storage_sync.base import SyncState, SyncFileInfo
+from wildland.storage_sync.base import SyncState, SyncFileInfo, SyncConflict
 
 POLL_TIMEOUT = 0.00001  # timeout (seconds) for connection polling
 
@@ -47,14 +47,16 @@ class WlSyncCommandType(Enum):
     JOB_STATE = 5, {'container_id': str, 'return': Tuple[WildlandResult, Optional[SyncState]]}
     JOB_DETAILS = 6, {'container_id': str,
                       'return': Tuple[WildlandResult, List[SyncFileInfo]]}
-    JOB_FILE_DETAILS = 7, {'container_id': str, 'path': str,
+    JOB_CONFLICTS = 7, {'container_id': str,
+                        'return': Tuple[WildlandResult, List[SyncConflict]]}
+    JOB_FILE_DETAILS = 8, {'container_id': str, 'path': str,
                            'return': Tuple[WildlandResult, Optional[SyncFileInfo]]}
-    JOB_SET_CALLBACK = 8, {'container_id': Optional[str], 'filters': Set[SyncApiEventType],
+    JOB_SET_CALLBACK = 9, {'container_id': Optional[str], 'filters': Set[SyncApiEventType],
                            'return': Tuple[WildlandResult, Optional[int]]}
-    JOB_CLEAR_CALLBACK = 9, {'callback_id': int, 'return': WildlandResult}
-    FORCE_FILE = 10, {'container_id': str, 'path': str, 'source_storage_id': str,
+    JOB_CLEAR_CALLBACK = 10, {'callback_id': int, 'return': WildlandResult}
+    FORCE_FILE = 11, {'container_id': str, 'path': str, 'source_storage_id': str,
                       'target_storage_id': str, 'return': WildlandResult}
-    SHUTDOWN = 11, {'return': WildlandResult}
+    SHUTDOWN = 12, {'return': WildlandResult}
 
     # handler for particular command type
     handler: Callable[..., Union[WildlandResult, Tuple[WildlandResult, Any]]]

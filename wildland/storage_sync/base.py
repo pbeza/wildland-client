@@ -35,28 +35,18 @@ from ..storage_backends.base import OptionalError
 from ..exc import WildlandError
 
 
+@dataclass(frozen=True)
 class SyncConflict:
     """
     Class representing file conflict encountered during sync.
     """
-    def __init__(self, path: Path, backend1_id: str, backend2_id: str):
-        self.path = path
-        self.backend1_id = backend1_id
-        self.backend2_id = backend2_id
+    backend1_id: str
+    backend2_id: str
+    path: str
 
     def __str__(self):
-        return f'Conflict detected on {str(self.path)} in ' \
+        return f'Conflict detected on {self.path} in ' \
                f'storages {self.backend1_id} and {self.backend2_id}'
-
-    def __eq__(self, other):
-        if not isinstance(other, SyncConflict):
-            return False
-
-        if not self.path == other.path:
-            return False
-
-        return sorted([self.backend1_id, self.backend2_id]) ==\
-            sorted([other.backend1_id, other.backend2_id])
 
 
 class SyncState(Enum):
@@ -200,10 +190,12 @@ class SyncConflictEvent(SyncEvent):
         """
         obj = json.loads(s)
         assert obj['type'] == SyncConflictEvent.type
-        return SyncConflictEvent(obj['value'])
+        vals = obj['value'].split(' ', 2)
+        return SyncConflictEvent(SyncConflict(vals[0], vals[1], vals[2]))
 
-    def __init__(self, message: str, job_id: Optional[str] = None):
-        self.value = message
+    def __init__(self, conflict: SyncConflict, job_id: Optional[str] = None):
+        self.conflict = conflict
+        self.value = f'{conflict.backend1_id} {conflict.backend2_id} {conflict.path}'
         self.job_id = job_id
 
 

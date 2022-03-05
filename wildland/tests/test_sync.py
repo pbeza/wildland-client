@@ -560,7 +560,7 @@ def test_get_conflicts_simple(tmpdir, storage_backend, cleanup, use_hash_db):
     expected_conflicts = []
 
     for b1, b2 in combinations(backends, 2):
-        expected_conflicts.append(SyncConflict(Path('file1'), b1.backend_id, b2.backend_id))
+        expected_conflicts.append(SyncConflict(b1.backend_id, b2.backend_id, 'file1'))
 
     assert conflicts == expected_conflicts
 
@@ -772,7 +772,7 @@ def test_sync_events_oneshot_conflict(base_dir, cli):
     assert_state(client, job_id, SyncState.ONE_SHOT)
     wait_for_event(client, lambda ev: ev.type == SyncConflictEvent.type and
                    ev.job_id == job_id and
-                   'Conflict detected on testfile' in ev.value)
+                   'testfile' in ev.value)
 
 
 # pylint: disable=unused-argument
@@ -787,7 +787,7 @@ def test_sync_events_continuous_pre_conflict(base_dir, cli):
     assert_state(client, job_id, SyncState.ONE_SHOT)
     wait_for_event(client, lambda ev: ev.type == SyncConflictEvent.type and
                    ev.job_id == job_id and
-                   'Conflict detected on testfile' in ev.value)
+                   'testfile' in ev.value)
 
 
 # pylint: disable=unused-argument
@@ -804,7 +804,7 @@ def test_sync_events_continuous_post_conflict(base_dir, cli):
     make_file(path2, 'test data 3')
     wait_for_event(client, lambda ev: ev.type == SyncConflictEvent.type and
                    ev.job_id == job_id and
-                   'Conflict detected on testfile' in ev.value)
+                   'testfile' in ev.value)
 
 
 # pylint: disable=unused-argument
@@ -900,7 +900,7 @@ def test_sync_events_filter(base_dir, cli):
     make_file(path2, 'testfile2')
     wait_for_event(client, lambda ev: ev.type == SyncConflictEvent.type and
                    ev.job_id == job_id and
-                   'Conflict detected on testfile' in ev.value)
+                   'testfile' in ev.value)
     make_file(path1.parent / 'file2', 'file2')
     wait_for_event(client, lambda ev: ev.type == SyncProgressEvent.type and
                    ev.job_id == job_id and

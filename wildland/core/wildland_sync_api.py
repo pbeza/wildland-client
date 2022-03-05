@@ -96,7 +96,7 @@ class SyncApiEvent:
         if isinstance(raw, SyncConflictEvent):
             return SyncApiEvent(container_id=raw.job_id,
                                 type=SyncApiEventType.from_raw(raw),
-                                conflict=None)  # TODO when removing legacy events
+                                conflict=raw.conflict)
 
         if isinstance(raw, SyncErrorEvent):
             return SyncApiEvent(container_id=raw.job_id,

@@ -295,13 +295,16 @@ def main(s1: str, s2: str):
     _, cont, _ = parse_wl_storage_id(s1)
 
     status, handler_id = api.register_event_handler(cont, {SyncApiEventType.STATE,
-                                                           SyncApiEventType.PROGRESS}, callback)
+                                                           SyncApiEventType.PROGRESS,
+                                                           SyncApiEventType.CONFLICT}, callback)
     logger.info('main: register = %s, %d', status, handler_id)
 
     Path('/home/user/storage/s1/subdir').mkdir(parents=True)
     Path('/home/user/storage/s1/subdir/f1').touch()
     Path('/home/user/storage/s1/subdir/f2').touch()
     Path('/home/user/storage/s1/subdir/f3').touch()
+    Path('/home/user/storage/s1/conf1').write_bytes(b'conflict 1')
+    Path('/home/user/storage/s2/conf1').write_bytes(b'conflict 2')
 
     status = api.start_container_sync(cont, s1, s2, True, False)
     logger.info('main: sync = %s', status)
@@ -311,6 +314,10 @@ def main(s1: str, s2: str):
 
     logger.info('main: wait for stop')
     stop.wait()
+
+    status = api.get_container_sync_conflicts(cont)
+    logger.info(f'main: conflicts = {status}')
+
     time.sleep(1)
     Path('/home/user/storage/s1/testfile').touch()
     stop.clear()
