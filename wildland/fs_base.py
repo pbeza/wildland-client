@@ -266,7 +266,7 @@ class WildlandFSBase:
     def control_dirinfo(self, _handler, path: str):
         result = []
 
-        # TODO
+        self.lazy_mount(path)
         for storage_id in self.resolver.find_storage_ids(PurePosixPath(path)):
             storage_params = self.storages.get_params(storage_id)
 
@@ -340,7 +340,7 @@ class WildlandFSBase:
         else:
             raise ValueError(f"Unknown storage {backend.backend_id}")
         with self.mount_lock:
-            return self.children_watchers.add_watch(ident, "*", handler)
+            return self.children_watchers.add_watch(ident, "/*", handler)  # TODO hack: /* to load all subcontainers
 
     @control_command('breakpoint')
     def control_breakpoint(self, _handler):
@@ -493,13 +493,21 @@ class WildlandFSBase:
         return self.proxy('flush', *args)
 
     def lazy_mount(self, path):
-        pass
-        # resolved = self.resolver.resolve_containers_to_mount(PurePosixPath(path))
-        # for r in resolved:
-        #     self.children_watchers.notify_storage_watches(
-        #         FileEventType.CREATE, r.relpath, r.subcontainers_source, force=True)
-        # while self.resolver.resolve_containers_to_mount(PurePosixPath(path)):
-        #     pass
+        logger.debug(f"lazy_mount {path}")
+        resolved = self.resolver.resolve_containers_to_mount(PurePosixPath(path))
+        parts = str(path).split(":")
+        last_part = parts[-1] if parts[-1] else parts[-2]
+        relpath = PurePosixPath(last_part[1:] + ".yaml")
+        for r in resolved:
+            self.children_watchers.notify_storage_watches(
+                FileEventType.CREATE, relpath, r.subcontainers_source, force=True)  # TODO: path
+        fuse = 5
+        while self.resolver.resolve_containers_to_mount(PurePosixPath(path)):
+            fuse -= 1
+            if fuse == 0:
+                break
+            import time  # TODO
+            time.sleep(1)
 
     def fgetattr(self, path, *args):
         self.lazy_mount(path)

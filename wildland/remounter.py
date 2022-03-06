@@ -24,11 +24,12 @@
 """
 Monitor container manifests for changes and remount if necessary
 """
-
+import functools
 import os
 from pathlib import PurePosixPath, Path
 from typing import List, Optional, Tuple, Dict, Set
 
+from wildland.bridge import Bridge
 from wildland.client import Client
 from wildland.container import Container
 from wildland.exc import WildlandError
@@ -72,8 +73,8 @@ class Remounter:
     """
 
     def __init__(self, client: Client, fs_client: WildlandFSClient, container_names: List[str],
-                 with_subcontainers: bool = True, lazy: bool = False,
-                 additional_patterns: Optional[List[str]] = None):
+                 with_subcontainers: bool = True, lazy: bool = True,
+                 additional_patterns: Optional[List[str]] = None, containers: List[Container] = ()):
         self.client = client
         self.fs_client = fs_client
 
@@ -89,8 +90,8 @@ class Remounter:
         # patterns to watch WL paths
         self.wlpath_patterns: Dict[str, List[WildlandPath]] = {}
         # Containers watched for subcontainers
-        self.outside_containers: List[Container] = []
-        self.inside_containers: List[Container] = []
+        self.outside_containers: List[Container] = list(containers)
+        self.inside_containers: List[Container] = []  # TODO: remove from
 
         if additional_patterns:
             self.patterns.extend(additional_patterns)
@@ -319,9 +320,14 @@ class Remounter:
         Loads subcontainers.
         """
         assert event.subcontainer is not None
-        container = self.client.load_subcontainer_object(
+        sub = self.client.load_subcontainer_object(
             event.container, event.storage, event.subcontainer)
-        assert isinstance(container, Container)
+        if isinstance(sub, Bridge):
+            container = sub.to_placeholder_container()
+        elif isinstance(sub, Container):
+            container = sub
+        else:
+            raise ValueError()  # TODO
         return container
 
     def handle_changed_container(self, container: Container, origin_id: Optional[int]):
@@ -330,14 +336,25 @@ class Remounter:
         already mounted containers, including changes in storages
 
         :param container: container to (re)mount
-        :param origin_id: TODO
+        :param origin_id: if the container is a subcontainer, this is the storage id
+        the subcontainer is from
         :return:
         """
         user_paths = self.client.get_bridge_paths_for_user(container.owner)
         storages = self.client.get_storages_to_mount(container)
         if self.fs_client.find_primary_storage_id(container) is None:
             logger.info('  new: %s', str(container))
-            self.to_mount.append(MountParams(container, storages, user_paths, None, [], origin_id))
+            common_storages = storages
+            if self.lazy:
+                sub_source = self.client.get_subcontainer_storage(container)
+                if sub_source:
+                    sub_paths = self.get_sub_paths(container, sub_source)
+                    self.to_mount.append(
+                        MountParams(
+                            container, [sub_source], user_paths, None, sub_paths, origin_id))
+                    common_storages = [s for s in storages if s != sub_source]
+            self.to_mount.append(
+                MountParams(container, common_storages, user_paths, None, (), origin_id))
         else:
             storages_to_remount = []
 
@@ -356,8 +373,64 @@ class Remounter:
                     logger.info('  (not changed: %s)', storage.backend_id)
 
             if storages_to_remount:
+                common_storages = storages_to_remount
+                if self.lazy:
+                    sub_source = self.client.get_subcontainer_storage(container)
+                    if sub_source in storages_to_remount:
+                        sub_paths = self.get_sub_paths(container, sub_source)
+                        self.to_mount.append(
+                            MountParams(
+                                container, [sub_source], user_paths, None, sub_paths, origin_id))
+                        common_storages = [s for s in storages_to_remount if s != sub_source]
                 self.to_mount.append(
-                    MountParams(container, storages_to_remount, user_paths, None, [], origin_id))
+                    MountParams(container, common_storages, user_paths, None, (), origin_id))
+
+    def get_sub_paths(self, container, sub_source):
+        assert sub_source is not None
+        backend = StorageBackend.from_params(sub_source.params, deduplicate=True)
+        with backend:
+            manifests_paths = tuple(
+                backend.get_children_paths(query_path=PurePosixPath('/*')))
+            relative_container_paths = [p.parent.relative_to("/") / (p.name + '.yaml')
+                                        for p in container.paths]
+
+            containers = ((p, self._identify_manifest_type(backend, p))
+                          for p in manifests_paths
+                          if not (p in relative_container_paths)
+                          and not p.name.startswith('forest-owner')
+                          and self._identify_manifest_type(backend, p) is not None
+                          )
+
+            sub_paths = tuple((
+                PurePosixPath(str(p)[:-len(".bridge.yaml")] + "__BRIDGE_PLACEHOLDER__")  # TODO
+                if p.name.endswith("bridge.yaml")
+                else PurePosixPath(str(p)[:-len(".container.yaml")])
+                if p.name.endswith("container.yaml")
+                else PurePosixPath(str(p)[:-len(".yaml")] + "__BRIDGE_PLACEHOLDER__")  # TODO
+                if m_type == WildlandObject.Type.BRIDGE
+                else PurePosixPath(str(p)[:-len(".yaml")])
+                for p, m_type in containers
+            ))
+
+        return sub_paths
+
+    @staticmethod
+    @functools.lru_cache()
+    def _identify_manifest_type(backend, path):
+        if path.name.endswith(".user.yaml") \
+                or path.name.endswith(".storage.yaml"):
+            return None
+        if path.name.endswith(".bridge.yaml"):
+            return WildlandObject.Type.BRIDGE
+        if path.name.endswith(".container.yaml"):
+            return WildlandObject.Type.CONTAINER
+        with backend.open(path, 0) as f:
+            content = f.read().decode()
+            if "object: bridge" in content:  # TODO!
+                return WildlandObject.Type.BRIDGE
+            if "object: container" in content:  # TODO!
+                return WildlandObject.Type.CONTAINER
+        return None
 
     def unmount_pending(self):
         """

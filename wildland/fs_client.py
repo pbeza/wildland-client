@@ -812,6 +812,17 @@ class WildlandFSClient:
             mount_paths[0] = new_main_path
             mount_paths = [path / '.manifest.wildland.yaml' for path in mount_paths]
 
+        sub_paths = [
+            PurePosixPath(("/" + str(path)))
+            for path in sub_paths
+        ]
+
+        sub_paths = [
+            self.join_bridge_paths_for_mount(user_path, path)
+            for path in sub_paths
+            for user_path in user_paths
+        ]
+
         return {
             'paths': [str(p) for p in mount_paths],
             'storage': storage.params,
@@ -823,7 +834,7 @@ class WildlandFSClient:
                                     if subcontainer_of else None),
                 'title': container.title,
                 'categories': [str(p) for p in container.categories],
-                'subcontainer_paths': [str(p) for p in sub_paths],  # TODO
+                'subcontainer_paths': [] if is_hidden else [str(p) for p in sub_paths],  # TODO!!!
                 'origin_id': origin_id,
                 'hidden': is_hidden,
             },
@@ -842,9 +853,10 @@ class WildlandFSClient:
         :return:
         """
 
+        # TODO: somthing better than __BRIDGE_PLACEHOLDER__
         return PurePosixPath(
             self.bridge_separator.join(
-                str(p).replace(self.bridge_separator, '_')
+                str(p).replace(self.bridge_separator, '_').replace('__BRIDGE_PLACEHOLDER__', ':')
                 for p in itertools.chain(bridges, [path])
             )
         )
@@ -918,9 +930,14 @@ class WildlandFSClient:
         """
         return self.get_user_path(owner + self.bridge_separator) / path.relative_to('/')
 
-    def watch(self, *, patterns: Optional[Iterable[str]] = None, wl_client=None,
-              containers: Optional[List[Container]] = None, with_initial=False) \
-            -> Iterator[List[WatchEvent]]:
+    def watch(
+            self, *,
+            patterns: Optional[Iterable[str]] = None,
+            wl_client=None,
+            containers: Optional[List[Container]] = None,
+            with_initial=False,
+            initial_paths_only=False
+    ) -> Iterator[List[WatchEvent]]:
         """
         Watch for changes under the provided list of patterns (as absolute paths).
 
@@ -934,19 +951,20 @@ class WildlandFSClient:
         if patterns is None:
             patterns = ()
         if wl_client is None:
-            containers = []
+            containers = ()
 
         client = ControlClient()
         client.connect(self.socket_path)
         try:
             yield from self._watch(
-                client, patterns, wl_client, containers, with_initial)
+                client, patterns, wl_client, containers, with_initial, initial_paths_only)
         except GeneratorExit:
             pass
         finally:
             client.disconnect()
 
-    def _watch(self, control_client, patterns, wl_client, containers, with_initial=False):
+    def _watch(self, control_client, patterns, wl_client, containers, with_initial=False,
+               initial_paths_only=False):
         watches = {}
         for pattern in patterns:
             found = list(self.find_all_storage_ids_for_path(PurePosixPath(pattern)))
@@ -958,20 +976,23 @@ class WildlandFSClient:
                     'add-watch', storage_id=storage_id, pattern=str(relpath))
                 watches[watch_id] = (storage_path, pattern)
 
-        containers_storage = {container: wl_client.get_subcontainer_storage(container)
-                              for container in containers}
+        container_storage = tuple(((container, wl_client.get_subcontainer_storage(container))
+                                   for container in containers))
 
-        for container, storage in containers_storage.items():
+        for container, storage in container_storage:
             params = storage.params
             logger.debug('watching for subcontainers: storage %s', str({params["backend-id"]}))
             watch_id = control_client.run_command('add-subcontainer-watch', backend_param=params)
             watches[watch_id] = (container, storage)
 
-        if with_initial:
-            initial_patterns = self._iterate_initial_events(patterns)
+        if with_initial or initial_paths_only:
+            if not with_initial:
+                initial_patterns = self._iterate_initial_events(patterns)
+            else:
+                initial_patterns = ()
 
             initial_subcontainers = self._iterate_initial_subcontainer_events(
-                wl_client, containers_storage)
+                wl_client, container_storage, initial_paths_only)
 
             initial = [*initial_patterns, *initial_subcontainers]
             if initial:
@@ -1011,12 +1032,12 @@ class WildlandFSClient:
 
     @staticmethod
     def _iterate_initial_subcontainer_events(
-            wl_client, containers_storage: Dict[Container, Storage]):
+            wl_client, container_storage: Iterable[Tuple[Container, Storage]], paths_only: bool):
         initial = []
-        for container, storage in containers_storage.items():
+        for container, storage in container_storage:
             params = storage.params
             sb = StorageBackend.from_params(params, deduplicate=True)
-            all_children = list(sb.get_children(wl_client))
+            all_children = list(sb.get_children(wl_client, paths_only=paths_only))
             for sub_path, sub in all_children:
                 # TODO storage id
                 initial.append(SubcontainerWatchEvent(
@@ -1034,7 +1055,9 @@ class WildlandFSClient:
         storage_id = event.get('storage-id', None)
         subcontainer = None
         with sb:
-            for sub_path, sub in sb.get_children(wl_client):
+            for sub_path, sub in sb.get_children(
+                    wl_client,
+                    query_path=PurePosixPath("/" + event['path'][:-len(".yaml")])):
                 if sub_path == path:
                     assert sub is not None
                     subcontainer = sub

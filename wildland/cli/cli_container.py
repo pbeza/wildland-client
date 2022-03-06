@@ -1189,14 +1189,24 @@ def terminate_daemon(pfile, error_message):
 
 @container_.command('mount-watch', short_help='mount container')
 @click.argument('container_names', metavar='CONTAINER', nargs=-1, required=True)
+@click.option('--lazy/--no-lazy', default=True, help='Allow lazy mount of containers')
 @click.option('--with-subcontainers/--without-subcontainers', '-w/-W', is_flag=True, default=True,
               help='Do not watch subcontainers changes.')
 @click.pass_obj
-def mount_watch(obj: ContextObj, container_names, with_subcontainers: bool):
+def mount_watch(obj: ContextObj, container_names, lazy: bool, with_subcontainers: bool):
     """
     Watch for manifest files inside Wildland, and keep the filesystem mount state in sync.
     """
+    _mount_watch(obj, container_names, lazy, with_subcontainers, [])
 
+
+def _mount_watch(
+        obj: ContextObj,
+        container_names,
+        lazy: bool,
+        with_subcontainers: bool,
+        containers: List[Container]
+):
     obj.fs_client.ensure_mounted()
     if os.path.exists(MW_PIDFILE):
         raise ClickException("Mount-watch already running; use stop-mount-watch to stop it "
@@ -1210,7 +1220,8 @@ def mount_watch(obj: ContextObj, container_names, with_subcontainers: bool):
                 file.write("without-subcontainers\n")
             file.write("\n".join(container_names))
 
-    remounter = Remounter(obj.client, obj.fs_client, container_names, with_subcontainers)
+    remounter = Remounter(obj.client, obj.fs_client, container_names, with_subcontainers, lazy,
+                          containers=containers)
 
     if remounter.outside_containers:
         containers = "\n".join([c.uuid for c in remounter.outside_containers])

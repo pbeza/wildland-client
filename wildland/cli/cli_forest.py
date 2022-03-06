@@ -26,10 +26,12 @@ from typing import List, Dict, Any
 
 import os
 import click
+from copy import deepcopy
 
 from wildland.wildland_object.wildland_object import WildlandObject
 from .cli_storage import do_create_storage_from_templates
 from ..container import Container
+from ..search import Search
 from ..storage import StorageBackend
 from ..storage_backends.file_children import FileChildrenMixin
 from ..user import User
@@ -40,7 +42,7 @@ from .cli_base import aliased_group, ContextObj
 from .cli_exc import CliError
 from ..wlpath import WildlandPath
 from .cli_common import modify_manifest, add_fields
-from .cli_container import _mount as mount_container
+from .cli_container import _mount as mount_container, _mount_watch as lazy_mount_watch
 from .cli_container import _unmount as unmount_container
 from .cli_user import refresh_users
 from ..exc import WildlandError
@@ -98,6 +100,7 @@ def mount(ctx: click.Context, forest_names, lazy: bool, save: bool,
 
         if bridge_paths:
             forests.append(f'{forest_name}*:')
+            # forests.append(forest_name)
         else:
             click.secho(f'Warning: Did not find bridge for: {forest_name}', fg="yellow")
 
@@ -116,8 +119,37 @@ def mount(ctx: click.Context, forest_names, lazy: bool, save: bool,
     if not no_refresh_users:
         refresh_users(obj)
 
-    mount_container(
-        obj, forests, lazy=lazy, save=save, cache_template=cache_template, list_all=list_all)
+    if lazy:
+
+        aliases = obj.client.config.aliases
+        # TODO, many forests
+        wlpath = WildlandPath.from_str(forests[0]) if isinstance(forests[0], str) else forests[0]
+        search = Search(obj.client, wlpath, aliases)
+
+        bridge = bridge_paths[0]  # TODO
+        initial_owner = search._subst_alias(wlpath.owner or '@default')
+        location = deepcopy(bridge.user_location)
+        next_client, next_owner = obj.client.sub_client_with_key(bridge.user_pubkey)
+        if isinstance(location, str):
+            user_manifest_content = obj.client.read_from_url(bridge.user_location, initial_owner)
+            user = next_client.load_object_from_bytes(WildlandObject.Type.USER,
+                                                      user_manifest_content)
+        else:
+            user = next_client.load_object_from_dict(WildlandObject.Type.USER, location,
+                                                     owner=initial_owner,
+                                                     expected_owner=next_owner)
+
+        catalogs = []
+        if user.owner == next_owner:
+            for container in user.load_catalog(warn_about_encrypted_manifests=False):
+                if container.owner != user.owner:
+                    continue
+                catalogs.append(container)
+
+        lazy_mount_watch(obj, (), lazy=True, with_subcontainers=True, containers=catalogs)
+    else:
+        mount_container(
+            obj, forests, lazy=lazy, save=save, cache_template=cache_template, list_all=list_all)
 
 
 @forest_.command(short_help='Unmount Wildland Forest', alias=['umount'])
@@ -141,6 +173,7 @@ def unmount(ctx: click.Context, path: str, forest_names):
                 f'For example, ":/forests/User:" is a valid forest name')
         forests.append(f'{forest_name}*:')
     unmount_container(obj, path=path, container_names=forests)
+    # TODO stop mount-watch
 
 
 @forest_.command(short_help='Bootstrap Wildland Forest')

@@ -165,8 +165,8 @@ class FSWatchers(metaclass=abc.ABCMeta):
 
     @staticmethod
     def _notify_watch(watch: Watch, events: List[FileEvent]):
-        events = [event for event in events
-                  if event.path.match(watch.pattern)]
+        pattern = "*" if watch.pattern == "/*" else watch.pattern  # TODO
+        events = [event for event in events if event.path.match(pattern)]
         if not events:
             return
 

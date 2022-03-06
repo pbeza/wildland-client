@@ -333,6 +333,7 @@ class FileChildrenMixin(StorageBackend):
                 full_file_name = part.replace('{object-type}', object_type.value) / sub_path
                 yield from self._find_manifest_files(prefix, PurePosixPath(full_file_name))
         elif '*' in part:
+            recurrent = path.name.startswith('*')
             # This is a glob part, use readdir()
             try:
                 names = list(self.readdir(prefix))
@@ -340,12 +341,14 @@ class FileChildrenMixin(StorageBackend):
                 return
             regex = re.compile('^' + part.replace('.', r'\.').replace('*', '.*') + '$')
             for name in names:
+                sub_prefix = prefix / name
                 if regex.match(name):
-                    sub_prefix = prefix / name
                     if sub_path.parts:
                         yield from self._find_manifest_files(sub_prefix, sub_path)
                     else:
                         yield sub_prefix
+                elif recurrent:
+                    yield from self._find_manifest_files(sub_prefix, path)
         elif sub_path.parts:
             # This is a normal part, recurse deeper
             sub_prefix = prefix / part
