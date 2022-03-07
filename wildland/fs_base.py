@@ -91,6 +91,9 @@ class WildlandFSBase:
             cmd: schema.validate for cmd, schema in command_schemas.items()
         })
 
+        self.path_to_lazy_mount: Dict[PurePosixPath, List[threading.Condition, int]] = dict()
+        self.lazy_lock = threading.Lock()
+
     def _mount_storage(
             self,
             paths: List[PurePosixPath],
@@ -131,8 +134,16 @@ class WildlandFSBase:
 
             for path in paths:
                 self.resolver.mount(path, ident)
+                logger.debug(f"{path}:{ident}")
                 if origin_id:
                     self.resolver.remove_subcontainer_placeholder(path, origin_id)
+                    if path in self.path_to_lazy_mount:
+                        with self.lazy_lock:
+                            self.path_to_lazy_mount[path][1] -= 1
+                            if not self.path_to_lazy_mount[path][1]:
+                                with self.path_to_lazy_mount[path][0]:
+                                    self.path_to_lazy_mount[path][0].notify_all()
+                                del self.path_to_lazy_mount[path]
             for sub_path in sub_paths:
                 # TODO move PurePosixPath upper, similar to paths
                 self.resolver.place_subcontainer_placeholder(PurePosixPath(sub_path), ident)
@@ -210,6 +221,18 @@ class WildlandFSBase:
                 raise WildlandError(f'storage not found: {storage_id}')
             logger.debug('clearing cache for storage: %s', storage_id)
             self.storages.clear_cache(storage_id)
+
+    @control_command('mount-fail')
+    def control_mount_fail(self, _handler, path: str):
+        logger.debug(f"mount-fail {path}")
+        path = PurePosixPath(path)
+        if path in self.path_to_lazy_mount:
+            with self.lazy_lock:
+                self.path_to_lazy_mount[path][1] -= 1
+                if not self.path_to_lazy_mount[path][1]:
+                    with self.path_to_lazy_mount[path][0]:
+                        self.path_to_lazy_mount[path][0].notify_all()
+                    del self.path_to_lazy_mount[path]
 
     @control_command('paths')
     def control_paths(self, _handler):
@@ -494,20 +517,26 @@ class WildlandFSBase:
 
     def lazy_mount(self, path):
         logger.debug(f"lazy_mount {path}")
+        path = PurePosixPath(path)
         resolved = self.resolver.resolve_containers_to_mount(PurePosixPath(path))
-        parts = str(path).split(":")
-        last_part = parts[-1] if parts[-1] else parts[-2]
-        relpath = PurePosixPath(last_part[1:] + ".yaml")
-        for r in resolved:
-            self.children_watchers.notify_storage_watches(
-                FileEventType.CREATE, relpath, r.subcontainers_source, force=True)  # TODO: path
-        fuse = 5
-        while self.resolver.resolve_containers_to_mount(PurePosixPath(path)):
-            fuse -= 1
-            if fuse == 0:
-                break
-            import time  # TODO
-            time.sleep(1)
+        if resolved:
+            if str(path) not in self.path_to_lazy_mount:
+                with self.lazy_lock:
+                    self.path_to_lazy_mount[path] = [threading.Condition(), len(resolved)]
+            path_lock = self.path_to_lazy_mount[path][0]
+
+            parts = str(path).split(":")
+            last_part = parts[-1] if parts[-1] else parts[-2]
+            relpath = PurePosixPath(last_part[1:] + ".yaml")
+
+            for r in resolved:
+                self.children_watchers.notify_storage_watches(
+                    FileEventType.CREATE, relpath, r.subcontainers_source,
+                    feedback=str(path), force=True)
+
+            with path_lock:
+                if path_lock.wait(timeout=5):
+                    logger.warning("Lazy mounting timeout for path: %s", str(path))
 
     def fgetattr(self, path, *args):
         self.lazy_mount(path)

@@ -209,6 +209,11 @@ class Remounter:
                 else:
                     container_with_children_changed = self.handle_event(event)
             except Exception as e:
+                try:
+                    if isinstance(event, SubcontainerWatchEvent) and event.feedback:
+                        self.fs_client.mount_path_fail(event.feedback)
+                except Exception as ex:
+                    logger.exception('error in mount_fail: %s', str(ex))
                 logger.exception('error in handle_event: %s', str(e))
         return any_wlpath_changed, container_with_children_changed
 
@@ -389,8 +394,7 @@ class Remounter:
         assert sub_source is not None
         backend = StorageBackend.from_params(sub_source.params, deduplicate=True)
         with backend:
-            manifests_paths = tuple(
-                backend.get_children_paths(query_path=PurePosixPath('/*')))
+            manifests_paths = backend.get_children_paths(query_path=PurePosixPath('/*'))
             relative_container_paths = [p.parent.relative_to("/") / (p.name + '.yaml')
                                         for p in container.paths]
 
@@ -447,6 +451,8 @@ class Remounter:
         """
         Mount queued containers.
         """
+        if not self.to_mount:
+            return
         try:
             self.fs_client.mount_multiple_containers(self.to_mount, remount=True)
         except WildlandError as e:

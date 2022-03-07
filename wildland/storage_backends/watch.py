@@ -60,9 +60,10 @@ class FileEvent:
     """
     type: FileEventType
     path: PurePosixPath
+    feedback: str = ""
 
     def __repr__(self):
-        return f'{self.type.name} {self.path}'
+        return f'{self.type.name} {self.path} {self.feedback}'
 
     def __str__(self):
         return self.__repr__()

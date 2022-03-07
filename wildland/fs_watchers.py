@@ -67,7 +67,8 @@ class FSWatchers(metaclass=abc.ABCMeta):
         self.watchers: Dict[int, StorageWatcher] = {}
         self.watch_counter = 1
 
-    def notify_storage_watches(self, event_type: FileEventType, relpath, storage_id, force=False):
+    def notify_storage_watches(
+            self, event_type: FileEventType, relpath, storage_id, feedback=None, force=False):
         """
         Send the event to all watches of the storage if the storage has no watcher registered.
         """
@@ -83,7 +84,7 @@ class FSWatchers(metaclass=abc.ABCMeta):
         if not watches:
             return
 
-        event = FileEvent(event_type, relpath)
+        event = FileEvent(event_type, relpath, feedback)
         for watch in watches:
             self._notify_watch(watch, [event])
 
@@ -174,6 +175,7 @@ class FSWatchers(metaclass=abc.ABCMeta):
         data = [{
             'type': event.type.name,
             'path': str(event.path),
+            'feedback': event.feedback,
             'watch-id': watch.id,
             'storage-id': watch.storage_id,
         } for event in events]

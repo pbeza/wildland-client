@@ -57,6 +57,18 @@
             }
         },
 
+        "mount-fail": {
+            "type": "object",
+            "required": ["path"],
+            "additionalProperties": false,
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "path in the filesystem to a directory that cannot be mounted"
+                }
+            }
+        },
+
         "clear-cache": {
             "type": "object",
             "additionalProperties": false,

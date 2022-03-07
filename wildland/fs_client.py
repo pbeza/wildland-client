@@ -93,6 +93,7 @@ class SubcontainerWatchEvent(WatchEvent):
     container: Container
     storage: Storage
     subcontainer: Optional[Union[Link, ContainerStub]]
+    feedback: str
 
 
 @dataclasses.dataclass
@@ -930,6 +931,9 @@ class WildlandFSClient:
         """
         return self.get_user_path(owner + self.bridge_separator) / path.relative_to('/')
 
+    def mount_path_fail(self, path):
+        self.run_control_command('mount-fail', path=str(path))
+
     def watch(
             self, *,
             patterns: Optional[Iterable[str]] = None,
@@ -1041,7 +1045,7 @@ class WildlandFSClient:
             for sub_path, sub in all_children:
                 # TODO storage id
                 initial.append(SubcontainerWatchEvent(
-                    FileEventType.CREATE, sub_path, None, container, storage, sub))
+                    FileEventType.CREATE, sub_path, None, container, storage, sub, ""))
         return initial
 
     @staticmethod
@@ -1052,6 +1056,7 @@ class WildlandFSClient:
         params = storage.params
         sb = StorageBackend.from_params(params, deduplicate=True)
         path = PurePosixPath(event['path'])
+        feedback = event['feedback']
         storage_id = event.get('storage-id', None)
         subcontainer = None
         with sb:
@@ -1065,4 +1070,4 @@ class WildlandFSClient:
             else:
                 logger.error('Subcontainer path not found: %s', path)
         return SubcontainerWatchEvent(
-            event_type, path, storage_id, container, storage, subcontainer)
+            event_type, path, storage_id, container, storage, subcontainer, feedback)
