@@ -97,14 +97,14 @@ class WlSyncManager(metaclass=abc.ABCMeta):
 
     def new_client_id(self) -> int:
         """
-        Generate new unique client ID.
+        Generate new unique client ID. Starts with 1.
         """
         self.client_id += 1
         return self.client_id
 
     def new_handler_id(self) -> int:
         """
-        Generate new unique event handler ID.
+        Generate new unique event handler ID. Starts with 1.
         """
         self.handler_id += 1
         return self.handler_id
@@ -227,7 +227,7 @@ class WlSyncManager(metaclass=abc.ABCMeta):
                       continuous: bool, unidirectional: bool) -> WildlandResult:
         """
         Handler for the JOB_START command. Starts a sync job in the background and returns
-        immediately.
+        immediately. Job's syncer should be initialized after this call.
         """
 
     @abc.abstractmethod
@@ -334,8 +334,7 @@ class WlSyncManager(metaclass=abc.ABCMeta):
 
     @WlSyncCommand.handler(WlSyncCommandType.JOB_SET_CALLBACK, client_id=True)
     def cmd_job_set_callback(self, client_id: int, container_id: Optional[str],
-                             filters: Set[SyncApiEventType]) \
-            -> Tuple[WildlandResult, Optional[int]]:
+                             filters: Set[SyncApiEventType]) -> Tuple[WildlandResult, int]:
         """
         Handler for the JOB_SET_CALLBACK command. Returns callback ID if successful.
         Manager should start sending specified events to the calling client.
@@ -390,7 +389,9 @@ class WlSyncManager(metaclass=abc.ABCMeta):
 
         logger.debug('get jobs')
         with self.jobs_lock:
-            return WildlandResult.OK(), {cid: job.syncer.state for (cid, job) in self.jobs.items()}
+            # mypy complains about syncer being None but it can't
+            return WildlandResult.OK(), \
+                   {cid: job.syncer.state for (cid, job) in self.jobs.items()}  # type: ignore
 
     def _job_worker(self, job_id: str, source_params: dict, target_params: dict,
                     continuous: bool, unidirectional: bool,

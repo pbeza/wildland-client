@@ -49,6 +49,7 @@ class WLErrorType(Enum):
     PUBKEY_NEEDED = 100, "At least one public key must be provided"
     PUBKEY_FORMAT_ERROR = 101, "Incorrect public key provided; provide key, not filename or path"
     PUBKEY_IN_USE = 102, "Public key used by other users as secondary key"
+    TIMEOUT = 200, "Operation timed out"
     UNKNOWN_OBJECT_TYPE = 700, "Unknown object type"
     SYNC_FOR_CONTAINER_NOT_RUNNING = 800, "Sync not running for this container"
     SYNC_FOR_CONTAINER_ALREADY_RUNNING = 801, "Sync already running for this container"

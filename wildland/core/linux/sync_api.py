@@ -272,7 +272,6 @@ from wildland.core.core_utils import parse_wl_storage_id
 
 BASE_DIR = PurePosixPath('/home/user/.config/wildland')
 client = Client(base_dir=BASE_DIR)
-stop = threading.Event()
 
 
 def api_client(num: int):
@@ -300,8 +299,6 @@ def multi_test():
 
 def callback(event: SyncApiEvent):
     logger.info('API event: %s', event)
-    if event.state == SyncState.SYNCED or event.state == SyncState.ERROR:
-        stop.set()
 
 
 @click.command()
@@ -321,10 +318,11 @@ def main(s1: str, s2: str):
                                                            SyncApiEventType.CONFLICT}, callback)
     logger.info('main: register = %s, %d', status, handler_id)
 
-    Path('/home/user/storage/s1/subdir').mkdir(parents=True)
+    Path('/home/user/storage/s1/subdir').mkdir(parents=True, exist_ok=True)
     Path('/home/user/storage/s1/subdir/f1').touch()
     Path('/home/user/storage/s1/subdir/f2').touch()
     Path('/home/user/storage/s1/subdir/f3').touch()
+    shutil.rmtree('/home/user/storage/s2/subdir', ignore_errors=True)
     Path('/home/user/storage/s1/conf1').write_bytes(b'conflict 1')
     Path('/home/user/storage/s2/conf1').write_bytes(b'conflict 2')
 
@@ -332,18 +330,19 @@ def main(s1: str, s2: str):
     logger.info('main: sync = %s', status)
 
     status = api.get_file_sync_state(cont, 'testfile')
-    logger.info(f'main: sync state = {status}')
+    logger.info(f'main: file sync state = {status}')
 
     logger.info('main: wait for stop')
-    stop.wait()
+    status = api.wait_for_sync(cont, 10)
+    logger.info(f'main: wait1 = {status}')
 
     status = api.get_container_sync_conflicts(cont)
     logger.info(f'main: conflicts = {status}')
 
     time.sleep(1)
     Path('/home/user/storage/s1/testfile').touch()
-    stop.clear()
-    stop.wait()
+    status = api.wait_for_sync(cont, 10)
+    logger.info(f'main: wait2 = {status}')
 
     status = api.get_current_sync_jobs()
     logger.info(f'main: all jobs = {status}')

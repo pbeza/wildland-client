@@ -52,7 +52,7 @@ class WlSyncCommandType(Enum):
     JOB_FILE_DETAILS = 8, {'container_id': str, 'path': str,
                            'return': Tuple[WildlandResult, Optional[SyncFileInfo]]}
     JOB_SET_CALLBACK = 9, {'container_id': Optional[str], 'filters': Set[SyncApiEventType],
-                           'return': Tuple[WildlandResult, Optional[int]]}
+                           'return': Tuple[WildlandResult, int]}
     JOB_CLEAR_CALLBACK = 10, {'callback_id': int, 'return': WildlandResult}
     FORCE_FILE = 11, {'container_id': str, 'path': str, 'source_storage_id': str,
                       'target_storage_id': str, 'return': WildlandResult}

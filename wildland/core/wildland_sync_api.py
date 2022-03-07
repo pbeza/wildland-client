@@ -183,6 +183,10 @@ class WildlandSyncApi(metaclass=abc.ABCMeta):
         :param continuous: should sync be continuous or one-shot
         :param unidirectional: should sync go both ways or one-way only
         :return: WildlandResult showing if it was successful.
+
+        Note: one-shot sync is asynchronous too and needs to be stopped manually even if it reaches
+              the SYNCED state. That's because the sync job is internally still kept to allow
+              querying its state etc.
         """
 
     @abc.abstractmethod
@@ -213,15 +217,14 @@ class WildlandSyncApi(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def register_event_handler(self, container_id: Optional[str], filters: Set[SyncApiEventType],
                                callback: Callable[[SyncApiEvent], None]) \
-            -> Tuple[WildlandResult, Optional[int]]:
+            -> Tuple[WildlandResult, int]:
         """
         Register handler for events; only receives events listed in filters.
         Can be called before a sync is started for the given container.
         :param container_id: Container for which to receive events, all containers if None
         :param filters: Set of event types to be given to handler (empty means all)
         :param callback: function that takes SyncApiEvent as param and returns nothing
-        :return: Tuple of WildlandResult and id of the registered handler (if register
-                 was successful)
+        :return: Tuple of WildlandResult and id of the registered handler.
         """
 
     @abc.abstractmethod
@@ -288,4 +291,19 @@ class WildlandSyncApi(metaclass=abc.ABCMeta):
         :param target_storage_id: id of the target storage (to where the file should be copied)
         in the format as in Wildland Core API
         :return: WildlandResult
+        """
+
+    @abc.abstractmethod
+    def wait_for_sync(self, container_id: str, timeout: Optional[float] = None,
+                      stop_on_completion: bool = True) -> Tuple[WildlandResult, str]:
+        """
+        Wait until a sync job is completed (state: SYNCED).
+        :param container_id: container_id in the format as in Wildland Core API.
+        :param timeout: optional timeout in seconds.
+        :param stop_on_completion: stop the sync job once it reaches SYNCED status
+                                   (mostly useful for one-shot jobs).
+        :return: WildlandResult and sync errors encountered during wait, if any.
+
+        Note: continuous sync can reach state: SYNCED multiple times if there are any storage
+              changes detected after it's SYNCED for the first time.
         """
