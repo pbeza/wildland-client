@@ -36,7 +36,6 @@ from typing import Callable, List, Any, Optional, Dict, Tuple, Union
 import click
 import progressbar
 
-import yaml
 import wildland.log
 
 from wildland import __version__
@@ -321,7 +320,6 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
     determine if it should be republished).
     """
     obj: ContextObj = ctx.obj
-
     if obj.client.is_url(input_file):
         raise CliError('This command supports only an local path to a file. Consider using '
                        'edit command for a specific object, e.g. wl container edit')
@@ -371,12 +369,10 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
         if original_data == data:
             click.echo('No changes detected, not saving.')
             return False
-
-        _sync_removed_storages(obj, manifest_type, original_data, edited_s, path)
-
         try:
             new_manifest = Manifest.from_unsigned_bytes(data, obj.client.session.sig)
             new_manifest.skip_verification()
+            _sync_removed_storages(obj, manifest, new_manifest)
         except (ManifestError, WildlandError) as e:
             click.secho(f'Manifest parse error: {e}', fg="red")
             if click.confirm('Do you want to edit the manifest again to fix the error?'):
@@ -409,18 +405,22 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
 
     return True
 
-def _sync_removed_storages(obj, manifest_type, original_data, edited_s, path):
+def _sync_removed_storages(obj, old_manifest, new_manifest):
     #check whether it was container edit and if there were any changes
-    if manifest_type != 'container' or original_data == edited_s.encode():
+    if old_manifest._fields['object'] != 'container':
+        return
+    if new_manifest._fields['object'] != 'container':
+        return
+    if old_manifest == new_manifest:
         return
 
     #check if container isn't already syncing
-    container = obj.client.load_object_from_file_path(WildlandObject.Type.CONTAINER, path)
+    container = WildlandObject.from_manifest(old_manifest, WildlandObject.Type.CONTAINER)
     status = obj.client.get_sync_job_state(container.sync_id)
-
     if status is None:
         try:
-            new_storages = yaml.safe_load(edited_s)['backends']['storage']
+            edited_container = WildlandObject.from_manifest(new_manifest,
+                                                            WildlandObject.Type.CONTAINER)
         except Exception as error:
             click.echo(f"Could not load storages from the new manifest: {error}")
             return
@@ -428,25 +428,24 @@ def _sync_removed_storages(obj, manifest_type, original_data, edited_s, path):
         click.echo(f"Syncing of {container.uuid} is in progress.")
         return
 
-    #check if new manifest has at least one storage to sync to
-    if len(new_storages) == 0:
-        return
-    #check new manifest's list of storage ids
-    new_storage_ids = []
-    for storage in new_storages:
-        #handle either backend_id or url
-        if isinstance(storage, dict):
-            new_storage_ids.append(storage['backend-id'])
-        else:
-            owner = yaml.safe_load(edited_s)['owner']
-            found_storage = obj.client.load_object_from_url_or_dict(
-                WildlandObject.Type.STORAGE, storage, owner, container=container)
-            new_storage_ids.append(found_storage.backend_id)
-
     #check old manifest's list of storage ids
     old_storage_ids = []
+    container.client = obj.client
     for i in obj.client.get_all_storages(container):
         old_storage_ids.append(i.backend_id)
+
+    #check safely new manifest's list of storage ids
+    new_storage_ids = []
+    edited_container.client = obj.client
+    try:
+        for i in obj.client.get_all_storages(edited_container):
+            new_storage_ids.append(i.backend_id)
+    except Exception as error:
+        click.echo(f"Getting storages from edited manifest: {error}")
+
+    #check if new manifest has at least one storage to sync to
+    if len(new_storage_ids) == 0:
+        return
 
     #if any old storage not on the new list, synchronize
     for storage_id in old_storage_ids:
