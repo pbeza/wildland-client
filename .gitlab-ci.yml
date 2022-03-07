@@ -121,6 +121,11 @@ bearnotes-test:
   script:
     - ./ci/wildland-test-runner.sh ./ci/ci-bearnotes
 
+default-forest-test:
+  extends: .plugin_test
+  script:
+    - ./ci/ci-default-forest
+
 categorization-proxy-test:
   extends: .plugin_test
   script:

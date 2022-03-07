@@ -1,0 +1,21 @@
+#!/usr/bin/env sh
+
+set -ex
+
+# Benchmark:
+# (use 'chronic' command from moreutils to suppress output unless the command
+# fails
+
+$WL user create User
+
+time -p chronic $WL user import --path /mydirs/ariadne https://ariadne.wildland.io
+time -p chronic $WL bridge ls
+
+${WL_START_CMD}
+
+time -p chronic $WL forest mount :/mydirs/ariadne:
+time -p chronic tree -F -L 1 $WL_MOUNT_POINT/mydirs/ariadne:
+
+time -p chronic $WL forest mount :/mydirs/ariadne:/forests/pandora:
+time -p chronic tree -F -L 1 $WL_MOUNT_POINT/mydirs/ariadne:/forests/pandora:/
+
