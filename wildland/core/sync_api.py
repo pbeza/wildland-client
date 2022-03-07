@@ -110,20 +110,6 @@ class WildlandSync(WildlandSyncApi, abc.ABC):
     def start_container_sync(self, container_id: str, source_storage_id: str,
                              target_storage_id: str, continuous: bool, unidirectional: bool) \
             -> WildlandResult:
-        """
-        Start syncing given container. Asynchronous: sync job is started in the background
-        and this method returns immediately.
-        :param source_storage_id: storage id, in the format as in Wildland Core API, of the source
-        storage (order of source/target is relevant only for unidirectional sync, which transfers
-        data from source to target)
-        :param target_storage_id: storage id, in the format as in Wildland Core API, of the target
-        storage (order of source/target is relevant only for unidirectional sync, which transfers
-        data from source to target)
-        :param container_id: container id in the format as in Wildland Core API.
-        :param continuous: should sync be continuous or one-shot
-        :param unidirectional: should sync go both ways or one-way only
-        :return: WildlandResult showing if it was successful.
-        """
         user1_id, container1_uuid, backend1_uuid = parse_wl_storage_id(source_storage_id)
         user2_id, container2_uuid, backend2_uuid = parse_wl_storage_id(target_storage_id)
 
@@ -152,12 +138,6 @@ class WildlandSync(WildlandSyncApi, abc.ABC):
         return result
 
     def stop_container_sync(self, container_id: str, force: bool) -> WildlandResult:
-        """
-        Stop syncing given container.
-        :param container_id: container_id in the format as in Wildland Core API.
-        :param force: should stop be immediate or wait until the end of current syncing operation.
-        :return: WildlandResult showing if it was successful.
-        """
         cmd = self._new_cmd(WlSyncCommandType.JOB_STOP,
                             container_id=container_id,
                             force=force)
@@ -165,22 +145,12 @@ class WildlandSync(WildlandSyncApi, abc.ABC):
         return result
 
     def pause_container_sync(self, container_id: str) -> WildlandResult:
-        """
-        Pause syncing given container.
-        :param container_id: container_id in the format as in Wildland Core API.
-        :return: WildlandResult showing if it was successful.
-        """
         cmd = self._new_cmd(WlSyncCommandType.JOB_PAUSE,
                             container_id=container_id)
         result, _ = self._execute_cmd(cmd)
         return result
 
     def resume_container_sync(self, container_id: str) -> WildlandResult:
-        """
-        Resume syncing given container.
-        :param container_id: container_id in the format as in Wildland Core API.
-        :return: WildlandResult showing if it was successful.
-        """
         cmd = self._new_cmd(WlSyncCommandType.JOB_RESUME,
                             container_id=container_id)
         result, _ = self._execute_cmd(cmd)
@@ -189,22 +159,13 @@ class WildlandSync(WildlandSyncApi, abc.ABC):
     def register_event_handler(self, container_id: Optional[str], filters: Set[SyncApiEventType],
                                callback: Callable[[SyncApiEvent], None]) \
             -> Tuple[WildlandResult, Optional[int]]:
-        """
-        Register handler for events; only receives events listed in filters.
-        Can be called before a sync is started for the given container.
-        :param container_id: Container for which to receive events, all containers if None
-        :param filters: Set of event types to be given to handler (empty means all)
-        :param callback: function that takes SyncApiEvent as param and returns nothing
-        :return: Tuple of WildlandResult and id of the registered handler (if register
-                 was successful)
-        """
         cmd = self._new_cmd(WlSyncCommandType.JOB_SET_CALLBACK,
                             container_id=container_id,
                             filters=filters)
 
         result, handler_id = self._execute_cmd(cmd)
         if not result.success:
-            return result, None
+            return result, 0
 
         logger.debug('register = %d', handler_id)
         with self.event_lock:
@@ -213,11 +174,6 @@ class WildlandSync(WildlandSyncApi, abc.ABC):
         return result, handler_id
 
     def remove_event_handler(self, handler_id: int) -> WildlandResult:
-        """
-        De-register event handler with the provided id.
-        :param handler_id: value returned by register_event_handler
-        :return: WildlandResult showing if it was successful.
-        """
         with self.event_lock:
             if handler_id not in self.event_callbacks.keys():
                 return WildlandResult.error(WLErrorType.SYNC_CALLBACK_NOT_FOUND,
@@ -236,11 +192,6 @@ class WildlandSync(WildlandSyncApi, abc.ABC):
 
     def get_container_sync_state(self, container_id: str) -> \
             Tuple[WildlandResult, Optional[SyncState]]:
-        """
-        Get current state of sync of the given container.
-        :param container_id: container_id in the format as in Wildland Core API.
-        :return: WildlandResult and overall state of the sync.
-        """
         cmd = self._new_cmd(WlSyncCommandType.JOB_STATE,
                             container_id=container_id)
         result, state = self._execute_cmd(cmd)
@@ -248,11 +199,6 @@ class WildlandSync(WildlandSyncApi, abc.ABC):
 
     def get_container_sync_details(self, container_id: str) -> \
             Tuple[WildlandResult, List[SyncFileState]]:
-        """
-        Get current sync state of all files in the given container.
-        :param container_id: container_id in the format as in Wildland Core API.
-        :return: WildlandResult and a list with states of all container files.
-        """
         cmd = self._new_cmd(WlSyncCommandType.JOB_DETAILS,
                             container_id=container_id)
         result, data = self._execute_cmd(cmd)
@@ -260,11 +206,6 @@ class WildlandSync(WildlandSyncApi, abc.ABC):
 
     def get_container_sync_conflicts(self, container_id: str) -> \
             Tuple[WildlandResult, List[SyncConflict]]:
-        """
-        Get list of conflicts in given container's sync.
-        :param container_id: container_id in the format as in Wildland Core API.
-        :return: WildlandResult and list of file conflicts.
-        """
         cmd = self._new_cmd(WlSyncCommandType.JOB_CONFLICTS,
                             container_id=container_id)
         result, data = self._execute_cmd(cmd)
@@ -272,12 +213,6 @@ class WildlandSync(WildlandSyncApi, abc.ABC):
 
     def get_file_sync_state(self, container_id: str, path: str) -> \
             Tuple[WildlandResult, Optional[SyncFileState]]:
-        """
-        Get sync state of a given file.
-        :param container_id: container_id in the format as in Wildland Core API.
-        :param path: path to file in the container
-        :return: WildlandResult and file state
-        """
         cmd = self._new_cmd(WlSyncCommandType.JOB_FILE_DETAILS,
                             container_id=container_id,
                             path=path)
@@ -286,16 +221,6 @@ class WildlandSync(WildlandSyncApi, abc.ABC):
 
     def force_file_sync(self, container_id: str, path: str, source_storage_id: str,
                         target_storage_id: str) -> WildlandResult:
-        """
-        Force synchronize a file from one storage to another.
-        :param container_id: container_id in the format as in Wildland Core API.
-        :param path: path to file in container
-        :param source_storage_id: id of the source storage (from where the authoritative file state
-         should be taken) in the format as in Wildland Core API
-        :param target_storage_id: id of the target storage (to where the file should be copied)
-        in the format as in Wildland Core API
-        :return: WildlandResult
-        """
         cmd = self._new_cmd(WlSyncCommandType.FORCE_FILE,
                             container_id=container_id,
                             path=path,
