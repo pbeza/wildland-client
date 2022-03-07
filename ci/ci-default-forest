@@ -11,6 +11,8 @@ WL='python3 -m coverage run -p ./wl --verbose'
 
 $WL user create User
 
+${WL_START_CMD}
+
 time -p chronic $WL user import --path /mydirs/ariadne https://ariadne.wildland.io
 time -p chronic $WL bridge ls
 
