@@ -1,10 +1,9 @@
 # Wildland Project
 #
-# Copyright (C) 2020 Golem Foundation
+# Copyright (C) 2022 Golem Foundation
 #
 # Authors:
-#                    Paweł Marczewski <pawel@invisiblethingslab.com>,
-#                    Wojtek Porczyk <woju@invisiblethingslab.com>
+#           Aleksandr Birukov <aleksandr.birukov@besidethepark.com>,
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,19 +19,28 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
+# pylint: disable=global-statement
 
-from setuptools import setup, find_packages
+"""
+Module for initialisation of the Cleaner instance with the "click" output functions
+"""
 
-setup(
-    name="wildland-bearnotes",
-    version="0.1",
-    packages=find_packages(),
-    entry_points={
-        'wildland.storage_backends': [
-            'bear-db = wildland_bearnotes.backend:BearDBStorageBackend',
-        ]
-    },
-    install_requires=[
-        'pybear @ git+https://github.com/golemfoundation/pybear#egg=0.0.20200914',
-    ],
-)
+from typing import Optional
+import click
+
+from .cleaner import Cleaner
+
+cleaner: Optional[Cleaner] = None
+
+
+def get_cli_cleaner():
+    """
+    Return and initialize if needed a Cleaner instance with the "click" output functions.
+    """
+    global cleaner
+    if not cleaner:
+        cleaner = Cleaner(
+            click.echo,
+            lambda *args, **kwargs: click.secho(*args, **kwargs, fg='yellow')
+        )
+    return cleaner

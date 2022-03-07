@@ -55,8 +55,8 @@ from ..exc import WildlandError
 from ..manifest.manifest import ManifestError
 from ..manifest.template import TemplateManager
 from ..publish import Publisher
-from ..utils import yaml_parser
 from ..remounter import Remounter
+from ..utils import yaml_parser
 from ..storage import Storage, StorageBackend
 from ..log import init_logging, get_logger
 from ..storage_sync.base import BaseSyncer, SyncConflict
@@ -149,7 +149,7 @@ class OptionRequires(click.Option):
               help='do not publish the container after creation')
 @click.option('--encrypt-manifest/--no-encrypt-manifest', default=True, required=False,
               help='if --no-encrypt, this manifest will not be encrypted and '
-              '--access cannot be used.')
+                   '--access cannot be used.')
 @click.argument('name', metavar='CONTAINER', required=False)
 @click.pass_obj
 def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Optional[str],
@@ -280,7 +280,7 @@ def _container_info(client, container, users_and_bridge_paths):
 
     cache = client.cache_storage(container)
     if cache:
-        storage_type = cache.params['type']
+        storage_type = cache.storage_type
         result = {
             "type": storage_type,
             "backend_id": cache.params["backend-id"],
@@ -392,10 +392,11 @@ def _delete(obj: ContextObj, name: str, force: bool, cascade: bool, no_unpublish
     # unmount if mounted
     try:
         for mount_path in obj.fs_client.get_unique_storage_paths(container):
-            storage_id = obj.fs_client.find_storage_id_by_path(mount_path)
+            storage_and_pseudo_ids = obj.fs_client.find_storage_id_by_path(
+                mount_path)
 
-            if storage_id:
-                obj.fs_client.unmount_storage(storage_id)
+            for ident in storage_and_pseudo_ids:
+                obj.fs_client.unmount_storage(ident)
 
             for storage_id in obj.fs_client.find_all_subcontainers_storage_ids(container):
                 obj.fs_client.unmount_storage(storage_id)
@@ -470,7 +471,7 @@ container_.add_command(cli_common.unpublish)
 @click.option('--del-storage', metavar='TEXT', multiple=True,
               help='Storage to remove. Can be either the backend_id of a storage or position in '
                    'storage list (starting from 0)')
-@click.option('--publish/--no-publish', '-p/-P', default=True, help='publish modified container')
+@click.option('--publish/--no-publish', '-p/-P', default=None, help='publish modified container')
 @click.option('--remount/--no-remount', '-r/-n', default=True, help='remount mounted container')
 @click.argument('input_file', metavar='FILE')
 @click.pass_context
@@ -545,8 +546,10 @@ def modify(ctx: click.Context,
         logger=logger
     )
 
-    if publish and modified:
-        cli_common.republish_object(ctx.obj.client, container)
+    assert isinstance(container, Container)
+
+    if modified:
+        _publish_container_after_modification(ctx.obj.client, container, publish)
 
 
 def _option_check(ctx, add_path, del_path, add_category, del_category, title, add_access,
@@ -701,7 +704,7 @@ def prepare_mount(obj: ContextObj,
         with StorageBackend.from_params(storage.params, deduplicate=True):
             for subcontainer in subcontainers:
                 # TODO: use MR !240 to pass a container set to prepare mount
-                if isinstance(subcontainer, Container) and\
+                if isinstance(subcontainer, Container) and \
                         subcontainer.uuid == container.uuid:
                     continue
                 if isinstance(subcontainer, Container):
@@ -791,6 +794,8 @@ def delete_cache(obj: ContextObj, container_names):
 @container_.command(short_help='mount container')
 @click.option('--remount/--no-remount', '-r/-n', default=True,
               help='Remount existing container, if found')
+@click.option('--lazy/--no-lazy', default=True,
+              help='Allow lazy mount of storages')
 @click.option('--save', '-s', is_flag=True,
               help='Save the container to be mounted at startup')
 @click.option('--import-users/--no-import-users', is_flag=True, default=True,
@@ -813,7 +818,7 @@ def delete_cache(obj: ContextObj, container_names):
               help='Allow mounting containers from manifest catalogs')
 @click.argument('container_names', metavar='CONTAINER', nargs=-1, required=True)
 @click.pass_obj
-def mount(obj: ContextObj, container_names: Tuple[str], remount: bool, save: bool,
+def mount(obj: ContextObj, container_names: Tuple[str], remount: bool, lazy: bool, save: bool,
           import_users: bool, with_subcontainers: bool, only_subcontainers: bool, list_all: bool,
           manifests_catalog: bool, with_cache: bool, cache_template: str) -> None:
     """
@@ -828,14 +833,14 @@ def mount(obj: ContextObj, container_names: Tuple[str], remount: bool, save: boo
             raise WildlandError('Default cache template not set, set one with '
                                 '`wl set-default-cache` or use --cache-template option')
 
-    _mount(obj, container_names, remount, save, import_users, with_subcontainers,
+    _mount(obj, container_names, remount, lazy, save, import_users, with_subcontainers,
            only_subcontainers, list_all, manifests_catalog, cache_template)
 
 
 @profile()
 @cli_common.wrap_output
 def _mount(obj: ContextObj, container_names: Sequence[str],
-           remount: bool = True, save: bool = True, import_users: bool = True,
+           remount: bool = True, lazy: bool = True, save: bool = True, import_users: bool = True,
            with_subcontainers: bool = True, only_subcontainers: bool = False,
            list_all: bool = True, manifests_catalog: bool = False,
            cache_template: str = None) -> None:
@@ -849,6 +854,7 @@ def _mount(obj: ContextObj, container_names: Sequence[str],
     params: List[Tuple[Container, List[Storage], List[Iterable[PurePosixPath]], Container]] = []
     successfully_loaded_container_names: List[str] = []
     fails: List[str] = []
+    warnings: List[str] = []
     storages_count = 0
 
     for container_name in container_names:
@@ -885,14 +891,14 @@ def _mount(obj: ContextObj, container_names: Sequence[str],
                 storages_count += sum(len(params[1]) for params in mount_params)
                 current_params.extend(mount_params)
             except WildlandError as ex:
-                fails.append(f'Cannot mount container {container}: {str(ex)}')
+                warnings.append(f'Cannot mount container: {container}: {str(ex)}')
 
         successfully_loaded_container_names.append(container_name)
         params.extend(current_params)
 
     if storages_count:
         click.echo(f'Mounting storage(s): {storages_count}')
-        obj.fs_client.mount_multiple_containers(params, remount=remount)
+        obj.fs_client.mount_multiple_containers(params, remount=remount, lazy=lazy)
     else:
         click.echo('No containers need (re)mounting')
 
@@ -921,6 +927,9 @@ def _mount(obj: ContextObj, container_names: Sequence[str],
         if len(new_default_containers) > len(default_containers_set):
             click.echo(f'default-containers in your config file {client.config.path} has '
                        'duplicates. Consider removing them.')
+
+    if warnings:
+        logger.warning('Warning:\n%s', "\n".join(warnings))
 
     if fails:
         raise WildlandError('\n'.join(fails))
@@ -951,7 +960,6 @@ def unmount(obj: ContextObj, path: str, with_subcontainers: bool, undo_save: boo
 def _unmount(obj: ContextObj, container_names: Sequence[str], path: str,
              with_subcontainers: bool = True, undo_save: bool = False,
              unmount_all: bool = False) -> None:
-
     obj.fs_client.ensure_mounted()
 
     if unmount_all and (undo_save or not with_subcontainers or len(container_names) > 0
@@ -983,7 +991,6 @@ def _unmount(obj: ContextObj, container_names: Sequence[str], path: str,
     fails: List[str] = []
     all_storage_ids = []
     all_cache_ids = []
-    storage_ids: List[int] = []
     if container_names:
         for container_name in container_names:
             counter = get_counter(f"Loading containers (from '{container_name}')")
@@ -1052,6 +1059,7 @@ def _count_normal_storages(obj: ContextObj, storage_ids: List[int]):
         lambda storage_id: not _is_pseudomanifest_storage_id(obj, storage_id), storage_ids
     )))
 
+
 def _mount_path_to_backend_id(path: PurePosixPath) -> Optional[str]:
     pattern = r'^/.users/[0-9a-z-]+:/.backends/[0-9a-z-]+/([0-9a-z-]+)$'
     path_regex = re.compile(pattern)
@@ -1062,9 +1070,9 @@ def _mount_path_to_backend_id(path: PurePosixPath) -> Optional[str]:
 
 
 def _collect_storage_ids_by_container_name(
-            obj: ContextObj, container_name: str,
-            callback_iter_func=iter, with_subcontainers: bool = True,
-        ) -> tuple[List[int], List[int]]:
+        obj: ContextObj, container_name: str,
+        callback_iter_func=iter, with_subcontainers: bool = True,
+) -> tuple[List[int], List[int]]:
     """
     Returns a tuple with a list of normal storages and a list of cache storages.
     """
@@ -1077,17 +1085,15 @@ def _collect_storage_ids_by_container_name(
 
         cache = obj.client.cache_storage(container)
         for mount_path in unique_storage_paths:
-            storage_id = obj.fs_client.find_storage_id_by_path(mount_path)
-            is_pseudomanifest = _is_pseudomanifest_primary_mount_path(mount_path)
+            storage_id, pm_id = obj.fs_client.find_storage_id_by_path(mount_path)
 
-            if storage_id is None:
-                assert not is_pseudomanifest
+            backend_id = _mount_path_to_backend_id(mount_path)
+            if cache and cache.params['backend-id'] == backend_id:
+                cache_ids.append(storage_id)
             else:
-                backend_id = _mount_path_to_backend_id(mount_path)
-                if cache and cache.params['backend-id'] == backend_id:
-                    cache_ids.append(storage_id)
-                else:
-                    storage_ids.append(storage_id)
+                storage_ids.append(storage_id)
+                if pm_id is not None:
+                    storage_ids.append(pm_id)
 
         if with_subcontainers:
             sub_ids = obj.fs_client.find_all_subcontainers_storage_ids(container)
@@ -1102,9 +1108,9 @@ def _collect_storage_ids_by_container_name(
 
 
 def _collect_storage_ids_by_container_path(
-            obj: ContextObj, path: PurePosixPath,
-            callback_iter_func=iter, with_subcontainers: bool = True
-        ) -> tuple[List[int], List[int]]:
+        obj: ContextObj, path: PurePosixPath,
+        callback_iter_func=iter, with_subcontainers: bool = True
+) -> tuple[List[int], List[int]]:
     """
     Return all storage IDs corresponding to a given mount path (tuple with normal storages and
     cache storages). Path can be either absolute or relative with respect to the mount directory.
@@ -1124,14 +1130,13 @@ def _collect_storage_ids_by_container_path(
         else:
             storage_ids.append(storage_id)
 
-        if _is_pseudomanifest_storage_id(obj, storage_id):
-            logger.debug('Ignoring unmounting solely pseudomanifest path (storage ID = %d)',
-                         storage_id)
-            continue
-
         if with_subcontainers:
             subcontainer_storage_ids = obj.fs_client.find_all_subcontainers_storage_ids(container)
             storage_ids.extend(subcontainer_storage_ids)
+
+    if len(storage_ids) + len(cache_ids) == 1:
+        raise CliError('Ignoring unmounting solely pseudomanifest path '
+                       f'(storage ID = {storage_ids[0]})')
 
     return storage_ids, cache_ids
 
@@ -1142,6 +1147,7 @@ def _is_pseudomanifest_storage_id(obj: ContextObj, storage_id: int) -> bool:
     """
     storage_info: StorageInfo = obj.fs_client.get_storage_info(storage_id)
     return storage_info.type == 'pseudomanifest'
+
 
 def _is_pseudomanifest_primary_mount_path(path: PurePosixPath) -> bool:
     """
@@ -1168,11 +1174,12 @@ def terminate_daemon(pfile, error_message):
 
 @container_.command('mount-watch', short_help='mount container')
 @click.argument('container_names', metavar='CONTAINER', nargs=-1, required=True)
+@click.option('--with-subcontainers/--without-subcontainers', '-w/-W', is_flag=True, default=True,
+              help='Do not watch subcontainers changes.')
 @click.pass_obj
-def mount_watch(obj: ContextObj, container_names):
+def mount_watch(obj: ContextObj, container_names, with_subcontainers: bool):
     """
-    Watch for manifest files inside Wildland, and keep the filesystem mount
-    state in sync.
+    Watch for manifest files inside Wildland, and keep the filesystem mount state in sync.
     """
 
     obj.fs_client.ensure_mounted()
@@ -1182,9 +1189,24 @@ def mount_watch(obj: ContextObj, container_names):
     if container_names:
         with open(MW_DATA_FILE, 'w') as file:
             file.truncate(0)
+            if with_subcontainers:
+                file.write("with-subcontainers\n")
+            else:
+                file.write("without-subcontainers\n")
             file.write("\n".join(container_names))
 
-    remounter = Remounter(obj.client, obj.fs_client, container_names)
+    remounter = Remounter(obj.client, obj.fs_client, container_names, with_subcontainers)
+
+    if remounter.outside_containers:
+        containers = "\n".join([c.uuid for c in remounter.outside_containers])
+        if not with_subcontainers:
+            raise WildlandError(
+                'Changes to the following container manifests'
+                f' cannot be watched as they are outside Wildland: \n{containers}'
+                '\n\nRemove --without-subcontainers flag to watch only subcontainers.',
+                )
+        logger.warning('Changes to the following container manifests (except subcontainers)'
+                       ' will not be watched as they are outside Wildland: \n%s', containers)
 
     with daemon.DaemonContext(pidfile=pidfile.TimeoutPIDLockFile(MW_PIDFILE),
                               stdout=sys.stdout, stderr=sys.stderr, detach_process=True):
@@ -1211,12 +1233,14 @@ def add_mount_watch(obj: ContextObj, container_names):
 
     if os.path.exists(MW_DATA_FILE):
         with open(MW_DATA_FILE, 'r') as file:
-            old_container_names = file.read().split('\n')
+            lines = file.read().split('\n')
+            without_subcontainers = lines[0] == "without-subcontainers"
+            old_container_names = lines[1:]
         container_names.extend(old_container_names)
 
     stop_mount_watch()
 
-    mount_watch(obj, container_names)
+    mount_watch(obj, container_names, without_subcontainers)
 
 
 @container_.command('sync', short_help='start syncing a container')
@@ -1364,30 +1388,38 @@ def dump(ctx: click.Context, path: str, decrypt: bool):
 @container_.command(short_help='edit container manifest in external tool')
 @click.option('--editor', metavar='EDITOR', help='custom editor')
 @click.option('--remount/--no-remount', '-r/-n', default=True, help='remount mounted container')
-@click.option('--publish/--no-publish', '-p/-P', default=False, help='publish edited container')
+@click.option('--publish/--no-publish', '-p/-P', default=None, help='publish edited container')
 @click.argument('path', metavar='FILE or WLPATH')
 @click.pass_context
 def edit(ctx: click.Context, path: str, publish: bool, editor: Optional[str], remount: bool):
     """
     Edit container manifest in external tool.
     """
-    container, manifest_modified = cli_common.resolve_object(
+    container, modified = cli_common.resolve_object(
         ctx, path, WildlandObject.Type.CONTAINER, cli_common.edit, editor=editor, remount=remount)
 
-    if manifest_modified:
-        if isinstance(container, Container):
-            owner = container.owner
-        else:
-            # container object should always be an instance of Container class
-            click.echo('Edited object is not a container.')
-            return
+    assert isinstance(container, Container)
 
-        client = ctx.obj.client
+    if modified:
+        _publish_container_after_modification(ctx.obj.client, container, publish)
 
-        if Publisher.is_published(client, owner, container.get_primary_publish_path()):
+
+def _publish_container_after_modification(
+            client: Client,
+            container: Container,
+            publish: bool
+        ) -> None:
+    """
+    Republish container if it's published and no --no-publish flag was specified
+    or publish it if it's not published and --publish flag is present
+    """
+    owner = container.owner
+
+    if Publisher.is_published(client, owner, container.get_primary_publish_path()):
+        if publish or publish is None:
             cli_common.republish_object(client, container)
-
-        elif publish:
+    else:
+        if publish:
             user = client.load_object_from_name(WildlandObject.Type.USER, owner)
-            click.echo('Publishing a container')
+            click.echo('Publishing container')
             Publisher(client, user).publish(container)

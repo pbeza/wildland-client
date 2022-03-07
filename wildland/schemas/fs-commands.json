@@ -37,6 +37,10 @@
                             }
                         }
                     }
+                },
+                "lazy": {
+                    "type": "boolean",
+                    "description": "lazy mounting on first use"
                 }
             }
         },
@@ -76,6 +80,22 @@
                 "pattern": {
                     "type": "string",
                     "description": "a glob-style pattern"
+                },
+                "ignore-own": {
+                    "type": "boolean",
+                    "description": "should the watcher ignore events caused by storage's own activity"
+                }
+            }
+        },
+
+        "add-subcontainer-watch": {
+            "type": "object",
+            "required": ["backend-param"],
+            "additionalProperties": false,
+            "properties": {
+                "backend-param": {
+                    "type": "object",
+                    "description": "storage backend parameters"
                 },
                 "ignore-own": {
                     "type": "boolean",

@@ -32,34 +32,19 @@ import stat
 import threading
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import List, Dict, Iterable, Optional, Set, Union
+from typing import List, Dict, Iterable, Optional, Union, Any
 
 from .conflict import ConflictResolver, Resolved
+from .fs_watchers import FileWatchers, ChildrenWatchers
 from .storage_backends.base import Attr, File, StorageBackend
-from .storage_backends.watch import FileEvent, StorageWatcher, FileEventType
+from .storage_backends.watch import FileEventType
 from .exc import WildlandError
 from .control_server import ControlServer, ControlHandler, control_command
 from .manifest.schema import Schema
 from .log import get_logger
 from .tests.profiling.profilers import profile
 
-
 logger = get_logger('fs')
-
-
-@dataclass
-class Watch:
-    """
-    A watch added by a connected user.
-    """
-
-    id: int
-    storage_id: int
-    pattern: str
-    handler: ControlHandler
-
-    def __str__(self):
-        return f'{self.storage_id}:{self.pattern}'
 
 
 @dataclass
@@ -76,12 +61,13 @@ class WildlandFSBase:
     """
     A base class for Wildland implementations.
     """
+
     # pylint: disable=no-self-use,too-many-public-methods,unused-argument
 
     def __init__(self, *args, **kwds):
         super().__init__(*args, **kwds)  # type: ignore
         # Mount information
-        self.storages: Dict[int, StorageBackend] = {}
+        self.storages = LazyStorageDict()
         self.storage_extra: Dict[int, Dict] = {}
         self.storage_paths: Dict[int, List[PurePosixPath]] = {}
         self.main_paths: Dict[PurePosixPath, int] = {}
@@ -89,10 +75,8 @@ class WildlandFSBase:
 
         self.mount_lock = threading.Lock()
 
-        self.watches: Dict[int, Watch] = {}
-        self.storage_watches: Dict[int, Set[int]] = {}
-        self.watchers: Dict[int, StorageWatcher] = {}
-        self.watch_counter = 1
+        self.file_watchers = FileWatchers(self)
+        self.children_watchers = ChildrenWatchers(self)
 
         self.uid = None
         self.gid = None
@@ -107,55 +91,58 @@ class WildlandFSBase:
             cmd: schema.validate for cmd, schema in command_schemas.items()
         })
 
-    def _mount_storage(self, paths: List[PurePosixPath], storage: StorageBackend,
-                       extra: Optional[Dict] = None, remount: bool = False) -> None:
+    def _mount_storage(
+            self,
+            paths: List[PurePosixPath],
+            storage: StorageBackend,
+            extra: Optional[Dict] = None,
+            remount: bool = False,
+            lazy: bool = True
+    ) -> None:
         """
         Mount a storage under a set of paths.
         """
 
-        assert self.mount_lock.locked()
+        with self.mount_lock:
 
-        logger.info('Mounting storage %r under paths: %s',
-                    storage, [str(p) for p in paths])
+            logger.debug('Mounting storage (backend-id=%s) under paths: %s',
+                         storage.backend_id, [str(p) for p in paths])
 
-        main_path = paths[0]
-        current_ident = self.main_paths.get(main_path)
-        if current_ident is not None:
-            if remount:
-                logger.info('Unmounting current storage: %s, for main path: %s',
-                            current_ident, main_path)
-                self._unmount_storage(current_ident)
-            else:
-                raise WildlandError(f'Storage already mounted under main path: {main_path}')
+            main_path = paths[0]
+            current_ident = self.main_paths.get(main_path)
+            if current_ident is not None:
+                if remount:
+                    logger.debug('Unmounting current storage: %s, for main path: %s',
+                                 current_ident, main_path)
+                    self._unmount_storage(current_ident)
+                else:
+                    raise WildlandError(f'Storage already mounted under main path: {main_path}')
 
-        ident = self.storage_counter
-        self.storage_counter += 1
+            ident = self.storage_counter
+            self.storage_counter += 1
 
-        self.storages[ident] = storage
-        self.storage_extra[ident] = extra or {}
-        self.storage_paths[ident] = paths
-        self.main_paths[main_path] = ident
-        for path in paths:
-            self.resolver.mount(path, ident)
+            self.storages[ident] = storage
+            self.storage_extra[ident] = extra or {}
+            self.storage_paths[ident] = paths
+            self.main_paths[main_path] = ident
+            for path in paths:
+                self.resolver.mount(path, ident)
+
+        if not lazy or storage.MOUNT_REFERENCE_CONTAINER:
+            # request mount of storage backends
+            self.storages.get(ident)
 
     def _unmount_storage(self, storage_id: int) -> None:
         """Unmount a storage"""
 
         assert self.mount_lock.locked()
 
-        if storage_id in self.storage_watches:
-            for watch_id in list(self.storage_watches[storage_id]):
-                self._remove_watch(watch_id)
+        self.file_watchers.remove_watches(storage_id)
+        self.children_watchers.remove_watches(storage_id)
 
         assert storage_id in self.storages
         assert storage_id in self.storage_paths
-        storage = self.storages[storage_id]
         paths = self.storage_paths[storage_id]
-
-        logger.info('Unmounting storage %r from paths: %s',
-                    storage, [str(p) for p in paths])
-
-        storage.request_unmount()
 
         # TODO check open files?
         del self.storages[storage_id]
@@ -172,22 +159,21 @@ class WildlandFSBase:
 
     @control_command('mount')
     @profile()
-    def control_mount(self, _handler, items):
+    def control_mount(self, _handler, items, lazy: bool = True):
         collected_errors = list()
         for params in items:
             paths = [PurePosixPath(p) for p in params['paths']]
             assert len(paths) > 0
             storage_params = params['storage']
-            read_only = params.get('read-only', False)
+            read_only = storage_params.get('read-only', False)
             extra_params = params.get('extra')
             remount = params.get('remount')
             storage = StorageBackend.from_params(storage_params, read_only, deduplicate=True)
             try:
-                storage.request_mount()
-                with self.mount_lock:
-                    self._mount_storage(paths, storage, extra_params, remount)
+                self._mount_storage(paths, storage, extra_params, remount, lazy)
             except Exception as e:
-                logger.exception('backend %s not mounted due to exception', storage.backend_id)
+                logger.error(
+                    'backend %s not mounted due to exception', params['storage']['backend-id'])
                 collected_errors.append(e)
 
         if collected_errors:
@@ -204,15 +190,15 @@ class WildlandFSBase:
     def control_clear_cache(self, _handler, storage_id=None):
         with self.mount_lock:
             if storage_id is None:
-                for ident, storage in self.storages.items():
-                    logger.info('clearing cache for storage: %s', ident)
-                    storage.clear_cache()
+                for ident in self.storages:
+                    logger.debug('clearing cache for storage: %s', ident)
+                    self.storages.clear_cache(ident)
                 return
 
             if storage_id not in self.storages:
                 raise WildlandError(f'storage not found: {storage_id}')
-            logger.info('clearing cache for storage: %s', storage_id)
-            self.storages[storage_id].clear_cache()
+            logger.debug('clearing cache for storage: %s', storage_id)
+            self.storages.clear_cache(storage_id)
 
     @control_command('paths')
     def control_paths(self, _handler):
@@ -249,7 +235,7 @@ class WildlandFSBase:
             for ident in self.storages:
                 result[str(ident)] = {
                     "paths": [str(path) for path in self.storage_paths[ident]],
-                    "type": self.storages[ident].TYPE,
+                    "type": self.storages.get_type(ident),
                     "extra": self.storage_extra[ident],
                 }
         return result
@@ -270,15 +256,15 @@ class WildlandFSBase:
         result = []
 
         for storage_id in self.resolver.find_storage_ids(PurePosixPath(path)):
-            storage = self.storages[storage_id]
+            storage_params = self.storages.get_params(storage_id)
 
             result.append({
                 'storage': {
-                    'container-path': storage.params['container-path'],
-                    'backend-id': storage.backend_id,
-                    'owner': storage.params['owner'],
-                    'read-only': storage.read_only,
-                    'hash': storage.hash,
+                    'container-path': storage_params['container-path'],
+                    'backend-id': storage_params['backend-id'],
+                    'owner': storage_params['owner'],
+                    'read-only': self.storages.is_read_only(storage_id),
+                    'hash': self.storages.get_hash(storage_id),
                     'id': storage_id
                 }
             })
@@ -325,7 +311,23 @@ class WildlandFSBase:
         if storage_id not in self.storages:
             raise WildlandError(f'No storage: {storage_id}')
         with self.mount_lock:
-            return self._add_watch(storage_id, pattern, handler, ignore_own=ignore_own)
+            return self.file_watchers.add_watch(storage_id, pattern, handler, ignore_own=ignore_own)
+
+    @control_command('add-subcontainer-watch')
+    def control_add_subcontainer_watch(
+            self,
+            handler: ControlHandler,
+            backend_param: Dict[str, Any]
+    ):
+        backend = StorageBackend.from_params(backend_param, deduplicate=True)
+        for storage_id in self.storages:
+            if self.storages.get_hash(storage_id) == backend.hash:
+                ident = storage_id
+                break
+        else:
+            raise ValueError(f"Unknown storage {backend.backend_id}")
+        with self.mount_lock:
+            return self.children_watchers.add_watch(ident, "*", handler)
 
     @control_command('breakpoint')
     def control_breakpoint(self, _handler):
@@ -352,102 +354,6 @@ class WildlandFSBase:
             attr.timestamp  # ctime
         ))
 
-    def _notify_storage_watches(self, event_type: FileEventType, relpath, storage_id):
-        with self.mount_lock:
-            if storage_id not in self.storage_watches:
-                return
-
-            if storage_id in self.watchers:
-                return
-            watches = [self.watches[watch_id]
-                       for watch_id in self.storage_watches[storage_id]]
-
-        if not watches:
-            return
-
-        event = FileEvent(event_type, relpath)
-        for watch in watches:
-            self._notify_watch(watch, [event])
-
-    def _add_watch(self, storage_id: int, pattern: str, handler: ControlHandler,
-                   ignore_own: bool = False):
-        assert self.mount_lock.locked()
-
-        watch = Watch(
-            id=self.watch_counter,
-            storage_id=storage_id,
-            pattern=pattern,
-            handler=handler,
-        )
-        logger.info('adding watch: %s', watch)
-        self.watches[watch.id] = watch
-        if storage_id not in self.storage_watches:
-            self.storage_watches[storage_id] = set()
-
-        self.storage_watches[storage_id].add(watch.id)
-        self.watch_counter += 1
-
-        handler.on_close(lambda: self._cleanup_watch(watch.id))
-
-        # Start a watch thread, but only if the storage provides watcher() method
-        if len(self.storage_watches[storage_id]) == 1:
-
-            def watch_handler(events):
-                return self._watch_handler(storage_id, events)
-            watcher = self.storages[storage_id].start_watcher(
-                watch_handler, ignore_own_events=ignore_own)
-
-            if watcher:
-                logger.info('starting watcher for storage %d', storage_id)
-                self.watchers[storage_id] = watcher
-
-        return watch.id
-
-    def _watch_handler(self, storage_id: int, events: List[FileEvent]):
-        logger.debug('events from %d: %s', storage_id, events)
-        watches = [self.watches[watch_id]
-                   for watch_id in self.storage_watches.get(storage_id, [])]
-
-        for watch in watches:
-            self._notify_watch(watch, events)
-
-    def _notify_watch(self, watch: Watch, events: List[FileEvent]):
-        events = [event for event in events
-                  if event.path.match(watch.pattern)]
-        if not events:
-            return
-
-        logger.info('notify watch: %s: %s', watch, events)
-        data = [{
-            'type': event.type.name,
-            'path': str(event.path),
-            'watch-id': watch.id,
-            'storage-id': watch.storage_id,
-        } for event in events]
-        watch.handler.send_event(data)
-
-    def _cleanup_watch(self, watch_id):
-        with self.mount_lock:
-            # Could be removed earlier, when unmounting storage.
-            if watch_id in self.watches:
-                self._remove_watch(watch_id)
-
-    def _remove_watch(self, watch_id):
-        assert self.mount_lock.locked()
-
-        watch = self.watches[watch_id]
-        logger.info('removing watch: %s', watch)
-
-        if (len(self.storage_watches[watch.storage_id]) == 1 and
-                watch.storage_id in self.watchers):
-
-            logger.info('stopping watcher for storage: %s', watch.storage_id)
-            self.storages[watch.storage_id].stop_watcher()
-            del self.watchers[watch.storage_id]
-
-        self.storage_watches[watch.storage_id].remove(watch_id)
-        del self.watches[watch_id]
-
     def _get_storage_relative_path(self, file_name: str, resolved_path: Resolved,
                                    parent: bool) -> PurePosixPath:
         return resolved_path.relpath / file_name if parent else resolved_path.relpath
@@ -469,10 +375,10 @@ class WildlandFSBase:
     # File System API
     #
 
-    def proxy(self, method_name, path: Union[str, PurePosixPath], *args,
+    def proxy(self, method_name: str, path: Union[str, PurePosixPath], *args,
               resolved_path: Optional[Resolved] = None,
-              parent=False,
-              modify=False,
+              parent: bool = False,
+              modify: bool = False,
               event_type: Optional[FileEventType] = None,
               **kwargs):
         """
@@ -490,7 +396,18 @@ class WildlandFSBase:
         """
 
         path = PurePosixPath(path)
-        resolved = self._resolve_path(path, parent) if not resolved_path else resolved_path
+
+        if resolved_path:
+            resolved = resolved_path
+        else:
+            try:
+                resolved = self._resolve_path(path, parent)
+            except IOError as e:
+                assert e.errno == errno.EACCES
+                if modify:
+                    raise IOError(errno.EROFS, str(path)) from e
+                raise
+
         with self.mount_lock:
             storage = self.storages[resolved.ident]
 
@@ -510,7 +427,8 @@ class WildlandFSBase:
         # If successful, notify watches.
 
         if event_type is not None:
-            self._notify_storage_watches(event_type, relpath, resolved.ident)
+            self.file_watchers.notify_storage_watches(event_type, relpath, resolved.ident)
+            self.children_watchers.notify_storage_watches(event_type, relpath, resolved.ident)
         return result
 
     def open(self, path: str, flags: int) -> File:
@@ -529,9 +447,8 @@ class WildlandFSBase:
         if not res:
             return self._stat(attr)
         with self.mount_lock:
-            storage = self.storages[res.ident]
-        if storage.read_only:
-            attr.mode &= ~0o222
+            if self.storages.is_read_only(res.ident):
+                attr.mode &= ~0o222
         return self._stat(attr)
 
     def readdir(self, path: str, _offset: int) -> Iterable[str]:
@@ -678,3 +595,77 @@ class WildlandFSConflictResolver(ConflictResolver):
         with self.fs.mount_lock:
             storage = self.fs.storages[ident]
         return list(storage.readdir(relpath))
+
+
+class LazyStorageDict:
+    """
+    A dict-like class, which lazy mount storages.
+
+    Unmounts deleted storages.
+    """
+    # pylint: disable=missing-docstring
+
+    def __init__(self):
+        self._storages = dict()
+        self._initialized = dict()
+
+    def get(self, key):
+        storage = self._storages[key]
+        if self._initialized[key]:
+            return storage
+
+        try:
+            storage.request_mount()
+        except Exception as e:
+            logger.exception('backend %s not mounted due to exception', storage.backend_id)
+            raise WildlandError from e
+
+        self._initialized[key] = True
+
+        return storage
+
+    def __getitem__(self, key):
+        return self.get(key)
+
+    def __setitem__(self, key, value):
+        self._storages[key] = value
+        self._initialized[key] = False
+
+    def __delitem__(self, key):
+        storage = self._storages[key]
+        if self._initialized[key]:
+            logger.debug('Unmounting storage %r', storage)
+            storage.request_unmount()
+        backend_id = storage.backend_id
+        del self._storages[key]
+        del self._initialized[key]
+        logger.debug('Unmounted storage (backend-id=%s)', backend_id)
+
+    def __iter__(self):
+        return iter(self._storages)
+
+    def __contains__(self, key):
+        return key in self._storages
+
+    def __len__(self):
+        return len(self._storages)
+
+    def get_type(self, key):
+        storage = self._storages[key]
+        return storage.TYPE
+
+    def get_hash(self, key):
+        storage = self._storages[key]
+        return storage.hash
+
+    def clear_cache(self, key):
+        storage = self._storages[key]
+        storage.clear_cache()
+
+    def is_read_only(self, key):
+        storage = self._storages[key]
+        return storage.read_only
+
+    def get_params(self, key):
+        storage = self._storages[key]
+        return storage.params

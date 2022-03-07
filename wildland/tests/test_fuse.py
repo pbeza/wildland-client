@@ -469,7 +469,7 @@ def test_cmd_mount_already_mounted(env, container, storage_type):
 def test_cmd_mount_not_local_owner(env, storage_type):
     storage = storage_manifest(env, 'storage/storage2', storage_type, is_local_owner=False)
     with pytest.raises(FuseError):
-        env.mount_storage(['/.uuid/XYZ', '/container2'], storage)
+        env.mount_storage(['/.uuid/XYZ', '/container2'], storage, lazy=False)
 
 
 def test_cmd_mount_owner_file(env, storage_type):
@@ -623,8 +623,9 @@ def test_nested_mounts(env, storage_type):
         assert f.read() == 'new content'
 
     # I shouldn't be able to create a new file
-    with pytest.raises(PermissionError):
+    with pytest.raises(OSError) as e:
         open(env.mnt_dir / 'container1/nested1/new-file', 'w')
+    assert e.value.errno == errno.EROFS
 
     # However, I can create a file under the second mount path...
     with open(env.mnt_dir / 'container1/nested2/file-c1-nested', 'w'):

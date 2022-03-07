@@ -18,8 +18,8 @@ Synopsis
 | :command:`wl container mount []`
 | :command:`wl container unmount`
 | :command:`wl container modify [] <file>`
-| :command:`wl container publish <container>`
-| :command:`wl container unpublish <container>`
+| :command:`wl container publish <container> [<container> ...]`
+| :command:`wl container unpublish <container> [<container> ...]`
 
 Description
 ===========
@@ -188,8 +188,8 @@ Update a |~| container manifest.
 .. program:: wl-container-mount
 .. _wl-container-mount:
 
-:command:`wl container mount [--verbose/-v] [--remount/--no-remount] [options] <container> [<container>...]`
-------------------------------------------------------------------------------------------------------------
+:command:`wl container mount [--verbose/-v] [--remount/--no-remount] [--lazy/--no-lazy] [options] <container> [<container>...]`
+-------------------------------------------------------------------------------------------------------------------------------
 
 Mount a container given by name or path to manifest. The Wildland system has to
 be started first, see :ref:`wl start <wl-start>`.
@@ -233,6 +233,14 @@ catalogs. In both circumstances all paths will be considered, but cycles will be
 
    Don't replace existing container. If the container is already mounted, the
    command will fail. This is the default.
+
+.. option:: --lazy
+
+   Do not mount container backends until first use. This is the default.
+
+.. option:: --no-lazy
+
+   Mount container backends right away. This may take some time.
 
 .. option:: -s, --save
 
@@ -301,23 +309,39 @@ catalogs. In both circumstances all paths will be considered, but cycles will be
 
       wl c mount --manifests-catalog :/forests/User:
 
+
 .. program:: wl-container-mount-watch
 .. _wl-container-mount-watch:
 
-:command:`wl container mount-watch <pattern> [<pattern>...]`
-------------------------------------------------------------
+:command:`wl container mount-watch [--with-subcontainers/--without-subcontainers] <pattern|container> [<pattern|container>...]`
+-------------------------------------------------------------------------------------------------------------------------------
 
-Mount a list of containers from manifests in Wildland filesystem, then watch
-the filesystem for change.
+.. option:: -w, --with-subcontainers
+
+   Watch the subcontainers of those containers. This is the default.
+
+.. option:: -W, --without-subcontainers
+
+   Do not watch the subcontainers of those containers.
+
+Mount a containers along with it's subcontainers in Wildland filesystem,
+then watch subcontainers for changes and remount accordingly.
+If the container manifest is in Wildland filesystem, also watch
+the filesystem for change to the manifest.
 
 The Wildland system has to be mounted first, see :ref:`wl start <wl-start>`.
 
 Example::
 
-    wl container mount-watch '~/wildland/mynotes/*/*.yaml'
+    wl container mount-watch '~/wildland/mynotes/*/*.yaml' outside_container
 
 This will attempt to mount, unmount and remount containers as the files matched
 by ``/*/*.yaml`` change.
+Moreover will attempt to mount `outside_container` as well as its subcontainers
+as the subcontainers are changed. Additional newly created or removed
+subcontainers will also be mounted/unmounted accordingly.
+If the `outside_container` is outside Wildland filesystem,
+changes to the manifest itself will not be watched.
 
 The pattern can be also a container WL path, either specific (like
 ``wildland::/users/alice:/docs/notes:``), or wildcard (like
@@ -395,19 +419,19 @@ Stop the current mount-watch daemon.
 .. program:: wl-container-publish
 .. _wl-container-publish:
 
-:command:`wl container publish <container>`
--------------------------------------------
+:command:`wl container publish <container> [<container> ...]`
+-------------------------------------------------------------
 
-Publish a container manifest into user's manifests catalog (first container from the catalog
+Publish container manifests into user's manifests catalog (first container from the catalog
 that provides read-write storage will be used).
 
 .. program:: wl-container-unpublish
 .. _wl-container-unpublish:
 
-:command:`wl container unpublish <container>`
----------------------------------------------
+:command:`wl container unpublish <container> [<container> ...]`
+---------------------------------------------------------------
 
-Unublish a container manifest from the whole of a user's manifests catalog.
+Unpublish container manifests from the whole of a user's manifests catalog.
 
 .. _wl-container-sign:
 .. _wl-container-verify:
