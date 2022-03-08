@@ -116,6 +116,11 @@ transpose-test:
     reports:
       cobertura: artifacts/coverage.xml
 
+default-forest-test:
+  extends: .plugin_test
+  script:
+    - ./ci/ci-default-forest
+    
 categorization-proxy-test:
   extends: .plugin_test
   script:
