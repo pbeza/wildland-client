@@ -38,7 +38,6 @@ expected_pcre="/home/user/wildland/mydirs/
     .── users/
 .*
 [\s\S]+?
-
 \d+ directories, \d+ files"
 run tree -F ~/wildland/mydirs/
 
