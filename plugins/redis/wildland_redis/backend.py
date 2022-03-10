@@ -196,13 +196,19 @@ class RedisStorageBackend(FileChildrenMixin, DirectoryCachedStorageMixin, Storag
             paths_only: bool = False
     ) -> Iterable[Tuple[PurePosixPath, Optional[Link]]]:
 
+        scan_prefix = self._generate_key(PurePosixPath("."))
+        if paths_only:
+            for key in self.redis.keys(scan_prefix + str(query_path)):
+                key_path = PurePosixPath(key.decode('utf-8'))
+                rel_path = key_path.relative_to(scan_prefix)
+                path = PurePosixPath(*(self._normalize_key(p) for p in str(rel_path).split("/")))
+                if str(path).endswith("/.__dir"):
+                    path = PurePosixPath(str(path)[:-len("/.__dir")])
+                yield path, None
+            return
+
         # Make use of Redis' multi-get (blocking) feature
         children = list(super().get_children(client, query_path, paths_only))
-
-        if paths_only:
-            for res_path, _ in children:
-                yield res_path, None
-            return
 
         keys = [self._generate_key(path) for path, _ in children]
         manifests = self.redis.mget(keys)
