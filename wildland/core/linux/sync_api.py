@@ -129,7 +129,7 @@ class WildlandSyncLinux(WildlandSync):
                 self.__try_recv(self.manager)
                 self.__try_send(self.manager)
             except (OSError, ValueError, BrokenPipeError):
-                logger.info('manager disconnected')
+                logger.debug('manager disconnected')
                 break
             except Exception:
                 logger.exception('manager thread:')
@@ -176,7 +176,7 @@ class WildlandSyncLinux(WildlandSync):
                     continue
                 break
 
-        logger.info('failed to connect to manager socket')
+        logger.debug('failed to connect to manager socket')
         return None
 
     @wildland_result()
@@ -184,7 +184,7 @@ class WildlandSyncLinux(WildlandSync):
         if self.manager:
             return WildlandResult.OK()
 
-        logger.info('initializing sync manager')
+        logger.debug('initializing sync manager')
         conn = self._connect_manager(wait=False)
         if not conn:
             cmd = [sys.executable, '-m', 'wildland.core.linux.sync_manager',
@@ -199,14 +199,14 @@ class WildlandSyncLinux(WildlandSync):
 
         conn.close()
 
-        logger.info('sync manager initialized')
+        logger.debug('sync manager initialized')
         return WildlandResult.OK()
 
     def syncer_stop(self) -> WildlandResult:
         if self.manager is None:
             return WildlandResult.OK()
 
-        logger.info('stopping sync manager')
+        logger.debug('stopping sync manager')
         cmd = self._new_cmd(WlSyncCommandType.SHUTDOWN)
         result, _ = self._execute_cmd(cmd)
 
@@ -218,7 +218,7 @@ class WildlandSyncLinux(WildlandSync):
             # TODO timeout and kill
             time.sleep(0.01)
 
-        logger.info('sync manager stopped')
+        logger.debug('sync manager stopped')
         return result
 
     def attach(self) -> WildlandResult:
