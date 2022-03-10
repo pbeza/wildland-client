@@ -403,10 +403,13 @@ def stop(obj: ContextObj, keep_sync_daemon: bool) -> None:
         raise CliError(str(ex)) from ex
 
     if not keep_sync_daemon:
-        try:
-            obj.client.run_sync_command('shutdown')
-        except ControlClientError:
-            pass  # we don't expect a response
+        obj.wlsync.syncer_stop()
+
+
+@main.command(short_help='stop background sync manager')
+@click.pass_obj
+def stop_sync(obj: ContextObj) -> None:
+    obj.wlsync.syncer_stop()
 
 
 @main.command(short_help='watch for changes')
