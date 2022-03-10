@@ -33,6 +33,8 @@ from pathlib import Path
 from typing import List, Tuple, Callable
 import click
 
+from ..core.sync_api import sync_api
+from ..exc import WildlandError
 from ..utils import format_options_required_first, format_multi_command_options, \
     format_command_options
 from ..core.wildland_core import WildlandCore
@@ -50,6 +52,14 @@ class ContextObj:
         self.client = client
         self.session = client.session
         self.wlcore = WildlandCore(self.client)
+        self.wlsync = sync_api(self.client)
+        assert self.wlsync is not None
+        status = self.wlsync.attach()
+        if not status.success:
+            raise WildlandError(status.errors[0])
+
+    def __del__(self):
+        self.wlsync.detach()
 
 
 class AliasedGroup(click.Group):

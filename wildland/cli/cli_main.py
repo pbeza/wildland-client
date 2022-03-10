@@ -295,13 +295,18 @@ def status(obj: ContextObj, container: Optional[str], with_subcontainers: bool,
                 _print_storage_status(storage, all_paths)
 
     click.echo()
-    result = obj.client.run_sync_command('status')
+    # mypy complains about wlsync being None but we assert it's not in ContextObj constructor
+    err, result = obj.wlsync.get_current_sync_jobs()  # type: ignore
+    if not err.success:
+        raise WildlandError(err.errors[0])
+
     if len(result) == 0:
         click.echo('No sync jobs running')
     else:
         click.echo('Sync jobs:')
-        for s in result:
-            click.echo(s)
+        # TODO: show something more user-friendly than container id
+        for cid, state in result.items():
+            click.echo(f'{cid}: {state}')
 
 
 def _print_storage_status(storage: StorageInfo, all_paths: bool):
