@@ -323,10 +323,10 @@ def main(s1: str, s2: str):
     logger.info('main: sync = %s', status)
 
     status = api.get_file_sync_state(cont, 'testfile')
-    logger.info(f'main: file sync state = {status}')
+    logger.info(f'main: testfile info 1 = {status}')
 
     logger.info('main: wait for stop')
-    status = api.wait_for_sync(cont, 10)
+    status = api.wait_for_sync(cont, 10, stop_on_completion=False)
     logger.info(f'main: wait1 = {status}')
 
     status = api.get_container_sync_conflicts(cont)
@@ -334,14 +334,14 @@ def main(s1: str, s2: str):
 
     time.sleep(1)
     Path('/home/user/storage/s1/testfile').touch()
-    status = api.wait_for_sync(cont, 10)
+    status = api.wait_for_sync(cont, 10, stop_on_completion=False)
     logger.info(f'main: wait2 = {status}')
 
     status = api.get_current_sync_jobs()
     logger.info(f'main: all jobs = {status}')
 
     status = api.get_file_sync_state(cont, 'testfile')
-    logger.info(f'main: file info = {status}')
+    logger.info(f'main: testfile info 2 = {status}')
 
     status = api.get_container_sync_details(cont)
     logger.info(f'main: details = {status}')
