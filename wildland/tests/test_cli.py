@@ -5152,6 +5152,7 @@ def test_storage_template_create(cli, base_dir):
         read_data = yaml_parser.load(f)
         assert read_data == [{
             'type': 'local',
+            'source': 'custom',
             'location': '/foo{{ local_dir if local_dir is defined else "" }}/{{ uuid }}',
             'read-only': False
         }]
