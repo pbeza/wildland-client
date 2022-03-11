@@ -190,7 +190,7 @@ class WildlandSyncApi(metaclass=abc.ABCMeta):
         """
 
     @abc.abstractmethod
-    def stop_container_sync(self, container_id: str, force: bool) -> WildlandResult:
+    def stop_container_sync(self, container_id: str, force: bool = False) -> WildlandResult:
         """
         Stop syncing given container.
         :param container_id: container_id in the format as in Wildland Core API.
@@ -295,14 +295,14 @@ class WildlandSyncApi(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def wait_for_sync(self, container_id: str, timeout: Optional[float] = None,
-                      stop_on_completion: bool = True) -> Tuple[WildlandResult, str]:
+                      stop_on_completion: bool = True) -> Tuple[WildlandResult, List[SyncApiEvent]]:
         """
         Wait until a sync job is completed (state: SYNCED).
         :param container_id: container_id in the format as in Wildland Core API.
         :param timeout: optional timeout in seconds.
         :param stop_on_completion: stop the sync job once it reaches SYNCED status
                                    (mostly useful for one-shot jobs).
-        :return: WildlandResult and sync errors encountered during wait, if any.
+        :return: WildlandResult and sync errors/conflicts encountered during sync, if any.
 
         Note: continuous sync can reach state: SYNCED multiple times if there are any storage
               changes detected after it's SYNCED for the first time.

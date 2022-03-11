@@ -32,7 +32,6 @@ from typing import Dict, Iterable, List, Optional, Sequence, Union
 
 import click
 
-from wildland.control_client import ControlClientError
 from wildland.exc import WildlandError
 from wildland.fs_client import StorageInfo
 from wildland.manifest.template import TemplateManager
@@ -295,18 +294,23 @@ def status(obj: ContextObj, container: Optional[str], with_subcontainers: bool,
                 _print_storage_status(storage, all_paths)
 
     click.echo()
-    # mypy complains about wlsync being None but we assert it's not in ContextObj constructor
-    err, result = obj.wlsync.get_current_sync_jobs()  # type: ignore
-    if not err.success:
-        raise WildlandError(err.errors[0])
+    result, data = obj.wlsync.get_current_sync_jobs()
+    if not result.success:
+        raise WildlandError(result)
 
-    if len(result) == 0:
+    if len(data) == 0:
         click.echo('No sync jobs running')
     else:
         click.echo('Sync jobs:')
-        # TODO: show something more user-friendly than container id
-        for cid, state in result.items():
+        for cid, state in data.items():
+            # TODO: show something more user-friendly than container id
             click.echo(f'{cid}: {state}')
+            result, conflicts = obj.wlsync.get_container_sync_conflicts(cid)
+            if not result.success:
+                raise WildlandError(result)
+
+            for conflict in conflicts:
+                click.echo(f'  Conflict: {conflict.path}')
 
 
 def _print_storage_status(storage: StorageInfo, all_paths: bool):
@@ -409,6 +413,7 @@ def stop(obj: ContextObj, keep_sync_daemon: bool) -> None:
 @main.command(short_help='stop background sync manager')
 @click.pass_obj
 def stop_sync(obj: ContextObj) -> None:
+    """Stop the sync manager and all sync jobs."""
     obj.wlsync.syncer_stop()
 
 

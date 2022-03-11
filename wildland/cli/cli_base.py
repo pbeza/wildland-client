@@ -29,11 +29,12 @@ import collections
 import sys
 import traceback
 import types
+from functools import partial
 from pathlib import Path
 from typing import List, Tuple, Callable
 import click
 
-from ..core.sync_api import sync_api
+from ..core.sync_api import sync_api, WildlandSync
 from ..exc import WildlandError
 from ..utils import format_options_required_first, format_multi_command_options, \
     format_command_options
@@ -42,9 +43,13 @@ from ..core.wildland_core import WildlandCore
 
 # pylint: disable=no-self-use
 
-
 class ContextObj:
     """Helper object for keeping state in :attr:`click.Context.obj`"""
+
+    @staticmethod
+    def teardown(sync: WildlandSync):
+        """Cleanup invoked on click context teardown"""
+        sync.detach()
 
     def __init__(self, client):
         self.fs_client = client.fs_client
@@ -53,13 +58,11 @@ class ContextObj:
         self.session = client.session
         self.wlcore = WildlandCore(self.client)
         self.wlsync = sync_api(self.client)
-        assert self.wlsync is not None
+        ctx = click.get_current_context()
+        ctx.call_on_close(partial(self.teardown, self.wlsync))
         status = self.wlsync.attach()
         if not status.success:
-            raise WildlandError(status.errors[0])
-
-    def __del__(self):
-        self.wlsync.detach()
+            raise WildlandError(status)
 
 
 class AliasedGroup(click.Group):

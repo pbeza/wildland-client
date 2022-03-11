@@ -51,6 +51,10 @@ from .cli_base import aliased_group, ContextObj
 from .cli_exc import CliError
 from .cli_storage import do_create_storage_from_templates
 from ..container import Container
+from ..core.core_utils import make_wl_storage_id
+from ..core.sync_api import WildlandSync
+from ..core.wildland_result import WLErrorType
+from ..core.wildland_sync_api import SyncApiEventType
 from ..exc import WildlandError
 from ..manifest.manifest import ManifestError
 from ..manifest.template import TemplateManager
@@ -601,33 +605,7 @@ def _get_container_accesses(ctx, input_file):
     return container_yaml.get('access', [])
 
 
-def wl_path_for_container(client: Client, container: Container,
-                          user_paths: Optional[Iterable[Iterable[PurePosixPath]]] = None) -> str:
-    """
-    Return user-friendly WL path for the container.
-    """
-    ret = client.bridge_separator
-
-    if user_paths:
-        # take some set of bridges to the user
-        for path in list(user_paths)[0]:
-            ret += str(path) + client.bridge_separator
-
-    # add non-default owner if needed
-    if ret == client.bridge_separator and container.owner != client.config.get('@default-owner'):
-        ret = container.owner + client.bridge_separator
-
-    # UUID path is always first, we want a more friendly one if possible
-    # reverse sort puts paths like '/.uuid/' or '/.backends/' last
-    paths = container.paths
-    paths.sort(reverse=True)
-    ret += str(paths[0]) + client.bridge_separator
-
-    return ret
-
-
-def _cache_sync(client: Client, container: Container, storages: List[Storage], verbose: bool,
-                user_paths: Iterable[Iterable[PurePosixPath]]):
+def _cache_sync(sync: WildlandSync, container: Container, storages: List[Storage], verbose: bool):
     """
     Start sync between cache storage and old primary storage.
     """
@@ -636,13 +614,19 @@ def _cache_sync(client: Client, container: Container, storages: List[Storage], v
         if verbose:
             click.echo(f'Using cache at: {primary.params["location"]}')
         src = storages[1]  # [1] is the non-cache (old primary)
-        cname = wl_path_for_container(client, container, user_paths)
-        state = client.get_sync_job_state(container.sync_id)
-        if not state:  # sync not running for this container
-            # start bidirectional sync (this also performs an initial one-shot sync)
-            # this happens in the background, user can see sync status/progress using `wl sync`
-            client.do_sync(cname, container.sync_id, src.params, primary.params,
-                           one_shot=False, unidir=False)
+        result, _ = sync.get_container_sync_state(container.sync_id)
+        if not result.success:
+            if result.errors[0].code == WLErrorType.SYNC_FOR_CONTAINER_NOT_RUNNING:
+                # start bidirectional sync (this also performs an initial one-shot sync)
+                # this happens in the background, user can see sync status/progress using `wl sync`
+                s1_id = make_wl_storage_id(container.owner, str(container.uuid_path),
+                                           src.backend_id)
+                s2_id = make_wl_storage_id(container.owner, str(container.uuid_path),
+                                           primary.backend_id)
+                result = sync.start_container_sync(container.sync_id, s1_id, s2_id, continuous=True,
+                                                   unidirectional=False)
+
+            raise WildlandError(result)
 
 
 def prepare_mount(obj: ContextObj,
@@ -683,7 +667,7 @@ def prepare_mount(obj: ContextObj,
         if primary_storage_id is None:
             if verbose:
                 click.echo(f'new: {container_name}')
-            _cache_sync(obj.client, container, storages, verbose, user_paths)
+            _cache_sync(obj.wlsync, container, storages, verbose)
             yield container, storages, user_paths, subcontainer_of
         elif remount:
             to_remount, to_unmount = cli_common.prepare_remount(
@@ -691,7 +675,7 @@ def prepare_mount(obj: ContextObj,
             for storage_id in to_unmount:
                 obj.fs_client.unmount_storage(storage_id)
 
-            _cache_sync(obj.client, container, storages, verbose, user_paths)
+            _cache_sync(obj.wlsync, container, storages, verbose)
             yield container, to_remount, user_paths, subcontainer_of
         else:
             raise WildlandError(f'Already mounted: {container.local_path}')
@@ -983,7 +967,7 @@ def _unmount(obj: ContextObj, container_names: Sequence[str], path: str,
             for ident in ids:
                 obj.fs_client.unmount_storage(ident)
             click.echo('Stopping all sync jobs')
-            obj.client.run_sync_command('stop-all')
+            obj.wlsync.syncer_stop()
         else:
             click.echo('No storages to unmount')
         return
@@ -1044,7 +1028,7 @@ def _unmount(obj: ContextObj, container_names: Sequence[str], path: str,
 
         for storage_id in all_cache_ids:
             container = obj.fs_client.get_container_from_storage_id(storage_id)
-            obj.client.stop_sync(container.sync_id)
+            obj.wlsync.stop_container_sync(container.sync_id)
             obj.fs_client.unmount_storage(storage_id)
 
     elif not undo_save:
@@ -1269,17 +1253,29 @@ def sync_container(obj: ContextObj, target_storage, source_storage, one_shot, no
 
     source = client.get_local_storage(container, source_storage)
     target = client.get_remote_storage(container, target_storage)
+    s1_id = make_wl_storage_id(container.owner, container.uuid_path, source.backend_id)
+    s2_id = make_wl_storage_id(container.owner, container.uuid_path, target.backend_id)
     job_id = container.sync_id
-    response = client.do_sync(cont, job_id, source.params, target.params, one_shot, unidir=False)
-
-    click.echo(response)
+    result = obj.wlsync.start_container_sync(job_id, s1_id, s2_id, continuous=not one_shot,
+                                             unidirectional=False)
+    if not result.success:
+        raise WildlandError(result)
 
     if one_shot:
         if no_wait:
             click.echo('One-shot sync started, run `wl status` for current status and '
                        '`wl container stop-sync` to stop/clear its status.')
         else:
-            click.echo(client.wait_for_sync(job_id)[0])
+            result, events = obj.wlsync.wait_for_sync(job_id)
+            if not result.success:
+                raise WildlandError(result)
+
+            for event in events:
+                if event.type == SyncApiEventType.ERROR:
+                    click.echo(f'  Error: {event.error}')
+                elif event.type == SyncApiEventType.CONFLICT:
+                    assert event.conflict is not None
+                    click.echo(f'  Conflict: {event.conflict.path}')
 
 
 @container_.command('stop-sync', short_help='stop syncing a container')
@@ -1290,8 +1286,9 @@ def stop_syncing_container(obj: ContextObj, cont):
     Stop sync process for the given container.
     """
     container = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, cont)
-    response = obj.client.stop_sync(container.sync_id)
-    click.echo(response)
+    result = obj.wlsync.stop_container_sync(container.sync_id)
+    if not result.success:
+        raise WildlandError(result)
 
 
 @container_.command('list-conflicts', short_help='list detected file conflicts across storages')

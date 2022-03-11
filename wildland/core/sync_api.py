@@ -32,6 +32,7 @@ from wildland.core.core_utils import parse_wl_storage_id
 from wildland.core.sync_internal import WlSyncCommand, WlSyncCommandType
 from wildland.core.wildland_result import WildlandResult, WLErrorType, wildland_result
 from wildland.core.wildland_sync_api import WildlandSyncApi, SyncApiEvent, SyncApiEventType
+from wildland.exc import WildlandError
 from wildland.log import get_logger
 from wildland.storage_sync.base import SyncState, SyncConflict, SyncFileState
 
@@ -137,7 +138,7 @@ class WildlandSync(WildlandSyncApi, abc.ABC):
         result, _ = self._execute_cmd(cmd)  # this command only returns success status
         return result
 
-    def stop_container_sync(self, container_id: str, force: bool) -> WildlandResult:
+    def stop_container_sync(self, container_id: str, force: bool = False) -> WildlandResult:
         cmd = self._new_cmd(WlSyncCommandType.JOB_STOP,
                             container_id=container_id,
                             force=force)
@@ -238,58 +239,67 @@ class WildlandSync(WildlandSyncApi, abc.ABC):
         return result, data
 
     def wait_for_sync(self, container_id: str, timeout: Optional[float] = None,
-                      stop_on_completion: bool = True) -> Tuple[WildlandResult, str]:
+                      stop_on_completion: bool = True) -> Tuple[WildlandResult, List[SyncApiEvent]]:
         synced = threading.Event()
-        errors = ''
+        events = []
 
         # we register the callback before checking state manually to avoid a race condition
         # (otherwise state can change after we check it manually but before we register callback)
         def event_callback(event: SyncApiEvent):
-            nonlocal errors
+            nonlocal events
             if event.type == SyncApiEventType.STATE and event.state == SyncState.SYNCED:
                 synced.set()
 
             # TODO any errors are fatal now, in the future there might be nonfatal ones
             if event.type == SyncApiEventType.ERROR:
-                if len(errors) > 0:
-                    errors += '\n'
-                assert event.error
-                errors += event.error
+                events.append(event)
                 synced.set()
+                return
 
+        # we don't monitor conflict events, we get them all before returning
+        # because there might've been some already before we started waiting
         status, hid = self.register_event_handler(container_id,
                                                   {SyncApiEventType.STATE, SyncApiEventType.ERROR},
                                                   event_callback)
         if not status.success:
             logger.warning('wait_for_sync: failed to register event handler: %s', status)
-            return status, errors
+            return status, events
 
         try:
             # manually checking state is needed in case the job is already synced
             status, state = self.get_container_sync_state(container_id)
             if not status.success:
                 logger.warning('wait_for_sync: failed to get state: %s', status)
-                return status, errors
+                return status, events
 
             if state == SyncState.SYNCED:
-                return WildlandResult.OK(), errors
+                synced.set()
 
             if not synced.wait(timeout=timeout):
-                return WildlandResult.error(WLErrorType.TIMEOUT), errors
+                return WildlandResult.error(WLErrorType.TIMEOUT), events
+
+            status, conflicts = self.get_container_sync_conflicts(container_id)
+            if not status.success:
+                logger.warning('wait_for_sync: failed to get conflicts: %s', status)
+                return status, events
+
+            for conflict in conflicts:
+                events.append(SyncApiEvent(container_id, SyncApiEventType.CONFLICT,
+                                           conflict=conflict))
 
             if stop_on_completion:
                 logger.debug('wait_for_sync: stopping job %s', container_id)
                 status = self.stop_container_sync(container_id, force=False)  # TODO force
                 if not status.success:
                     logger.warning('wait_for_sync: failed to stop job %s: %s', container_id, status)
-                    return status, errors
+                    return status, events
         finally:
             self.remove_event_handler(hid)
 
-        return WildlandResult.OK(), errors
+        return WildlandResult.OK(), events
 
 
-def sync_api(client: Client) -> Optional[WildlandSync]:
+def sync_api(client: Client) -> WildlandSync:
     """
     Instantiate a sync API implementation.
     """
@@ -301,4 +311,4 @@ def sync_api(client: Client) -> Optional[WildlandSync]:
             logger.exception('Failed to load API %s', ep)
 
     logger.error('No sync API implementation found')
-    return None
+    raise WildlandError('No sync API implementation found')

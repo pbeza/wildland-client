@@ -202,3 +202,10 @@ def parse_wl_storage_id(storage_id: str) -> Tuple[str, str, str]:
     # user_id:/.uuid/container_uuid:/.uuid/backend_uuid
     parts = storage_id.split(':')
     return parts[0], parts[1], parts[2].split('/')[-1]
+
+
+def make_wl_storage_id(user_id: str, container_uuid_path: str, backend_id: str) -> str:
+    """
+    Create core storage ID from components.
+    """
+    return f'{user_id}:{container_uuid_path}:{backend_id}'
