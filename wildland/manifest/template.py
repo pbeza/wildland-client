@@ -186,8 +186,7 @@ class TemplateFile:
                 raise ye
             if yaml_ds is None:
                 raise WildlandError(f'Failed to parse template file [{self.file_path}].')
-            return [
-                StorageTemplate(source_data=data) for data in yaml_ds]
+            return [StorageTemplate(source_data=data) for data in yaml_ds]
 
     def __lt__(self, other):
         return str(self) < str(other)

@@ -5205,6 +5205,7 @@ def test_storage_template_create_custom_access(cli, base_dir):
             'type': 'local',
             'location': '/foo{{ local_dir if local_dir is defined else "" }}/{{ uuid }}',
             'read-only': False,
+            'source': 'custom',
             'access': [{'user': '0xaaa'}, {'user': '0xbbb'}]
         }]
 
@@ -5217,6 +5218,7 @@ def test_storage_template_create_custom_access(cli, base_dir):
             'type': 'local',
             'location': '/foo{{ local_dir if local_dir is defined else "" }}/{{ uuid }}',
             'read-only': False,
+            'source': 'custom',
             'access': [{'user': '*'}]
         }]
 
@@ -5249,11 +5251,13 @@ def test_appending_to_existing_storage_template(cli, base_dir):
         assert read_data == [{
             'type': 'local',
             'location': '/foo{{ local_dir if local_dir is defined else "" }}/{{ uuid }}',
-            'read-only': False
+            'read-only': False,
+            'source': 'custom'
         }, {
             'type': 'local',
             'location': '/bar{{ local_dir if local_dir is defined else "" }}/{{ uuid }}',
-            'read-only': True
+            'read-only': True,
+            'source': 'custom'
         }]
 
 
@@ -5300,6 +5304,7 @@ def test_local_storage_template(cli, base_dir):
     assert t1_jinja[0] == {
         'location': str(storage_dir) + '{{ local_dir if local_dir is defined else "" }}/{{ uuid }}',
         'read-only': False,
+        'source': 'custom',
         'type': 'local'
     }
 
@@ -5324,6 +5329,7 @@ def test_delegated_template(cli, base_dir):
     assert storage_template == {
         'read-only': False,
         'reference-container': f'file://{base_dir}/containers/Container.container.yaml',
+        'source': 'custom',
         'subdirectory': '{{ local_dir if local_dir is defined else "" }}/{{ uuid }}',
         'type': 'delegate'
     }
@@ -5348,6 +5354,7 @@ def test_delegated_template(cli, base_dir):
                 {
                     'read-only': False,
                     'reference-container': f'file://{base_dir}/containers/Container.container.yaml',
+                    'source': 'custom',
                     'subdirectory': mock.ANY,
                     'type': 'delegate',
                     'backend-id': mock.ANY,
@@ -5385,6 +5392,7 @@ def test_proxy_storage_template(cli, base_dir):
     assert template_jinja[0] == {
         'read-only': False,
         'reference-container': f'file://{base_dir}/containers/Container.container.yaml',
+        'source': 'custom',
         'timeline-root': '/timeline',
         'type': 'timeline'
     }
@@ -5409,6 +5417,7 @@ def test_proxy_storage_template(cli, base_dir):
                 {
                     'read-only': False,
                     'reference-container': f'file://{base_dir}/containers/Container.container.yaml',
+                    'source': 'custom',
                     'timeline-root': '/timeline',
                     'type': 'timeline',
                     'backend-id': mock.ANY,
