@@ -210,6 +210,7 @@ backends:
       login: user
       password: password
     read-only: false
+    source: custom
     url: http://localhost:8081/
     backend-id: $UUID_PCRE
     manifest-pattern:
