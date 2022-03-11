@@ -604,6 +604,38 @@ class SodiumSigContext(SigContext):
         except CryptoError as ce:
             raise SigError('Failed to decrypt data')from ce
 
+    def validate_cargo_keypairs(self,
+                                sign_public_key: bytes,
+                                sign_private_key: bytes,
+                                enc_public_key: bytes,
+                                enc_private_key: bytes):
+        failure = False
+        decoded_sign_pubkey = bytes.fromhex(sign_public_key)
+        decoded_sign_privkey = bytes.fromhex(sign_private_key)
+        decoded_enc_pubkey = bytes.fromhex(enc_public_key)
+        decoded_enc_privkey = bytes.fromhex(enc_private_key)
+        key_id = self.fingerprint(decoded_sign_pubkey)
+
+        try:
+            test_data = b'test_data'
+            signature = self.sign(key_id, test_data, True)
+            self.verify(signature, test_data)
+        except SigError:
+            print("signature error")
+            failure = True
+
+        try:
+            test_data = b'test_data'
+            encrypted_data, encrypted_keys = self.encrypt(test_data, [decoded_enc_pubkey])
+            decrypted_data = self.decrypt(encrypted_data, encrypted_keys)
+            if not test_data == decrypted_data:
+                raise SigError('Not a matching key pair.')
+        except SigError:
+            print("encryption error")
+            failure = True
+
+        return failure
+
     def import_key_pair(self, public_key: bytes, private_key: Optional[bytes]):
         self.key_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
 

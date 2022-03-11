@@ -176,6 +176,14 @@ def test_import_public_private(sig, tmpdir):
     assert sig2.private_keys[owner] == private_key_str
     assert pubkey == sig2.get_primary_pubkey(owner)
 
+def test_validate_cargo_keypairs(sig, tmpdir):
+    sign_priv = "e02cdfa23ad7d94508108ad41410e556c5b0737e9c264d4a2304a7a45894fc571558c041e6711151f511f232241345268fa5ba120beb9829506b341f9ae9ca18"
+    sign_pub = "0b928cf353fd7c0a89da2908003869da6b8a2710d0b55a8f8c3123d02c825a83"
+    enc_sec = "f8942c3ed54ed783fc6142335b88ae557b2fdf555808c276ed37d8dd5394fc57"
+    enc_pub = "293ef40c8098e209c814f56ecd02de93ebaab104c0de5f563c2a5910188b1d66"
+    keydir_2 = PosixPath(tmpdir / 's2')
+    sig2 = SodiumSigContext(keydir_2)
+    assert sig2.validate_cargo_keypairs(sign_priv, sign_pub, enc_sec, enc_pub)
 
 def test_import_fail(sig, tmpdir):
     owner_1, pubkey_1 = sig.generate()
