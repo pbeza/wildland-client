@@ -97,7 +97,7 @@ class WlSyncManagerLinux(WlSyncManager):
         """
         data = sock.recv(1024)
         if len(data) == 0:
-            return None
+            raise BrokenPipeError
 
         return pickle.loads(data)
 

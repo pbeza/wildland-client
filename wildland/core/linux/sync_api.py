@@ -58,16 +58,11 @@ class WildlandSyncLinux(WildlandSync):
         """
         Receives a message from socket (assumes data is available).
         """
-        try:
-            data = sock.recv(1024)
-        except OSError:  # disconnected etc
-            return None
-
+        data = sock.recv(1024)
         if len(data) == 0:
-            return None
+            raise BrokenPipeError
 
-        x = pickle.loads(data)
-        return x
+        return pickle.loads(data)
 
     def __try_recv(self, conn: socket):
         """
@@ -78,8 +73,6 @@ class WildlandSyncLinux(WildlandSync):
             return
 
         msg = self._recv_msg(conn)
-        if msg is None:  # can happen when disconnecting
-            return
 
         assert isinstance(msg, tuple), f'Invalid message from manager: {msg}'
 
