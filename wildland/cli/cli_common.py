@@ -465,7 +465,7 @@ def _sync_removed_storages(obj, old_manifest, new_manifest):
                 try:
                     #get first existing local storage from new manifest
                     target = obj.client.get_local_storage(container,
-                                                          remote_storage=new_storage_ids[0])
+                                                          local_storage=new_storage_ids[0])
                 except WildlandError:
                     # pylint: disable=raise-missing-from
                     raise WildlandError("Cannot find storage to sync data into.")
