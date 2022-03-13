@@ -4891,6 +4891,7 @@ def test_container_sync(base_dir, cli):
     cli('storage', 'create', 'local-cached', '--container', container_name,
         '--location', storage2_data)
     cli('container', 'sync', '--target-storage', 'local-cached', container_name)
+
     make_file(storage1_data / 'testfile', 'test data')
     wait_for_file(storage2_data / 'testfile', 'test data')
 

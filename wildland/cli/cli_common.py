@@ -320,6 +320,7 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
     determine if it should be republished).
     """
     obj: ContextObj = ctx.obj
+
     if obj.client.is_url(input_file):
         raise CliError('This command supports only an local path to a file. Consider using '
                        'edit command for a specific object, e.g. wl container edit')
@@ -369,6 +370,7 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
         if original_data == data:
             click.echo('No changes detected, not saving.')
             return False
+
         try:
             new_manifest = Manifest.from_unsigned_bytes(data, obj.client.session.sig)
             new_manifest.skip_verification()
