@@ -25,6 +25,7 @@ Templates for manifests.
 
 import re
 import uuid
+from enum import Enum
 from typing import List, Optional, Union
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
@@ -72,6 +73,15 @@ def regex_contains(s, pattern) -> bool:
     Implementation of regex_contains for jinja2
     """
     return re.search(pattern, s) is not None
+
+
+class TemplateSource(Enum):
+    """
+    Possible template source types.
+    """
+    CUSTOM = 'custom'
+    FREE_TIER = 'free_tier'
+    MARKET = 'market'
 
 
 class StorageTemplate:

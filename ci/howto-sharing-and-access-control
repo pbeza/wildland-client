@@ -256,6 +256,7 @@ manifests-catalog:
       login: userro
       password: passwordro
     read-only: true
+    source: custom
     url: http://localhost:8081/
     backend-id: $UUID_PCRE
     manifest-pattern:

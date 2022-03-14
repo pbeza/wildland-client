@@ -17,6 +17,10 @@
                     "type": "string",
                     "description": "Storage backend. The manifest should contain backend-specific parameters."
                 },
+                "source": {
+                    "type": "string",
+                    "description": "The origin of the storage. Set to `custom` when created from CLI"
+                },
                 "container-path": {
                     "$ref": "/schemas/types.json#abs-path",
                     "description": "Path identifying the container this storage is for (by convention, /.uuid/...)."
