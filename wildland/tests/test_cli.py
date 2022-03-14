@@ -169,9 +169,10 @@ def test_edit_with_storage_sync(cli, base_dir):
 
     # Remove second storage's lines to test storage sync
     editor = r'sed -i 16,19d'
-    result = cli('edit', base_dir / 'containers/Container.container.yaml', '--editor', editor, capture=True)
+    container_dir = base_dir / 'containers/Cotainer.container.yaml'
+    result = cli('edit', container_dir, '--editor', editor, capture=True)
     assert "Outdated storage for container" in result.splitlines()[0]
-    
+
     # Check if file synced to the other storage.
     assert wait_for_file(storage1_dir / 'testfile', 'test data')
 
