@@ -33,6 +33,7 @@ from ..client import Client
 from ..container import Container
 from ..control_client import ControlClientUnableToConnectError
 from ..publish import Publisher
+from ..storage import Storage
 from ..wildland_object.wildland_object import WildlandObject
 from ..wlenv import WLEnv
 from ..wlpath import WildlandPath
@@ -282,6 +283,24 @@ class WildlandCoreContainer(WildlandCoreApi):
         :return: WildlandResult
         """
         raise NotImplementedError
+
+    def container_get_storage_cache(self, container_id: str) \
+            -> Tuple[WildlandResult, Optional[Storage]]:
+        """
+        Get cache storage for a container.
+        :param container_id: id of the container (in the form of its publish_path,
+        userid:/.uuid/container_uuid)
+        :return: tuple of WildlandResult and, if successful, the cache storage
+        """
+        return self.__container_get_storage_cache(container_id)
+
+    @wildland_result()
+    def __container_get_storage_cache(self, container_id: str):
+        result, container = self.container_find_by_id(container_id)
+        if not result.success or not container:
+            raise FileNotFoundError(f'Cannot find container {container_id}')
+
+        return self.client.cache_storage(container)
 
     def container_modify(self, container_id: str, manifest_field: str, operation: ModifyMethod,
                          modify_data: List[str]) -> WildlandResult:

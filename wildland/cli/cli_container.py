@@ -51,6 +51,7 @@ from .cli_base import aliased_group, ContextObj
 from .cli_exc import CliError
 from .cli_storage import do_create_storage_from_templates
 from ..container import Container
+from ..core.wildland_core import WildlandCore
 from ..core.wildland_objects_api import WLObjectType
 from ..exc import WildlandError
 from ..manifest.manifest import ManifestError
@@ -259,8 +260,8 @@ def _container_info(obj, wl_container, users_and_bridge_paths):
     if bridge_paths:
         container_fields['bridge-paths-to-owner'] = bridge_paths
 
-    cache = obj.client.cache_storage(container)
-    if cache:
+    result, cache = obj.wlcore.container_get_storage_cache(wl_container.id)
+    if result.success and cache:
         storage_type = cache.storage_type
         result = {
             "type": storage_type,
@@ -743,12 +744,13 @@ def _create_cache(client: Client, container: Container, template_name: str,
     return cache
 
 
-def _delete_cache(client: Client, container: Container) -> bool:
+def _delete_cache(wlcore: WildlandCore, container: Container) -> bool:
     """
     Delete cache associated with the container. Returns True if cache was present.
     """
-    cache = client.cache_storage(container)
-    if cache:
+    result, cache = wlcore.container_get_storage_cache(
+        core_utils.container_to_wlcontainer(container).id)
+    if result.success and cache:
         click.echo(f'Deleting cache: {cache.local_path}')
         cache.local_path.unlink()
         return True
@@ -782,7 +784,7 @@ def delete_cache(obj: ContextObj, container_names):
     for name in container_names:
         containers = obj.client.load_containers_from(name)
         for container in containers:
-            if not _delete_cache(obj.client, container):
+            if not _delete_cache(obj.wlcore, container):
                 click.echo('Cache not set for the container')
 
 
@@ -1078,12 +1080,14 @@ def _collect_storage_ids_by_container_name(
     for container in containers:
         unique_storage_paths = obj.fs_client.get_unique_storage_paths(container, True)
 
-        cache = obj.client.cache_storage(container)
+        result, cache = obj.wlcore.container_get_storage_cache(
+            core_utils.container_to_wlcontainer(container).id)
+
         for mount_path in unique_storage_paths:
             storage_id, pm_id = obj.fs_client.find_storage_id_by_path(mount_path)
 
             backend_id = _mount_path_to_backend_id(mount_path)
-            if cache and cache.params['backend-id'] == backend_id:
+            if result.success and cache and cache.params['backend-id'] == backend_id:
                 cache_ids.append(storage_id)
             else:
                 storage_ids.append(storage_id)
@@ -1092,9 +1096,10 @@ def _collect_storage_ids_by_container_name(
 
         if with_subcontainers:
             sub_ids = obj.fs_client.find_all_subcontainers_storage_ids(container)
-            cache = obj.client.cache_storage(container)
+            result, cache = obj.wlcore.container_get_storage_cache(
+                core_utils.container_to_wlcontainer(container).id)
             for storage_id in sub_ids:
-                if cache and cache.params['backend-id'] == storage_id:
+                if result.success and cache and cache.params['backend-id'] == storage_id:
                     cache_ids.append(storage_id)
                 else:
                     storage_ids.append(storage_id)
@@ -1117,10 +1122,11 @@ def _collect_storage_ids_by_container_path(
 
     for storage_id in all_storage_ids:
         container = obj.fs_client.get_container_from_storage_id(storage_id)
-        cache = obj.client.cache_storage(container)
+        result, cache = obj.wlcore.container_get_storage_cache(
+            core_utils.container_to_wlcontainer(container).id)
         mount_path = obj.fs_client.get_primary_unique_mount_path_from_storage_id(storage_id)
         backend_id = _mount_path_to_backend_id(mount_path)
-        if cache and cache.params['backend-id'] == backend_id:
+        if result.success and cache and cache.params['backend-id'] == backend_id:
             cache_ids.append(storage_id)
         else:
             storage_ids.append(storage_id)

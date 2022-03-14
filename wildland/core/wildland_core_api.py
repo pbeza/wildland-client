@@ -27,6 +27,7 @@ from .wildland_result import WildlandResult
 from .wildland_objects_api import WLObject, WLTemplateFile, WLBridge, WLObjectType, WLUser, \
     WLStorageBackend, WLStorage, WLContainer
 from ..container import Container
+from ..storage import Storage
 
 
 class ModifyMethod(Enum):
@@ -534,6 +535,16 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         cache storage (becomes primary storage for the container while mounted)
         :return: WildlandResult
         :rtype:
+        """
+
+    @abc.abstractmethod
+    def container_get_storage_cache(self, container_id: str) \
+            -> Tuple[WildlandResult, Optional[Storage]]:
+        """
+        Get cache storage for a container.
+        :param container_id: id of the container (in the form of its publish_path,
+        userid:/.uuid/container_uuid)
+        :return: tuple of WildlandResult and, if successful, the cache storage
         """
 
     @abc.abstractmethod
