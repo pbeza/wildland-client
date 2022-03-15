@@ -294,7 +294,7 @@ class WildlandCoreContainer(WildlandCoreApi):
         """
         return self.__container_get_storage_cache(container_id)
 
-    @wildland_result()
+    @wildland_result(default_output=None)
     def __container_get_storage_cache(self, container_id: str):
         result, container = self.container_find_by_id(container_id)
         if not result.success or not container:
