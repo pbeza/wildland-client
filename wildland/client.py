@@ -31,12 +31,9 @@ import collections.abc
 import functools
 import glob
 import os
-import sys
-import time
 from copy import deepcopy
 from graphlib import TopologicalSorter
 from pathlib import Path, PurePosixPath
-from subprocess import Popen
 from typing import Dict, Iterable, Iterator, List, Optional, Set, Tuple, Union, Any
 from urllib.parse import urlparse, quote, unquote
 
@@ -46,9 +43,6 @@ from wildland.bridge import Bridge
 from wildland.control_client import ControlClientUnableToConnectError
 from wildland.wildland_object.wildland_object import WildlandObject
 from wildland.cleaner import get_cli_cleaner
-from .control_client import ControlClient
-from .storage_sync.base import SyncEvent, SyncStateEvent, SyncState, SyncConflictEvent, \
-    SyncErrorEvent
 from .user import User
 from .container import Container, ContainerStub
 from .link import Link
@@ -121,8 +115,6 @@ class Client:
         self.fs_client = WildlandFSClient(config.base_dir, mount_dir, fs_socket_path,
                                           bridge_separator=self.bridge_separator)
 
-        # we only connect to sync daemon if needed
-        self._sync_client: Optional[ControlClient] = None
         self.base_dir = base_dir
 
         try:
@@ -210,75 +202,6 @@ class Client:
                                    base_dir=self.cache_dir, quiet=True):
             cache.params['is-local-owner'] = True
             self.caches.append(cache)
-
-    def connect_sync_daemon(self):
-        """
-        Connect to the sync daemon. Starts the daemon if not running.
-        """
-        delay = 0.5
-        daemon_started = False
-        sync_socket_path = Path(self.config.get('sync-socket-path'))
-        self._sync_client = ControlClient()
-        for _ in range(20):
-            try:
-                self._sync_client.connect(sync_socket_path)
-                return
-            except ControlClientUnableToConnectError:
-                if not daemon_started:
-                    self.start_sync_daemon()
-                    daemon_started = True
-            time.sleep(delay)
-        raise WildlandError('Timed out waiting for sync daemon')
-
-    def start_sync_daemon(self):
-        """
-        Start the sync daemon.
-        """
-        cmd = [sys.executable, '-m', 'wildland.storage_sync.daemon']
-        if self.base_dir:
-            cmd.extend(['--base-dir', str(self.base_dir)])
-        logger.debug('starting sync daemon: %s', cmd)
-        Popen(cmd)
-
-    @property
-    def connected_to_sync_daemon(self):
-        """
-        Check whether a connection to the sync daemon is established.
-        """
-        return self._sync_client is not None
-
-    def run_sync_command(self, name, **kwargs) -> Any:
-        """
-        Run sync command (through the sync daemon).
-        """
-        if not self.connected_to_sync_daemon:
-            self.connect_sync_daemon()
-        assert self._sync_client
-        return self._sync_client.run_command(name, **kwargs)
-
-    def get_sync_event(self) -> Iterator[SyncEvent]:
-        """
-        Wait for sync event and return it.
-        """
-        assert self._sync_client
-        for event in self._sync_client.iter_events():
-            yield SyncEvent.fromJSON(str(event))
-
-    def get_sync_job_state(self, job_id: str) -> Optional[Tuple[SyncState, str]]:
-        """
-        Return state of a sync job or None if the job doesn't exist.
-        Returned tuple contains SyncState and a human-readable description.
-        """
-        state = self.run_sync_command('job-state', job_id=job_id)
-        if state:
-            return SyncState(state[0]), state[1]
-        return None
-
-    def stop_sync(self, job_id: str) -> str:
-        """
-        Stop a sync job by job ID.
-        """
-        return self.run_sync_command('stop', job_id=job_id)
 
     def sub_client_with_key(self, pubkey: str) -> Tuple['Client', str]:
         """
@@ -1479,53 +1402,6 @@ class Client:
                 # pylint: disable=raise-missing-from
                 raise WildlandError('No remote storage backend found: specify --target-storage.')
         return storage
-
-    def do_sync(self, container_name: str, job_id: str, source: dict, target: dict,
-                one_shot: bool, unidir: bool, active_events: List[str] = None,
-                wait_if_already_running: bool = False) -> str:
-        """
-        Start sync between source and target storages
-        """
-        kwargs = {'container_name': container_name, 'job_id': job_id, 'continuous': not one_shot,
-                  'unidirectional': unidir, 'source': source, 'target': target}
-        if active_events:
-            kwargs['active-events'] = active_events
-        if wait_if_already_running and self.connected_to_sync_daemon:
-            self.wait_for_sync(job_id, stop_on_finish=True)
-        return self.run_sync_command('start', **kwargs)
-
-    def wait_for_sync(self, job_id: str, stop_on_finish: bool = True) -> Tuple[str, bool]:
-        """
-        Wait for a sync job to complete (state: SYNCED).
-        Returns response messages and a bool meaning if the operation succeeded.
-        """
-        msg = ''
-        success = True
-        while True:
-            for event in self.get_sync_event():
-                assert event.job_id == job_id, 'Invalid response from sync daemon'
-
-                if isinstance(event, SyncStateEvent):
-                    if event.state == SyncState.SYNCED:
-                        msg += 'Sync successful.'
-                        break
-                    logger.debug('Sync state changed to %s', event.state)
-                elif isinstance(event, SyncConflictEvent):
-                    logger.debug('Sync conflict: %s', event.value)
-                    msg += f'Sync conflict: {event.value}'
-                elif isinstance(event, SyncErrorEvent):
-                    logger.warning('Sync error: %s', event.value)
-                    msg += f'Sync error: {event.value}'
-                    success = False
-                    break
-            else:
-                continue
-            break
-
-        if stop_on_finish:
-            self.stop_sync(job_id)
-
-        return msg, success
 
     def load_pubkeys_from_field(self, input_list, default_owner: str = None):
         """

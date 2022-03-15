@@ -297,7 +297,7 @@ class WildlandSyncApi(metaclass=abc.ABCMeta):
     def wait_for_sync(self, container_id: str, timeout: Optional[float] = None,
                       stop_on_completion: bool = True) -> Tuple[WildlandResult, List[SyncApiEvent]]:
         """
-        Wait until a sync job is completed (state: SYNCED).
+        Wait until a sync job is completed (state: SYNCED or ERROR).
         :param container_id: container_id in the format as in Wildland Core API.
         :param timeout: optional timeout in seconds.
         :param stop_on_completion: stop the sync job once it reaches SYNCED status

@@ -58,6 +58,7 @@ class WLErrorType(Enum):
     SYNC_FAILED_TO_COMMUNICATE_WITH_MANAGER = 804, "Failed to communicate with sync manager"
     SYNC_CALLBACK_NOT_FOUND = 805, "Sync event handler not found"
     SYNC_INVALID_CLIENT = 806, "Invalid client"
+    SYNC_ERROR = 807, "Sync interrupted due to error"
     OTHER = 999, None
 
     def __repr__(self):

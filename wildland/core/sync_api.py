@@ -272,7 +272,7 @@ class WildlandSync(WildlandSyncApi, abc.ABC):
                 logger.warning('wait_for_sync: failed to get state: %s', status)
                 return status, events
 
-            if state == SyncState.SYNCED:
+            if state in {SyncState.SYNCED, SyncState.ERROR}:
                 synced.set()
 
             if not synced.wait(timeout=timeout):
@@ -295,6 +295,11 @@ class WildlandSync(WildlandSyncApi, abc.ABC):
                     return status, events
         finally:
             self.remove_event_handler(hid)
+
+        if state == SyncState.ERROR:
+            # TODO either add a function to get all sync errors or queue events even before
+            # an event callback is requested
+            return WildlandResult.error(WLErrorType.SYNC_ERROR, description='TODO'), []
 
         return WildlandResult.OK(), events
 
