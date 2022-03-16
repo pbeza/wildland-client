@@ -41,7 +41,7 @@ from ..manifest.manifest import Manifest
 from .cli_base import aliased_group, ContextObj
 from .cli_exc import CliError
 from ..wlpath import WildlandPath, WILDLAND_URL_PREFIX
-from .cli_common import modify_manifest, set_fields
+from .cli_common import modify_manifest, set_fields, get_user_manifests_catalog
 from .cli_container import _mount as mount_container
 from .cli_container import _unmount as unmount_container
 from ..exc import WildlandError
@@ -501,30 +501,6 @@ def create(ctx: click.Context,
     _bootstrap_forest(ctx, owner, storage_template, manifest_local_dir, access_list)
 
 
-def get_user_manifests_catalog(obj, catalog_container):
-    """
-    Builds the 'manifests-catalog' property for the user manifest based on the catalog container.
-    """
-    manifests_catalog = []
-    for storage in obj.client.all_storages(container=catalog_container):
-        storage_backend = StorageBackend.from_params(storage.params)
-        assert isinstance(storage_backend, FileChildrenMixin), \
-            'Unsupported catalog storage type.'
-        rel_path = storage_backend.get_relpaths(catalog_container)
-
-        link_obj: Dict[str, Any] = {'object': 'link', 'file': f'/{list(rel_path)[0]}'}
-
-        fields = storage.to_manifest_fields(inline=True)
-        if not storage.access:
-            fields['access'] = obj.client.load_pubkeys_from_field(
-                    catalog_container.access, catalog_container.owner)
-        link_obj['storage'] = fields
-        if storage.owner != catalog_container.owner:
-            link_obj['storage-owner'] = storage.owner
-        manifests_catalog.append(link_obj)
-    return manifests_catalog
-
-
 def _bootstrap_forest(ctx: click.Context, user: str, manifest_storage_template_name: str,
                       manifest_local_dir: str = '/', access: List[Dict] = None):
 
@@ -636,7 +612,7 @@ def _create_container(obj: ContextObj,
                       storage_local_dir: str = '') -> Container:
 
     container = Container(owner=user.owner, paths=[PurePosixPath(p) for p in container_paths],
-                          backends=[], client=obj.client, access=access)
+                          backends=[], client=obj.client, access=access, is_manifests_catalog=True)
 
     obj.client.save_new_object(WildlandObject.Type.CONTAINER, container, container_name)
     do_create_storage_from_templates(obj.client,

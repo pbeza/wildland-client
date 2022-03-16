@@ -76,7 +76,8 @@ class Container(PublishableWildlandObject, obj_type=WildlandObject.Type.CONTAINE
                  title: Optional[str] = None,
                  categories: Optional[List[PurePosixPath]] = None,
                  manifest: Manifest = None,
-                 access: Optional[List[dict]] = None):
+                 access: Optional[List[dict]] = None,
+                 is_manifests_catalog: Optional[bool] = None):
         super().__init__()
         self.owner = owner
         # make sure uuid path is first
@@ -88,10 +89,9 @@ class Container(PublishableWildlandObject, obj_type=WildlandObject.Type.CONTAINE
         self.manifest = manifest
         self.access = deepcopy(access)
 
-        #: whether this container is a manifests catalog, loaded by iterating this
-        #: manifests catalog itself; this property is set externally by the
-        #: Search class, when loading a container by iterating a manifest catalog
-        self.is_manifests_catalog = False
+        #  this property can be set externally by the Search class, when
+        #  loading a container by iterating a manifest catalog
+        self.is_manifests_catalog = is_manifests_catalog or False
 
         self._uuid_path = self._ensure_uuid()
         self._storage_cache = [_StorageCache(self.fill_storage_fields(b), self)
@@ -188,7 +188,8 @@ class Container(PublishableWildlandObject, obj_type=WildlandObject.Type.CONTAINE
             title=fields.get('title'),
             categories=[PurePosixPath(p) for p in fields.get('categories', [])],
             manifest=manifest,
-            access=fields.get('access')
+            access=fields.get('access'),
+            is_manifests_catalog=fields.get('is-manifests-catalog'),
         )
 
     def to_manifest_fields(self, inline: bool, str_repr_only: bool = False) -> dict:
@@ -220,6 +221,7 @@ class Container(PublishableWildlandObject, obj_type=WildlandObject.Type.CONTAINE
             "categories": [str(cat) for cat in self.categories],
             "access": self.access,
             "backends": {'storage': cleaned_backends},
+            "is-manifests-catalog": self.is_manifests_catalog,
         }
         if not self.access:
             del fields['access']
