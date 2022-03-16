@@ -1429,13 +1429,13 @@ def __publish_container_after_modification(
 
     if published:
         if publish or publish is None:
-            republish_result = wlcore.object_republish(WLObjectType.CONTAINER, container_id)
+            republish_result = wlcore.object_republish_by_id(WLObjectType.CONTAINER, container_id)
 
             if not republish_result.success:
                 raise CliError(str(republish_result))
     else:
         if publish:
-            publish_result = wlcore.object_publish(WLObjectType.CONTAINER, container_id)
+            publish_result = wlcore.object_publish_by_id(WLObjectType.CONTAINER, container_id)
 
             if not publish_result.success:
                 raise CliError(str(publish_result))

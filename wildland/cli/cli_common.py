@@ -31,7 +31,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Callable, List, Any, Optional, Dict, Tuple, Union
+from typing import Callable, List, Any, Optional, Dict, Tuple, Union, Set
 
 import click
 import progressbar
@@ -57,7 +57,6 @@ from ..exc import WildlandError
 from ..utils import yaml_parser
 from ..storage import Storage
 from ..user import User
-from ..publish import Publisher
 from ..log import get_logger
 
 LOGGER = get_logger('cli-common')
@@ -444,23 +443,16 @@ def publish(ctx: click.Context, files: List[str]):
     """
     Publish Wildland Object manifest to a publishable storage from manifests catalog.
     """
+    object_types: Set[WLObjectType] = set()
 
-    object_types = set()
-    wl_objects_ids_type_and_path: List[Tuple[List[str], WLObjectType, str]]\
-        = __get_objects_ids_and_type_from_files(ctx, files)
+    manifest_type = _get_expected_manifest_type(ctx)
+    for file in files:
+        result, published_object_types = ctx.obj.wlcore.object_publish(file, manifest_type)
 
-    for object_ids, object_type, path in wl_objects_ids_type_and_path:
-        if ctx.obj.client.is_url(path) or Path(path).exists():
-            publish_result = ctx.obj.wlcore.object_publish_by_path(object_type, path)
-            if not publish_result.success:
-                raise CliError(str(publish_result))
-        else:
-            for object_id in object_ids:
-                publish_result = ctx.obj.wlcore.object_publish(object_type, object_id)
-                if not publish_result.success:
-                    raise CliError(str(publish_result))
+        if not result.success:
+            raise CliError(str(result))
 
-        object_types.add(object_type)
+        object_types = object_types.union(published_object_types)
 
     for object_type in object_types:
         check_result = ctx.obj.wlcore.check_if_all_published(object_type)
@@ -477,34 +469,12 @@ def unpublish(ctx: click.Context, files: List[str]):
     Unpublish Wildland Object manifest from all matchin manifest catalogs.
     """
 
-    wl_objects_ids_type_and_path: List[Tuple[List[str], WLObjectType, str]] = \
-        __get_objects_ids_and_type_from_files(ctx, files)
-
-    for object_ids, object_type, path in wl_objects_ids_type_and_path:
-        if ctx.obj.client.is_url(path) or Path(path).exists():
-            publish_result = ctx.obj.wlcore.object_unpublish_by_path(object_type, path)
-            if not publish_result.success:
-                raise CliError(str(publish_result))
-        else:
-            for object_id in object_ids:
-                publish_result = ctx.obj.wlcore.object_unpublish(object_type, object_id)
-                if not publish_result.success:
-                    raise CliError(str(publish_result))
-
-
-def __get_objects_ids_and_type_from_files(ctx: click.Context, files: List[str]):
-    wl_objects_ids_type_and_path: List[Tuple[List[str], WLObjectType, str]] = []
-
+    manifest_type = _get_expected_manifest_type(ctx)
     for file in files:
-        manifest_type = _get_expected_manifest_type(ctx)
+        result = ctx.obj.wlcore.object_unpublish(file, manifest_type)
 
-        result, ids, object_type = ctx.obj.wlcore.get_publishable_object_ids_from_file_or_path(file, manifest_type)
         if not result.success:
             raise CliError(str(result))
-
-        wl_objects_ids_type_and_path.append((ids, object_type, file))
-
-    return wl_objects_ids_type_and_path
 
 
 def remount_container(ctx_obj: ContextObj, path: Path):

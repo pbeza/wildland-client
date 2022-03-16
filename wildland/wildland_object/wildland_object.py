@@ -169,3 +169,4 @@ class PublishableWildlandObject(WildlandObject, Publishable):
     """
     Wildland Object that implements Publishable interface
     """
+    owner: str
