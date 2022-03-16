@@ -105,17 +105,16 @@ class WildlandCoreUser(WildlandCoreApi):
 
     @wildland_result()
     def __user_remove_key(self, owner: str, force: bool):
-        result = WildlandResult()
         possible_owners = self.client.session.sig.get_possible_owners(owner)
         if possible_owners != [owner] and not force:
-            result.errors.append(
-                WLError(WLErrorType.PUBKEY_IN_USE,
-                        'Key used by other users as secondary key and  will not be deleted. '
-                        'Key should be removed manually. In the future you can use --force to '
-                        'force key deletion.', False))
-            return result
+            # TODO core shouldn't contain any CLI references
+            return WildlandResult.error(WLErrorType.PUBKEY_IN_USE,
+                                        'Key used by other users as secondary key and '
+                                        'will not be deleted.'
+                                        'Key should be removed manually.'
+                                        'In the future you can use --force to force key deletion.')
         self.client.session.sig.remove_key(owner)
-        return result
+        return WildlandResult.OK()
 
     def user_import_key(self, public_key: bytes, private_key: bytes) -> WildlandResult:
         """
@@ -125,7 +124,12 @@ class WildlandCoreUser(WildlandCoreApi):
         :param private_key: bytes with private key
         :return: WildlandResult
         """
-        raise NotImplementedError
+        return self.__user_import_key(public_key, private_key)
+
+    @wildland_result(default_output=None)
+    def __user_import_key(self, public_key: bytes, private_key: bytes):
+        sig_context = self.client.session.sig
+        sig_context.import_key_pair(public_key, private_key)
 
     def user_get_public_key(self, owner: str) -> Tuple[WildlandResult, Optional[str]]:
         """
@@ -153,10 +157,7 @@ class WildlandCoreUser(WildlandCoreApi):
     @wildland_result(default_output=None)
     def __user_create(self, name: Optional[str], keys: List[str], paths: List[str]):
         if not keys:
-            result = WildlandResult()
-            result.errors.append(WLError(WLErrorType.PUBKEY_NEEDED,
-                                         "At least one public key must be provided", False))
-            return result, None
+            return WildlandResult.error(WLErrorType.PUBKEY_NEEDED), None
 
         members = []
         filtered_additional_keys = []

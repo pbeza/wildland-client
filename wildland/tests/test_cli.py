@@ -270,7 +270,7 @@ def test_user_list_verbose(cli, base_dir):
         '   no bridges to user available',
         '   user path: /users/Foo',
         '   user path: /users/Bar',
-        r"   container: {'object': 'link', 'file': '\/\.manifests\.container\.yaml', 'storage': {'object': 'storage', 'type': 'local', 'location': '\/tmp\/location\/\.manifests\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'.*}, 'access': \[\{'user': '0xaaa'\}\]\}\}",
+        r"   container: {'object': 'link', 'file': '\/.{36}\.container\.yaml', 'storage': {'object': 'storage', 'type': 'local', 'location': '\/tmp\/location\/\.manifests\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'.*}, 'access': \[\{'user': '0xaaa'\}\]\}\}",
         '',
     ]
 
@@ -6353,20 +6353,8 @@ def test_forest_create_check_for_published_catalog(cli, tmp_path):
     catalog_dirs = list(catalog_path.glob('*'))
 
     uuid_dir = catalog_dirs[0]
-    assert Path(f'{uuid_dir}/.manifests.container.yaml').exists()
-
-    with open(uuid_dir / '.manifests.container.yaml') as f:
-        data = list(yaml_parser.safe_load_all(f))[1]
-
-    published_path = uuid_dir / (Path(data["paths"][0]).name + '.container.yaml')
-
-    assert published_path.exists()
-
-    with open(str(published_path)) as f:
-        data2 = list(yaml_parser.safe_load_all(f))[1]
-
-    assert data == data2
-
+    container_id = uuid_dir.parts[-1]
+    assert Path(f'{uuid_dir}/{container_id}.container.yaml').exists()
 
 def test_forest_user_catalog_objects(cli, tmp_path, base_dir):
     cli('user', 'create', 'Alice', '--key', '0xaaa')
@@ -6447,7 +6435,8 @@ def test_forest_user_ensure_manifest_pattern_tc_1(cli, tmp_path):
     catalog_path = Path(f'/{tmp_path}/wl-forest/.manifests/')
     uuid_dir = list(catalog_path.glob('*'))[0].resolve()
 
-    with open(uuid_dir / '.manifests.container.yaml') as f:
+    container_id = uuid_dir.parts[-1]
+    with open(uuid_dir / f'{container_id}.container.yaml') as f:
         data = list(yaml_parser.safe_load_all(f))[1]
 
     storage = data['backends']['storage']
@@ -6469,7 +6458,7 @@ def test_forest_user_ensure_manifest_pattern_tc_2(cli, tmp_path):
     catalog_path = Path(f'/{tmp_path}/wl-forest/.manifests/')
     uuid_dir = list(catalog_path.glob('*'))[0].resolve()
 
-    with open(uuid_dir / '.manifests.container.yaml') as f:
+    with open(uuid_dir / 'foo.yaml') as f:
         data = list(yaml_parser.safe_load_all(f))[1]
 
     storage = data['backends']['storage']
@@ -6491,8 +6480,8 @@ def test_forest_user_ensure_manifest_pattern_tc_3(cli, tmp_path):
 
     catalog_path = Path(f'/{tmp_path}/wl-forest/.manifests/')
     uuid_dir = list(catalog_path.glob('*'))[0].resolve()
-
-    with open(uuid_dir / '.manifests.container.yaml') as f:
+    container_id = uuid_dir.parts[-1]
+    with open(uuid_dir / f'{container_id}.container.yaml') as f:
         data = list(yaml_parser.safe_load_all(f))[1]
 
     storage = data['backends']['storage']
@@ -6515,7 +6504,8 @@ def test_forest_user_ensure_manifest_pattern_non_inline_storage_template(cli, tm
     catalog_path = Path(f'/{tmp_path}/wl-forest/.manifests/')
     uuid_dir = list(catalog_path.glob('*'))[0].resolve()
 
-    with open(uuid_dir / '.manifests.container.yaml') as f:
+    container_id = uuid_dir.parts[-1]
+    with open(uuid_dir / f'{container_id}.container.yaml') as f:
         data = list(yaml_parser.safe_load_all(f))[1]
 
     storage = data['backends']['storage']
