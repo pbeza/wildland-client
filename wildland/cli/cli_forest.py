@@ -26,7 +26,6 @@ from typing import List, Dict, Any, Optional, Tuple, Union, Iterable
 from copy import deepcopy
 
 import logging
-import os
 import click
 
 from wildland.wildland_object.wildland_object import WildlandObject
@@ -517,7 +516,8 @@ def get_user_manifests_catalog(obj, catalog_container):
 
         fields = storage.to_manifest_fields(inline=True)
         if not storage.access:
-            fields['access'] = deepcopy(catalog_container.access)
+            fields['access'] = obj.client.load_pubkeys_from_field(
+                    catalog_container.access, catalog_container.owner)
         link_obj['storage'] = fields
         if storage.owner != catalog_container.owner:
             link_obj['storage-owner'] = storage.owner
