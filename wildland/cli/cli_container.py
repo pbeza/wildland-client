@@ -176,7 +176,7 @@ def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Opt
     result, container_tuple = obj.wlcore.container_create(list(path), list(access),
                                                           encrypt_manifest, list(category), title,
                                                           owner, name)
-    if not result.success or not container_tuple or len(container_tuple) < 2:
+    if result.failure or not container_tuple or len(container_tuple) < 2:
         raise CliError(f'Failed to create container: {str(result)}')
     (container, container_path) = container_tuple
     if not container or not container_path:
@@ -294,7 +294,7 @@ def list_(obj: ContextObj):
     if not result_bridges.success or not result_users.success or not result_containers.success:
         click.echo('Failed to list containers:')
         for e in result_users.errors + result_bridges.errors + result_containers.errors:
-            click.echo(f'Error {e.error_code}: {e.error_description}')
+            click.echo(f'Error {e.code}: {e.description}')
 
     # TODO: this used to use a client method called load_users_with_bridge_paths; perhaps this
     #  will be obsolete soon? repeated code from cli_user.py::list_
@@ -330,7 +330,7 @@ def info(obj: ContextObj, name):
     if not result_bridges.success or not result_users.success:
         click.echo('Failed to list containers:')
         for e in result_users.errors + result_bridges.errors:
-            click.echo(f'Error {e.error_code}: {e.error_description}')
+            click.echo(f'Error {e.code}: {e.description}')
 
     # TODO: this used to use a client method called load_users_with_bridge_paths; perhaps this
     #  will be obsolete soon? repeated code from cli_user.py::list_

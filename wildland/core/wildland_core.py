@@ -33,7 +33,7 @@ from ..container import Container
 from ..bridge import Bridge
 from ..storage import Storage
 from ..wildland_object.wildland_object import WildlandObject
-from .wildland_result import WildlandResult, wildland_result, WLErrorType
+from .wildland_result import WildlandResult, wildland_result, WLErrorType, WLError
 from .wildland_core_api import WildlandCoreApi, ModifyMethod
 from .wildland_objects_api import WLStorageBackend, WLStorage, WLContainer, WLObject, \
     WLTemplateFile, WLObjectType
