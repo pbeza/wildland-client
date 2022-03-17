@@ -344,6 +344,7 @@ def test_read_file_traverse_user_inline_container(cli, base_dir, client):
     user_dict['manifests-catalog'] = [container_dict]
     del user_dict['manifests-catalog'][0]['owner']
     del user_dict['manifests-catalog'][0]['version']
+    del user_dict['manifests-catalog'][0]['is-manifests-catalog']
 
     # Save the new container to storage, sign
     with open(user_path, 'w') as f:

@@ -5362,7 +5362,8 @@ def test_delegated_template(cli, base_dir):
             {
                 'user': '*'
             }
-        ]
+        ],
+        'is-manifests-catalog': False
     }
 
 
@@ -5423,7 +5424,8 @@ def test_proxy_storage_template(cli, base_dir):
             {
                 'user': '*'
             }
-        ]
+        ],
+        'is-manifests-catalog': False
     }
 
 

@@ -216,12 +216,12 @@ class Container(PublishableWildlandObject, obj_type=WildlandObject.Type.CONTAINE
             "version": Manifest.CURRENT_VERSION,
             "object": WildlandObject.Type.CONTAINER.value,
             "owner": self.owner,
+            "is-manifests-catalog": self.is_manifests_catalog,
             "paths": [str(p) for p in self.paths],
             "title": self.title,
             "categories": [str(cat) for cat in self.categories],
             "access": self.access,
             "backends": {'storage': cleaned_backends},
-            "is-manifests-catalog": self.is_manifests_catalog,
         }
         if not self.access:
             del fields['access']
@@ -231,6 +231,7 @@ class Container(PublishableWildlandObject, obj_type=WildlandObject.Type.CONTAINE
         if inline:
             del fields['owner']
             del fields['version']
+            del fields['is-manifests-catalog']
         return fields
 
     def to_repr_fields(self, include_sensitive: bool = False) -> dict:

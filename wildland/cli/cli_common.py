@@ -420,9 +420,12 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
 
     assert new_manifest
     assert new_owner
+    assert manifest
 
     if manifest_type == 'container':
-        new_manifest = Manifest.from_fields(Manifest.decrypt(new_manifest.fields, obj.client.session.sig))
+        new_manifest = Manifest.from_fields(
+            Manifest.decrypt(new_manifest.fields, obj.client.session.sig)
+        )
         old_container = Container.from_manifest(manifest, obj.client)
         new_container = Container.from_manifest(new_manifest, obj.client)
         new_owner_obj = obj.client.load_object_from_name(WildlandObject.Type.USER, new_owner)
@@ -431,8 +434,8 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
                 and new_container.is_manifests_catalog \
                 and new_container.manifest.fields.get('backends') \
                 != old_container.manifest.fields.get('backends'):
-            click.secho('Since edited container is catalog, the changes will be synchronized with '
-                        'the owner manifest and republished.', fg='yellow')
+            click.secho('Since edited container is catalog, the changes will be synchronized '
+                        'with the owner manifest and republished.', fg='yellow')
             user_manifests_catalog = get_user_manifests_catalog(obj, new_container)
             modify_manifest(ctx, str(new_owner_obj.local_path), edit_funcs=[set_fields],
                             to_set={'manifests-catalog': user_manifests_catalog})
@@ -444,15 +447,17 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
             publisher.republish(new_container)
 
     if manifest_type == 'user':
-        new_user_manifest = Manifest.from_fields(Manifest.decrypt(new_manifest.fields, obj.client.session.sig))
+        new_user_manifest = Manifest.from_fields(
+            Manifest.decrypt(new_manifest.fields, obj.client.session.sig)
+        )
         old_user = User.from_manifest(manifest, obj.client)
         new_user = User.from_manifest(new_user_manifest, obj.client)
 
         if new_user.has_catalog \
                 and new_user.manifest.fields.get('manifests-catalog') \
                 != old_user.manifest.fields.get('manifests-catalog'):
-            click.secho('It\'s not recommended way to edit the catalog manifest. The changes will not be '
-                        'synchronized. In order to update credentials '
+            click.secho('It\'s not recommended way to edit the catalog manifest. '
+                        'The changes will not be  synchronized. In order to update credentials '
                         'you have to edit directly the catalog container.', fg='yellow')
 
     if remount and manifest_type == 'container' and obj.fs_client.is_running():
