@@ -22,7 +22,7 @@ Manage bridges
 """
 
 from pathlib import Path, PurePosixPath
-from typing import List, Dict, Any, Optional, Tuple, Union, Iterable
+from typing import List, Dict, Optional, Tuple, Union, Iterable
 from copy import deepcopy
 
 import logging

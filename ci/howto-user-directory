@@ -154,6 +154,7 @@ run wl container modify mycontainer2 \
 expected_pcre="version: '1'
 object: container
 owner: '$USERID_PCRE'
+is-manifests-catalog: false
 paths:
 - /.uuid/$UUID_PCRE
 title: null
@@ -173,6 +174,7 @@ run wl container modify mycontainer2 --del-access \
 expected_pcre="version: '1'
 object: container
 owner: '$USERID_PCRE'
+is-manifests-catalog: false
 paths:
 - /.uuid/$UUID_PCRE
 title: null
@@ -192,6 +194,7 @@ run wl forest create \
 expected_pcre="version: '1'
 object: container
 owner: '$USERID_PCRE'
+is-manifests-catalog: true
 paths:
 - /.uuid/$UUID_PCRE
 - /.manifests

@@ -1919,12 +1919,12 @@ def test_container_set_title(cli, base_dir):
     cli('container', 'modify', 'Container.container', '--title', 'something')
     with open(manifest_path) as f:
         data = f.read()
-    assert 'title: something' in data
+    assert 'something' in data
 
     cli('container', 'modify', 'Container', '--title', 'another thing')
     with open(manifest_path) as f:
         data = f.read()
-    assert 'title: another thing' in data
+    assert 'another thing' in data
 
     cli('container', 'modify', ':/PATH:', '--title', 'one more time')
     with open(manifest_path) as f:
@@ -1954,7 +1954,7 @@ def test_container_set_title_remote_container(monkeypatch, cli, base_dir):
     # Find it using forest catalog path
     with open(catalog_dir / 'PATH.container.yaml') as f:
         data = f.read()
-    assert 'title: something' in data
+    assert 'something' in data
 
     # Mock inbuilt string to pass startswith() check.
     # This is done to allow testing the is_url() logic but with local file.
@@ -1986,14 +1986,14 @@ def test_container_set_title_remote_container(monkeypatch, cli, base_dir):
     # Check if it was re-published with updated title
     with open(catalog_dir / 'PATH.container.yaml') as f:
         data = f.read()
-    assert 'title: another thing' in data
+    assert 'another thing' in data
 
     # Check if downloaded manifest has updated title
     client = Client(base_dir)
     container = client.load_object_from_name(WildlandObject.Type.CONTAINER, 'Container')
     with open(base_dir / f"containers/{container.uuid}.container.yaml") as f:
         data = f.read()
-    assert 'title: another thing' in data
+    assert 'another thing' in data
 
 
 def test_container_add_category(cli, cli_fail, base_dir):

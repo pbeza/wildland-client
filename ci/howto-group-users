@@ -101,6 +101,7 @@ run wl user import ~/Downloads/office.user.yaml
 expected_pcre="version: '1'
 object: container
 owner: '$USERID_PCRE'
+is-manifests-catalog: false
 paths:
 - /.uuid/$UUID_PCRE
 title: null
