@@ -150,6 +150,35 @@ def test_edit(cli, cli_fail, base_dir):
     cli_fail('user', 'edit', container_path, '--editor', editor)
 
 
+def test_edit_catalog_owner(cli, base_dir):
+    cli('user', 'create', 'User', '--key', '0xaaa')
+    cli('template', 'create', 'local', '--location', '/tmp/location', 'mytemplate')
+    cli('forest', 'create', '--owner', 'User', 'mytemplate')
+
+    user_path = base_dir / 'users/User.user.yaml'
+    editor = r"sed -i 's/read-only: false/read-only: true/g'"
+
+    result = cli('edit', user_path, '--editor', editor, capture=True)
+    assert 'It\'s not recommended way to edit the catalog manifest.' \
+        in result
+
+
+def test_edit_catalog_container(cli, base_dir):
+    cli('user', 'create', 'User', '--key', '0xaaa')
+    cli('template', 'create', 'local', '--location', '/tmp/location', 'mytemplate')
+    cli('forest', 'create', '--owner', 'User', 'mytemplate', '--access', '*')
+
+    container_path = base_dir / 'containers/User-forest-catalog.container.yaml'
+    user_path = base_dir / 'users/User.user.yaml'
+    editor = r"sed -i 's/backend-id: .\{36\}/backend-id: 00000000-0000-0000-0000-000000000000/g'"
+    result = cli('edit', container_path, '--editor', editor, capture=True)
+    assert 'the changes will be synchronized with the owner manifest and republished.' \
+        in result
+
+    with open(user_path) as f:
+        assert 'backend-id: 00000000-0000-0000-0000-000000000000' \
+               in f.read()
+
 # Users
 
 def test_user_create(cli, base_dir):

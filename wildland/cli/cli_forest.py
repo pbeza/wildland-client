@@ -589,9 +589,6 @@ def _bootstrap_forest(ctx: click.Context, user: str, manifest_storage_template_n
         publisher.publish(catalog_container)
     except Exception as ex:
         raise CliError(f'Could not create a Forest. {ex}') from ex
-    finally:
-        if catalog_container and catalog_container.local_path:
-            catalog_container.local_path.unlink()
 
 
 def _resolve_storage_templates(obj, template_name: str) -> List[StorageTemplate]:
