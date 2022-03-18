@@ -218,4 +218,4 @@ backends:
     manifest-pattern:
       type: glob
       path: /\*.{object-type}.yaml"
-run wl c dump alice-forest-catalog
+run wl c dump alice-forest-catalog.1
