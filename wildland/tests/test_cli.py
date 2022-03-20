@@ -47,7 +47,7 @@ from ..storage_backends.file_children import FileChildrenMixin
 from ..utils import yaml_parser
 from ..wildland_object.wildland_object import WildlandObject
 from ..cli.cli_user import _user_create, _user_import
-from ..cli.cli_bridge import _bridge_create, _bridge_import
+from ..cli.cli_bridge import _bridge_create, do_bridge_import
 
 
 def modify_file(path, pattern, replacement):
@@ -149,6 +149,35 @@ def test_edit(cli, cli_fail, base_dir):
     cli_fail('user', 'edit', storage_path, '--editor', editor)
     cli_fail('user', 'edit', container_path, '--editor', editor)
 
+
+def test_edit_catalog_owner(cli, base_dir):
+    cli('user', 'create', 'User', '--key', '0xaaa')
+    cli('template', 'create', 'local', '--location', '/tmp/location', 'mytemplate')
+    cli('forest', 'create', '--owner', 'User', 'mytemplate')
+
+    user_path = base_dir / 'users/User.user.yaml'
+    editor = r"sed -i 's/read-only: false/read-only: true/g'"
+
+    result = cli('edit', user_path, '--editor', editor, capture=True)
+    assert 'It\'s not recommended way to edit the catalog manifest.' \
+        in result
+
+
+def test_edit_catalog_container(cli, base_dir):
+    cli('user', 'create', 'User', '--key', '0xaaa')
+    cli('template', 'create', 'local', '--location', '/tmp/location', 'mytemplate')
+    cli('forest', 'create', '--owner', 'User', 'mytemplate', '--access', '*')
+
+    container_path = base_dir / 'containers/User-forest-catalog.container.yaml'
+    user_path = base_dir / 'users/User.user.yaml'
+    editor = r"sed -i 's/backend-id: .\{36\}/backend-id: 00000000-0000-0000-0000-000000000000/g'"
+    result = cli('edit', container_path, '--editor', editor, capture=True)
+    assert 'the changes will be synchronized with the owner manifest and republished.' \
+        in result
+
+    with open(user_path) as f:
+        assert 'backend-id: 00000000-0000-0000-0000-000000000000' \
+               in f.read()
 
 # Users
 
@@ -1919,12 +1948,12 @@ def test_container_set_title(cli, base_dir):
     cli('container', 'modify', 'Container.container', '--title', 'something')
     with open(manifest_path) as f:
         data = f.read()
-    assert 'title: something' in data
+    assert 'something' in data
 
     cli('container', 'modify', 'Container', '--title', 'another thing')
     with open(manifest_path) as f:
         data = f.read()
-    assert 'title: another thing' in data
+    assert 'another thing' in data
 
     cli('container', 'modify', ':/PATH:', '--title', 'one more time')
     with open(manifest_path) as f:
@@ -1954,7 +1983,7 @@ def test_container_set_title_remote_container(monkeypatch, cli, base_dir):
     # Find it using forest catalog path
     with open(catalog_dir / 'PATH.container.yaml') as f:
         data = f.read()
-    assert 'title: something' in data
+    assert 'something' in data
 
     # Mock inbuilt string to pass startswith() check.
     # This is done to allow testing the is_url() logic but with local file.
@@ -1986,14 +2015,14 @@ def test_container_set_title_remote_container(monkeypatch, cli, base_dir):
     # Check if it was re-published with updated title
     with open(catalog_dir / 'PATH.container.yaml') as f:
         data = f.read()
-    assert 'title: another thing' in data
+    assert 'another thing' in data
 
     # Check if downloaded manifest has updated title
     client = Client(base_dir)
     container = client.load_object_from_name(WildlandObject.Type.CONTAINER, 'Container')
     with open(base_dir / f"containers/{container.uuid}.container.yaml") as f:
         data = f.read()
-    assert 'title: another thing' in data
+    assert 'another thing' in data
 
 
 def test_container_add_category(cli, cli_fail, base_dir):
@@ -5362,7 +5391,8 @@ def test_delegated_template(cli, base_dir):
             {
                 'user': '*'
             }
-        ]
+        ],
+        'is-manifests-catalog': False
     }
 
 
@@ -5423,7 +5453,8 @@ def test_proxy_storage_template(cli, base_dir):
             {
                 'user': '*'
             }
-        ]
+        ],
+        'is-manifests-catalog': False
     }
 
 
@@ -5677,10 +5708,10 @@ def test_remove_files_when_bridge_import_fails(cli, base_dir, tmpdir):
                 "local-owners:\n- '0xddd'\n- '0xaaa'")
 
     def side_effect(*args, **kwargs):
-        _bridge_import(*args, **kwargs)
+        do_bridge_import(*args, **kwargs)
         raise Exception('My error')
 
-    with mock.patch('wildland.cli.cli_bridge._bridge_import', side_effect=side_effect):
+    with mock.patch('wildland.cli.cli_bridge.do_bridge_import', side_effect=side_effect):
         try:
             cli('bridge', 'import', 'wildland:0xddd:/ALICE:/IMPORT:')
         except:
@@ -6452,19 +6483,19 @@ def test_forest_user_ensure_manifest_pattern_tc_2(cli, tmp_path):
     cli('template', 'create', 'local', '--location', f'{tmp_path}/wl-forest',
         '--read-only', 'forest-tpl')
     cli('template', 'add', 'local', '--location', f'{tmp_path}/wl-forest',
-        '--manifest-pattern', '/foo.yaml', 'forest-tpl')
+        '--manifest-pattern', '/foo.{object-type}.yaml', 'forest-tpl')
 
     cli('forest', 'create', '--access', '*', '--owner', 'Alice', 'forest-tpl')
 
     catalog_path = Path(f'/{tmp_path}/wl-forest/.manifests/')
     uuid_dir = list(catalog_path.glob('*'))[0].resolve()
 
-    with open(uuid_dir / 'foo.yaml') as f:
+    with open(uuid_dir / 'foo.container.yaml') as f:
         data = list(yaml_parser.safe_load_all(f))[1]
 
     storage = data['backends']['storage']
-    assert storage[0]['manifest-pattern'] == {'type': 'glob', 'path': '/foo.yaml'}
-    assert storage[1]['manifest-pattern'] == {'type': 'glob', 'path': '/foo.yaml'}
+    assert storage[0]['manifest-pattern'] == {'type': 'glob', 'path': '/foo.{object-type}.yaml'}
+    assert storage[1]['manifest-pattern'] == {'type': 'glob', 'path': '/foo.{object-type}.yaml'}
 
 
 def test_forest_user_ensure_manifest_pattern_tc_3(cli, tmp_path):

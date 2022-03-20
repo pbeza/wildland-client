@@ -48,6 +48,7 @@ mycontainer_uuid=$(wl container dump mycontainer | grep '/.uuid/' | cut -d / -f 
 expected="version: '1'
 object: container
 owner: '$alice_userid'
+is-manifests-catalog: false
 paths:
 - /.uuid/$mycontainer_uuid
 title: null
@@ -81,6 +82,7 @@ expected_pcre="signature: \|
 version: '1'
 object: container
 owner: '$alice_userid'
+is-manifests-catalog: false
 paths:
 - /.uuid/$mycontainer_uuid
 title: null
@@ -100,6 +102,7 @@ expected_pcre="signature: \|
 version: '1'
 object: container
 owner: '$alice_userid'
+is-manifests-catalog: false
 paths:
 - /.uuid/$UUID_PCRE
 title: null
@@ -204,7 +207,6 @@ expected_pcre="Created base path: /.manifests/$UUID_PCRE
 Adding storage $UUID_PCRE to container.
 Adding storage $UUID_PCRE to container.
 Saved container /home/user/.config/wildland/containers/caroline-forest-catalog.container.yaml
-Saved: /home/user/.config/wildland/users/caroline.user.yaml
 Saved: /home/user/.config/wildland/users/caroline.user.yaml"
 run wl forest create --access '*' --owner caroline carolines-s3
 

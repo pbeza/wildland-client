@@ -1413,13 +1413,12 @@ def _publish_container_after_modification(
     Republish container if it's published and no --no-publish flag was specified
     or publish it if it's not published and --publish flag is present
     """
-    owner = container.owner
-
-    if Publisher.is_published(client, owner, container.get_primary_publish_path()):
+    owner_obj = client.load_object_from_name(WildlandObject.Type.USER, container.owner)
+    if Publisher(client, owner_obj).is_published(container):
         if publish or publish is None:
             cli_common.republish_object(client, container)
     else:
         if publish:
-            user = client.load_object_from_name(WildlandObject.Type.USER, owner)
+            user = client.load_object_from_name(WildlandObject.Type.USER, container.owner)
             click.echo('Publishing container')
             Publisher(client, user).publish(container)

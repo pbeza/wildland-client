@@ -114,27 +114,28 @@ class FileChildrenMixin(StorageBackend):
         """
         return 'manifest-pattern' in self.params
 
-    def has_child(self, wl_object_uuid_path: PurePosixPath) -> bool:
+    def has_child(self, wl_object: PublishableWildlandObject) -> bool:
         """
         Check if the given container is child of this storage.
         """
-        wl_object_manifest = next(self.get_relpaths(wl_object_uuid_path))
+        wl_object_manifest = self.get_relpaths(wl_object)
 
         with StorageDriver(self) as driver:
-            return driver.file_exists(wl_object_manifest)
+            return driver.file_exists(next(wl_object_manifest))
 
-    def get_relpaths(self, wl_object_uuid_path: PurePosixPath,
-                     wl_object_expanded_paths: Optional[Iterable[PurePosixPath]] = None) \
+    def get_relpaths(self, wl_object: PublishableWildlandObject) \
             -> Iterator[PurePosixPath]:
         """
         Build the relative path based on the manifest-pattern.
         """
+        wl_object_uuid_path = wl_object.get_primary_publish_path()
+
         pattern = self.params['manifest-pattern']['path']
 
         path_pattern = pattern.replace('*', wl_object_uuid_path.name) \
-            .replace('{object-type}', 'container')
+            .replace('{object-type}', wl_object.type.value)
 
-        paths = wl_object_expanded_paths or (wl_object_uuid_path,)
+        paths = wl_object.get_publish_paths() or (wl_object_uuid_path,)
         for path in paths:
             yield PurePosixPath(path_pattern.replace(
                 '{path}', str(path.relative_to('/')))).relative_to('/')
@@ -180,12 +181,7 @@ class FileChildrenMixin(StorageBackend):
         else:
             update = set.difference_update
 
-        manifest_relpaths = list(
-            self.get_relpaths(
-                wl_object.get_primary_publish_path(),
-                wl_object.get_publish_paths()
-            )
-        )
+        manifest_relpaths = list(self.get_relpaths(wl_object))
 
         with StorageDriver(self, bulk_writing=True) as driver:
             storage_relpaths = {}
@@ -211,7 +207,7 @@ class FileChildrenMixin(StorageBackend):
         storage_relpaths = {}
         for backend in container.load_storages(include_inline=False):
             # we publish only a single manifest for a storage, under `/.uuid/` path
-            container_manifest = next(self.get_relpaths(container.uuid_path))
+            container_manifest = next(self.get_relpaths(container))
 
             name = container_manifest.name
 
@@ -251,12 +247,7 @@ class FileChildrenMixin(StorageBackend):
                     f'{driver.storage.params["backend-id"]} has serious '
                     f'problems; please remove it manually')
 
-            old_relpaths_to_remove.update(set(
-                self.get_relpaths(
-                    old_object.get_primary_publish_path(),
-                    old_object.get_publish_paths()
-                )
-            ))
+            old_relpaths_to_remove.update(set(self.get_relpaths(old_object)))
 
         return old_relpaths_to_remove
 

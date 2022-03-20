@@ -12,7 +12,8 @@
         "title": {},
         "categories": {},
         "backends": {},
-        "access": {}
+        "access": {},
+        "is-manifests-catalog": {}
     },
     "definitions": {
         "container-basic-fields": {
@@ -61,6 +62,10 @@
                 "access": {
                     "$ref": "/schemas/types.json#access",
                     "description": "access control; by default manifests are encrypted to their owner"
+                },
+                "is-manifests-catalog": {
+                    "type": ["boolean", "null"],
+                    "description": "Flag which defines if container is used as a manifests catalog."
                 }
             }
         },

@@ -54,10 +54,11 @@ from ..manifest.manifest import (
 from ..manifest.schema import SchemaError
 from ..exc import WildlandError
 from ..utils import yaml_parser
-from ..storage import Storage
+from ..storage import Storage, StorageBackend
 from ..user import User
 from ..publish import Publisher
 from ..log import get_logger
+from ..storage_backends.file_children import FileChildrenMixin
 
 LOGGER = get_logger('cli-common')
 
@@ -304,6 +305,30 @@ def dump(ctx: click.Context, input_file, decrypt, **_callback_kwargs):
     print(data.decode())
 
 
+def get_user_manifests_catalog(obj, catalog_container):
+    """
+    Builds the 'manifests-catalog' property for the user manifest based on the catalog container.
+    """
+    manifests_catalog = []
+    for storage in obj.client.all_storages(container=catalog_container):
+        storage_backend = StorageBackend.from_params(storage.params)
+        assert isinstance(storage_backend, FileChildrenMixin), \
+            'Unsupported catalog storage type.'
+        rel_path = storage_backend.get_relpaths(catalog_container)
+
+        link_obj: Dict[str, Any] = {'object': 'link', 'file': f'/{list(rel_path)[0]}'}
+
+        fields = storage.to_manifest_fields(inline=True)
+        if not storage.access:
+            fields['access'] = obj.client.load_pubkeys_from_field(
+                catalog_container.access, catalog_container.owner)
+        link_obj['storage'] = fields
+        if storage.owner != catalog_container.owner:
+            link_obj['storage-owner'] = storage.owner
+        manifests_catalog.append(link_obj)
+    return manifests_catalog
+
+
 @click.command(short_help='edit manifest in external tool')
 @click.option('--editor', metavar='EDITOR', help='custom editor')
 @click.option('--remount/--no-remount', '-r/-n', default=True, help='remount mounted container')
@@ -392,6 +417,48 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
             return False
         else:
             break
+
+    assert new_manifest
+    assert new_owner
+    assert manifest
+
+    if manifest_type == 'container':
+        new_manifest = Manifest.from_fields(
+            Manifest.decrypt(new_manifest.fields, obj.client.session.sig)
+        )
+        old_container = Container.from_manifest(manifest, obj.client)
+        new_container = Container.from_manifest(new_manifest, obj.client)
+        new_owner_obj = obj.client.load_object_from_name(WildlandObject.Type.USER, new_owner)
+
+        if new_owner_obj.has_catalog \
+                and new_container.is_manifests_catalog \
+                and new_container.manifest.fields.get('backends') \
+                != old_container.manifest.fields.get('backends'):
+            click.secho('Since edited container is catalog, the changes will be synchronized '
+                        'with the owner manifest and republished.', fg='yellow')
+            user_manifests_catalog = get_user_manifests_catalog(obj, new_container)
+            modify_manifest(ctx, str(new_owner_obj.local_path), edit_funcs=[set_fields],
+                            to_set={'manifests-catalog': user_manifests_catalog})
+            obj.client.recognize_users_and_bridges()
+            new_owner_obj = obj.client.load_object_from_name(WildlandObject.Type.USER, new_owner)
+
+            publisher = Publisher(obj.client, new_owner_obj, new_container)
+            publisher.republish(new_owner_obj)
+            publisher.republish(new_container)
+
+    if manifest_type == 'user':
+        new_user_manifest = Manifest.from_fields(
+            Manifest.decrypt(new_manifest.fields, obj.client.session.sig)
+        )
+        old_user = User.from_manifest(manifest, obj.client)
+        new_user = User.from_manifest(new_user_manifest, obj.client)
+
+        if new_user.has_catalog \
+                and new_user.manifest.fields.get('manifests-catalog') \
+                != old_user.manifest.fields.get('manifests-catalog'):
+            click.secho('It\'s not recommended way to edit the catalog manifest. '
+                        'The changes will not be  synchronized. In order to update credentials '
+                        'you have to edit directly the catalog container.', fg='yellow')
 
     if remount and manifest_type == 'container' and obj.fs_client.is_running():
         path = find_manifest_file(obj.client, input_file, manifest_type)
