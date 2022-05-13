@@ -1,67 +1,33 @@
-|Coverage|
+## Wildland Client
 
-.. |Coverage| image:: https://gitlab.com/wildland/wildland-client/badges/master/coverage.svg?job=pytest
-   :target: https://wildland.gitlab.io/wildland-client/coverage/
+Wildland Client is a proof of concept implementation of the new open protocol for data management introduced in the ["Wildland - Why, What and How" paper](https://golem.foundation/resources/documents/wildland-w2h.pdf).
 
-Wildland Client
-===============
+The client has been written in Python, and lets you access data stored with Wildland and serve it as a FUSE based filesystem, which you can then consume with a file manager of your choice.
 
-Wildland is a collection of protocols, conventions, software, and (soon) a marketplace for leasing storage and -- in the future -- compute infrastructure. All these pieces work together with one goal in mind: to decouple the user's data from the underlying infrastructure.
+A live demo of the client, with the lead designer's commentary, is available on our Vimeo channel https://vimeo.com/579474007.
 
-This repository contains Wildland Client software - the part used to access data stored with Wildland and serve them as a (FUSE based) filesystem. It also allows to manage Wildland Containers.
+If you would like to try the client yourself, we provide step by step instructions for running it on different systems at https://docs.wildland.io. Please note, however, that **this is a proof of concept, and it is not intended for everyday use**. Its main goal is to showcase three quintessential Wildland features - [backend agnosticism, an infrastructure-independent addressing system and the native multi-categorization of data](https://wildland.io/2021/06/11/introducing-client-v0.1.html).
 
-More information can be found in the `documentation <https://docs.wildland.io>`_
-
-The primary location of the source code is at `gitlab.com <https://gitlab.com/wildland/wildland-client>`. Please use this location for contributing (reporing issues, contributing code etc).
-
-
-Quick start
------------
-
-Currently the primary method of running wildland-client, is to use bundled docker image:
-
-.. code-block:: sh
-
-   ./wildland-docker.sh
-
-Alternatively, run the docker-compose directly:
-
-.. code-block:: sh
-
-   docker-compose run --service-ports wildland-client
-
-This container serves FUSE content as WebDAV too.
-
-See `Setup <https://wildland.gitlab.io/wildland-client/setup.html>`_ for more.
-
-
-Repository structure
---------------------
+## Repository structure
 
 * ``Documentation/``: project documentation, in ReST/Sphinx format
 * ``ci/``: Docker setup for CI
 * ``docker/``: Docker setup for local testing
 * ``wl``, ``wildland-cli``: command-line interface entry point
 * ``wildland-fuse``: FUSE driver entry point
-* ``plugins/``: storage backends source code, at some point to be removed from Wildland's core
+* ``plugins/``: storage backends source code
 * ``wildland/``: Python source code
+* ``wildland/schemas/``: Manifest schemas in `JSON Schema <https://json-schema.org/>`format
+* ``wildland/tests/``: Tests (in Pytest framework)
 
-  * ``wildland/schemas/``: Manifest schemas in `JSON Schema <https://json-schema.org/>`_
-    format
-  * ``wildland/tests/``: Tests (in Pytest framework)
+## Current status
 
-License
--------
+The Python-built Wildland client is not being developed further. Instead of opptimizing and adding new features to the current Wildland core, we decided to write it anew in Rust. There are several reasons behind this decision. We have learned a lot, not only through developing the Python core, but also by experimenting with various use-cases. This experience has enabled us to identify several ways in which we can improve upon our initial design, especially in terms of user experience, as well as the overall client functionality.
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+Additionally, Rust has better memory management than Python, and excellent cross-platform capabilities across Linux, macOS, Windows and other major operating systems. Writing the new Wildland core in Rust will thus make it easier for us to develop Wildland-powered apps on different platforms.
 
-See `COPYING` file for the full license text.
+To learn more about Wildland and the current status of it's developement, please visit the [Wildland.io webpage](https://wildland.io).
 
-In order to be able to contribute to any Wildland repository, you will need to
-agree to the terms of the `Wildland Contributor Agreement
-<https://docs.wildland.io/contributor-agreement.html>`_. By contributing to any
-such repository, you agree that your contributions will be licensed under the
-GPLv3 License.
+## License
+
+Wildland is an open source project distributed under the terms of the [GNU General Public License](https://www.gnu.org/licenses/gpl-3.0.en.html) as published by the [Free Software Foundation](https://www.fsf.org/), either version 3 of the License, or (at your option) any later version. See [COPYING file](https://gitlab.com/wildland/wildland-client/-/blob/master/COPYING) for the full license text.
