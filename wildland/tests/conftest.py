@@ -23,10 +23,8 @@ import signal
 import os
 import shutil
 import tempfile
-import time
 
 from contextlib import suppress
-from multiprocessing import Process
 from pathlib import Path, PurePosixPath
 from typing import List
 from unittest import mock
@@ -36,9 +34,7 @@ import pytest
 from .fuse_env import FuseEnv
 from ..utils import yaml_parser
 from ..cli import cli_main
-from ..control_client import ControlClient, ControlClientUnableToConnectError
 from ..search import Search
-from ..storage_sync.daemon import SyncDaemon
 from ..manifest.sig import SodiumSigContext
 
 
@@ -80,23 +76,6 @@ def base_dir_sodium():
         shutil.rmtree(base_dir)
         Search.clear_cache()
 
-
-def _sync_daemon(base_dir):
-    server = SyncDaemon(base_dir)
-    server.main()
-
-
-def _wait_for_sync_daemon(socket_path):
-    delay = 0.5
-    client = ControlClient()
-    for _ in range(20):
-        try:
-            client.connect(socket_path)
-            client.disconnect()
-            return
-        except ControlClientUnableToConnectError:
-            time.sleep(delay)
-    pytest.fail('Timed out waiting for sync daemon')
 
 # dir_userid, alice_userid and charlie_userid are fixtures
 # related to user-directory-setup
@@ -147,23 +126,11 @@ def cli(base_dir, capsys):
             return out
         return None
 
-    socket_path = Path(os.getenv('XDG_RUNTIME_DIR', str(base_dir))) / 'wlsync.sock'
-    daemon = Process(target=_sync_daemon, args=(base_dir,))
-    daemon.start()
-    # make sure sync daemon is ready and accepting connections
-    # to avoid subsequent Client instances accidentally spawning another one
-    _wait_for_sync_daemon(socket_path)
-
     yield cli
 
     if os.path.ismount(base_dir / 'wildland'):
-        cli('stop', '--keep-sync-daemon')
+        cli('stop')
         (Path(os.getenv('XDG_RUNTIME_DIR', str(base_dir))) / 'wlfuse.sock').unlink(missing_ok=True)
-
-    assert daemon.pid
-    os.kill(daemon.pid, signal.SIGINT)
-    daemon.join()
-    socket_path.unlink(missing_ok=True)
 
 
 @pytest.fixture
@@ -189,8 +156,7 @@ def cli_sodium(base_dir_sodium, capsys):
     yield cli
 
     if os.path.ismount(base_dir_sodium / 'wildland'):
-        # sync daemon is started and stopped by the sync fixture
-        cli('stop', '--keep-sync-daemon')
+        cli('stop')
         (Path(os.getenv('XDG_RUNTIME_DIR', str(base_dir_sodium))) / 'wlfuse.sock'
          ).unlink(missing_ok=True)
 

@@ -38,15 +38,18 @@ from .wildland_objects_api import WLObjectType
 class WLErrorType(Enum):
     """
     Listing of possible WL error types.
+    TODO: descriptions?
     """
     MANIFEST_ERROR = 1, "Incorrect manifest"
     SIGNATURE_ERROR = 2, "Incorrect signature"
     SCHEMA_ERROR = 3, "Schema error"
     FILE_EXISTS_ERROR = 4, "File exists"  # offender_id is the name/id of whatever already exists
+    CONTAINER_NOT_FOUND = 5, "Container not found"  # offender_id == container requested
     NOT_IMPLEMENTED = 99, "Not implemented"
     PUBKEY_NEEDED = 100, "At least one public key must be provided"
     PUBKEY_FORMAT_ERROR = 101, "Incorrect public key provided; provide key, not filename or path"
     PUBKEY_IN_USE = 102, "Public key used by other users as secondary key"
+    TIMEOUT = 200, "Operation timed out"
     UNKNOWN_OBJECT_TYPE = 700, "Unknown object type"
     SYNC_FOR_CONTAINER_NOT_RUNNING = 800, "Sync not running for this container"
     SYNC_FOR_CONTAINER_ALREADY_RUNNING = 801, "Sync already running for this container"
@@ -54,6 +57,8 @@ class WLErrorType(Enum):
     SYNC_MANAGER_ALREADY_ACTIVE = 803, "Sync manager already active"
     SYNC_FAILED_TO_COMMUNICATE_WITH_MANAGER = 804, "Failed to communicate with sync manager"
     SYNC_CALLBACK_NOT_FOUND = 805, "Sync event handler not found"
+    SYNC_INVALID_CLIENT = 806, "Invalid client"
+    SYNC_ERROR = 807, "Sync interrupted due to error"
     OTHER = 999, None
 
     def __repr__(self):

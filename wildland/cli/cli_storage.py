@@ -40,6 +40,7 @@ from .cli_common import sign, verify, edit, modify_manifest, set_fields, \
     add_fields, del_fields, dump, check_if_any_options, check_options_conflict, \
     publish, unpublish, remount_container
 from ..container import Container
+from ..core.core_utils import make_wl_storage_id
 from ..storage import Storage, _get_storage_by_id_or_type
 from ..manifest.template import TemplateManager, StorageTemplate
 from ..publish import Publisher
@@ -233,15 +234,24 @@ def _do_create(
 
         logger.debug("sync: {%s} -> {%s}", source_storage, storage)
 
-        response = obj.client.do_sync(container_obj.uuid, container_obj.sync_id,
-            source_storage.params, storage.params, one_shot=True, unidir=True,
-            wait_if_already_running=True)
-        logger.debug(response)
-        msg, success = obj.client.wait_for_sync(container_obj.sync_id, stop_on_finish=True)
-        click.echo(msg)
-        if not success:
+        source_id = make_wl_storage_id(container_obj.owner, container_obj.uuid_path,
+                                       source_storage.backend_id)
+        target_id = make_wl_storage_id(container_obj.owner, container_obj.uuid_path,
+                                       storage.backend_id)
+        result = obj.wlsync.start_container_sync(container_obj.sync_id, source_id, target_id,
+                                                 continuous=False, unidirectional=True)
+                                                 # TODO wait_if_already_running=True
+        if result.failure:
+            logger.warning(result)
             raise WildlandError(f'Failed to sync storage for container {container_obj.uuid} '
-                f'(source: {source_storage}, target: {storage})')
+                                f'(source: {source_storage}, target: {storage})')
+
+        result, events = obj.wlsync.wait_for_sync(container_obj.sync_id, 30)
+        if result.failure:
+            raise WildlandError(result)
+
+        for event in events:
+            click.echo(str(event))
 
 
 def _is_container_mounted(obj: ContextObj, container_mount_path: PurePosixPath) -> bool:

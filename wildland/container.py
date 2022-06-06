@@ -112,7 +112,8 @@ class Container(PublishableWildlandObject, obj_type=WildlandObject.Type.CONTAINE
         """
         Return unique sync job ID for a container.
         """
-        return self.owner + '|' + self.uuid
+        # this is the core API format for container ID
+        return self.owner + ':' + str(self.uuid_path)
 
     def _ensure_uuid(self) -> PurePosixPath:
         """

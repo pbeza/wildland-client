@@ -25,37 +25,28 @@ Storage syncing.
 # pylint: disable=no-self-use
 import abc
 import json
+import threading
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, Iterable, Dict, Type, List, Callable, Any
+from typing import Optional, Iterable, Dict, Type, List, Callable
 from pathlib import Path, PurePosixPath
 from wildland.storage import StorageBackend
 from ..storage_backends.base import OptionalError
 from ..exc import WildlandError
-from ..storage_backends.watch import FileEventType
 
 
+@dataclass(frozen=True)
 class SyncConflict:
     """
     Class representing file conflict encountered during sync.
     """
-    def __init__(self, path: Path, backend1_id: str, backend2_id: str):
-        self.path = path
-        self.backend1_id = backend1_id
-        self.backend2_id = backend2_id
+    backend1_id: str
+    backend2_id: str
+    path: str
 
     def __str__(self):
-        return f'Conflict detected on {str(self.path)} in ' \
+        return f'Conflict detected on {self.path} in ' \
                f'storages {self.backend1_id} and {self.backend2_id}'
-
-    def __eq__(self, other):
-        if not isinstance(other, SyncConflict):
-            return False
-
-        if not self.path == other.path:
-            return False
-
-        return sorted([self.backend1_id, self.backend2_id]) ==\
-            sorted([other.backend1_id, other.backend2_id])
 
 
 class SyncState(Enum):
@@ -66,10 +57,13 @@ class SyncState(Enum):
     RUNNING = 2  # continuous sync running with pending events (storages are not synced)
     SYNCED = 3  # continuous sync running with no pending events (storages are synced)
     ONE_SHOT = 4  # one-shot sync running
-    ERROR = 5  # error/exception occurred during sync, process aborted
+    ERROR = 5  # error/exception occured during sync, process aborted
 
     def __str__(self):
         return str(self.name)
+
+    def __repr__(self):
+        return self.__str__()
 
 
 class SyncEvent(metaclass=abc.ABCMeta):
@@ -174,15 +168,15 @@ class SyncProgressEvent(SyncEvent):
         obj = json.loads(s)
         assert obj['type'] == SyncProgressEvent.type
         vals = obj['value'].split(' ', 1)
-        event_type = FileEventType[vals[0]]
+        progress = int(vals[0][:-1])
         path = PurePosixPath(vals[1])
-        return SyncProgressEvent(event_type, path)
+        return SyncProgressEvent(progress, path)
 
-    def __init__(self, event_type: FileEventType, path: PurePosixPath,
+    def __init__(self, progress: int, path: PurePosixPath,
                  job_id: Optional[str] = None):
-        self.event_type = event_type
+        self.progress = progress
         self.path = path
-        self.value = f'{event_type.name} {path}'
+        self.value = f'{progress}% {path}'
         self.job_id = job_id
 
 
@@ -199,10 +193,12 @@ class SyncConflictEvent(SyncEvent):
         """
         obj = json.loads(s)
         assert obj['type'] == SyncConflictEvent.type
-        return SyncConflictEvent(obj['value'])
+        vals = obj['value'].split(' ', 2)
+        return SyncConflictEvent(SyncConflict(vals[0], vals[1], vals[2]))
 
-    def __init__(self, message: str, job_id: Optional[str] = None):
-        self.value = message
+    def __init__(self, conflict: SyncConflict, job_id: Optional[str] = None):
+        self.conflict = conflict
+        self.value = f'{conflict.backend1_id} {conflict.backend2_id} {conflict.path}'
         self.job_id = job_id
 
 
@@ -224,6 +220,36 @@ class SyncErrorEvent(SyncEvent):
     def __init__(self, message: str, job_id: Optional[str] = None):
         self.value = message
         self.job_id = job_id
+
+
+class SyncFileState(Enum):
+    """
+    Current sync state of a single file.
+    """
+    UNKNOWN = 1  # syncer haven't chacked file state yet
+    SYNCING = 2  # file is being synced
+    SYNCED = 3  # file is synced
+    CONFLICT = 4  # conflict detected for this file
+    ERROR = 5  # error/exception occured during sync, file not synced
+
+    def __str__(self):
+        return str(self.name)
+
+    def __repr__(self):
+        return self.__str__()
+
+
+@dataclass
+class SyncFileInfo:
+    """
+    Sync state of a single file.
+    """
+    path: str
+    state: SyncFileState = SyncFileState.UNKNOWN
+    size: Optional[int] = None
+    conflicts: List[SyncConflict] = field(default_factory=list)
+    error: Optional[str] = None
+    progress: int = 0
 
 
 class BaseSyncer(metaclass=abc.ABCMeta):
@@ -264,8 +290,8 @@ class BaseSyncer(metaclass=abc.ABCMeta):
         self.target_mnt_path = target_mnt_path
         self._state = SyncState.STOPPED
         self._event_callback: Optional[Callable] = None
-        self._event_context: Any = None
         self._event_types = SyncEvent.__subclasses__()
+        self._event_lock = threading.Lock()
 
     def one_shot_sync(self, unidirectional: bool = False):
         """
@@ -305,21 +331,21 @@ class BaseSyncer(metaclass=abc.ABCMeta):
             self._state = state
             self.notify_event(SyncStateEvent(state))
 
-    def set_event_callback(self, callback: Callable[[SyncEvent, Any], None], context: Any = None):
+    def set_event_callback(self, callback: Callable[[SyncEvent], None]):
         """
         Set a callback that will be notified of sync events.
         :param callback Handler that will be called on an event.
-        :param context User data that will be passed to the callback along with the event.
         """
-        self._event_callback = callback
-        self._event_context = context
+        with self._event_lock:
+            self._event_callback = callback
 
     def notify_event(self, event: SyncEvent):
         """
         Notifies registered event callback (if any).
         """
-        if self._event_callback and type(event) in self._event_types:
-            self._event_callback(event, self._event_context)
+        with self._event_lock:
+            if self._event_callback and type(event) in self._event_types:
+                self._event_callback(event)
 
     def set_active_events(self, event_types: List[str]):
         """
@@ -327,14 +353,15 @@ class BaseSyncer(metaclass=abc.ABCMeta):
         Empty list means all event types.
         Types should be named as in SyncEvent.type field.
         """
-        if not event_types:
-            event_types = []
+        with self._event_lock:
+            if not event_types:
+                event_types = []
 
-        if len(event_types) == 0:
-            self._event_types = SyncEvent.__subclasses__()
-        else:
-            self._event_types = [cls for cls in SyncEvent.__subclasses__()
-                                 if cls.type in event_types]
+            if len(event_types) == 0:
+                self._event_types = SyncEvent.__subclasses__()
+            else:
+                self._event_types = [cls for cls in SyncEvent.__subclasses__()
+                                     if cls.type in event_types]
 
     @property
     def active_event_types(self) -> List[Type[SyncEvent]]:
@@ -342,7 +369,8 @@ class BaseSyncer(metaclass=abc.ABCMeta):
         List of event types that are active (sent to the notification callback).
         Events with types not present here are ignored.
         """
-        return self._event_types
+        with self._event_lock:
+            return self._event_types
 
     @abc.abstractmethod
     def iter_conflicts_force(self) -> Iterable[SyncConflict]:
@@ -354,6 +382,18 @@ class BaseSyncer(metaclass=abc.ABCMeta):
     def iter_conflicts(self) -> Iterable[SyncConflict]:
         """
         Iterate over discovered sync conflicts. Requires that the sync is/was running.
+        """
+
+    @abc.abstractmethod
+    def iter_files(self) -> Iterable[SyncFileInfo]:
+        """
+        Iterate over all files that are being synced. Requires that the sync is/was running.
+        """
+
+    @abc.abstractmethod
+    def get_file_info(self, path: PurePosixPath) -> Optional[SyncFileInfo]:
+        """
+        Return sync state of a single file. Requires that the sync is/was running.
         """
 
     @classmethod
