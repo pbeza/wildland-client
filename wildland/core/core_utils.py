@@ -21,7 +21,7 @@ Set of convenience utils for WLCore implementations
 """
 from copy import deepcopy
 from typing import Optional
-from pathlib import PurePosixPath
+from pathlib import PurePosixPath, Path
 
 from wildland.exc import WildlandError
 from ..client import Client
@@ -124,17 +124,17 @@ def wl_obj_to_wildland_object_type(wl_obj: WLObjectType) -> Optional[WildlandObj
         return None
 
 
-def check_object_existence(obj: WildlandObject, client: Client):
+def find_object_manifest_path(obj: WildlandObject, client: Client) -> Optional[Path]:
     """
-    Check if a given object already exists in Client's instance.
+    Find and return the object manifest path if it's already saved.
     """
     known_id = get_object_id(obj)
-    for existing_obj in client.load_all(obj.type):
+    for path, existing_obj in client.find_paths_and_load_all(obj.type):
         # TODO this is a very raw way of accessing objects by id; there probably should be a more
         # streamlined and faster way, see #759
         if get_object_id(existing_obj) == known_id:
-            return True
-    return False
+            return path
+    return None
 
 
 def wildland_object_to_wl_object(obj: WildlandObject, client: Client) -> WLObject:

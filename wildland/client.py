@@ -171,7 +171,7 @@ class Client:
         To reload the broken manifest, we need to use `clear_cache()` first.
         """
         local_users_cache: Dict[Path, Optional[Any]] = dict(
-            self._find_paths_and_load_all(
+            self.find_paths_and_load_all(
                 WildlandObject.Type.USER, cached=self._local_users_cache, reload_cached=reload))
         self._local_users_cache = local_users_cache
         return [obj for obj in self._local_users_cache.values() if obj is not None]
@@ -188,7 +188,7 @@ class Client:
         To reload the broken manifest, we need to use `clear_cache()` first.
         """
         local_bridges_cache: Dict[Path, Optional[Any]] = dict(
-            self._find_paths_and_load_all(
+            self.find_paths_and_load_all(
                 WildlandObject.Type.BRIDGE, cached=self._local_bridges_cache, reload_cached=reload))
         self._local_bridges_cache = local_bridges_cache
         return [obj for obj in self._local_bridges_cache.values() if obj is not None]
@@ -763,17 +763,17 @@ class Client:
         """
         Load object manifests from the appropriate directory.
         """
-        for _, obj in self._find_paths_and_load_all(object_type, decrypt, base_dir, quiet):
+        for _, obj in self.find_paths_and_load_all(object_type, decrypt, base_dir, quiet):
             if obj is not None:
                 yield obj
 
-    def _find_paths_and_load_all(self,
-                                 object_type: WildlandObject.Type,
-                                 decrypt: bool = True,
-                                 base_dir: Path = None,
-                                 quiet: bool = False,
-                                 reload_cached: bool = False,
-                                 cached: Optional[Dict[Path, Optional[WildlandObject]]] = None):
+    def find_paths_and_load_all(self,
+                                object_type: WildlandObject.Type,
+                                decrypt: bool = True,
+                                base_dir: Path = None,
+                                quiet: bool = False,
+                                reload_cached: bool = False,
+                                cached: Optional[Dict[Path, Optional[WildlandObject]]] = None):
         """
         Load and return object manifests with corresponding path from the appropriate directory.
         """

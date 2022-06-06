@@ -5820,6 +5820,36 @@ def test_import_user_existing(cli, base_dir, tmpdir):
     assert len(os.listdir(base_dir / 'bridges')) == 1
 
 
+def test_import_user_existing_with_force(cli, base_dir, tmpdir):
+
+    # force when owners are equal, but file names are different
+    # should rewrite existing file
+    alice_destination = tmpdir / 'unexpected_file_name.yaml'
+    alice_destination.write(_create_user_manifest('0xaaa', path='/alice/path'))
+    cli('user', 'create', 'another_alice', '--key', '0xaaa', '--path', '/another_alice/path')
+    cli('user', 'import', str(alice_destination), '--force-reimport')
+    assert len(os.listdir(base_dir / 'users')) == 1
+    assert '/another_alice/path' not in Path(base_dir / 'users/another_alice.user.yaml').read_text()
+    assert '/alice/path' in Path(base_dir / 'users/another_alice.user.yaml').read_text()
+
+    # force when owners are different, but file names are equal
+    # should create a new user manifest without changing the existing manifest
+    bob_destination = tmpdir / 'bob.user.yaml'
+    bob_destination.write(_create_user_manifest('0xbbb', path='/bob/user/path'))
+    cli('user', 'create', 'bob', '--key', '0xccc')
+    cli('user', 'import', str(bob_destination), '--force-reimport')
+    assert len(os.listdir(base_dir / 'users')) == 3
+    assert 'users/bob' in Path(base_dir / 'users/bob.user.yaml').read_text()
+    assert '/bob/user/path' in Path(base_dir / 'users/bob.1.user.yaml').read_text()
+
+    # force when neither file names nor owners are equals
+    # should ignore the --force-reimport flag and save a new manifest
+    david_destination = tmpdir / 'david.user.yaml'
+    david_destination.write(_create_user_manifest('0xddd'))
+    cli('user', 'import', str(david_destination), '--force-reimport')
+    assert len(os.listdir(base_dir / 'users')) == 4
+
+
 def test_only_subcontainers(cli, base_dir, control_client):
     control_client.expect('status', {})
     control_client.expect('info', {})

@@ -276,8 +276,11 @@ def _delete(obj: ContextObj, name: str, force: bool, cascade: bool, delete_keys:
                    ' use user\'s paths')
 @click.option('--bridge-owner', help="specify a different (then default) user to be used as the "
                                      "owner of created bridge manifests")
+@click.option('--force-reimport', 'force', is_flag=True, default=False,
+              help="import user again if already exist")
 @click.argument('path-or-url')
-def user_import(obj: ContextObj, path_or_url: str, paths: List[str], bridge_owner: Optional[str]):
+def user_import(obj: ContextObj, path_or_url: str, paths: List[str],
+                bridge_owner: Optional[str], force: bool):
     """
     Import a provided user or bridge manifest.
     Accepts a local path, an url or a Wildland path to manifest or to bridge.
@@ -303,9 +306,9 @@ def _user_import(obj: ContextObj, path_or_url: str, paths: List[str], bridge_own
     if p.exists():
         yaml_data = p.read_bytes()
         name = p.name
-        result, imported_object = obj.wlcore.object_import_from_yaml(yaml_data, name)
+        result, imported_object = obj.wlcore.object_import_from_yaml(yaml_data, name, force)
     else:
-        result, imported_object = obj.wlcore.object_import_from_url(path_or_url, name)
+        result, imported_object = obj.wlcore.object_import_from_url(path_or_url, name, force)
 
     if result.failure:
         if len(result.errors) == 1 and result.errors[0].code == WLErrorType.FILE_EXISTS_ERROR:

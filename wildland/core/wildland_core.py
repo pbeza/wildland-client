@@ -183,49 +183,61 @@ class WildlandCore(WildlandCoreBridge, WildlandCoreUser, WildlandCoreApi):
             return utils.storage_to_wl_storage(wildland_object)
         return None
 
-    def object_import_from_yaml(self, yaml_data: bytes, object_name: Optional[str]) -> \
-            Tuple[WildlandResult, Optional[WLObject]]:
+    def object_import_from_yaml(self, yaml_data: bytes, object_name: Optional[str],
+                                force=False) -> Tuple[WildlandResult, Optional[WLObject]]:
         """
         Import object from raw data. Only copies the provided object to appropriate WL manifest
         directory, does not create any bridges or other objects.
         :param yaml_data: bytes with yaml manifest data; must be correctly signed
         :param object_name: name of the object to be created; if not provided, will be generated
         automatically
+        :param force: set True if the existed file should be rewritten
         """
 
-        return self.__object_import_from_yaml(yaml_data, object_name)
+        return self.__object_import_from_yaml(yaml_data, object_name, force)
 
     @wildland_result(default_output=None)
-    def __object_import_from_yaml(self, yaml_data: bytes, object_name: Optional[str]):
+    def __object_import_from_yaml(self, yaml_data: bytes, object_name: Optional[str], force):
         Manifest.verify_and_load_pubkeys(yaml_data, self.client.session.sig)
 
         obj: WildlandObject = self.client.load_object_from_bytes(None, data=yaml_data)
-        return self._do_import(obj, object_name)
+        return self._do_import(obj, object_name, force)
 
-    def object_import_from_url(self, url: str, object_name: Optional[str]) -> \
+    def object_import_from_url(self, url: str, object_name: Optional[str], force=False) -> \
             Tuple[WildlandResult, Optional[WLObject]]:
         """
         Import object from raw data. Only copies the provided object to appropriate WL manifest
         directory, does not create any bridges or other objects.
         :param url: url to object manifest
         :param object_name: name of the object to be created
+        :param force: set True if the existed file should be rewritten
         """
-        return self.__object_import_from_url(url, object_name)
+        return self.__object_import_from_url(url, object_name, force)
 
     @wildland_result(default_output=None)
-    def __object_import_from_url(self, url: str, object_name: Optional[str]):
+    def __object_import_from_url(self, url: str, object_name: Optional[str], force):
         _, default_user = self.env.get_default_user()
         if not default_user:
             default_user = ''
 
         obj: WildlandObject = self.client.load_object_from_url(None, url, default_user)
-        return self._do_import(obj, object_name)
+        return self._do_import(obj, object_name, force)
 
-    def _do_import(self, obj: WildlandObject, name: Optional[str]):
-        if utils.check_object_existence(obj, self.client):
-            raise FileExistsError(utils.get_object_id(obj))
-        path = self.client.save_new_object(obj.type, obj, name, enforce_original_bytes=True)
-        logger.info('Created: %s', path)
+    def _do_import(self, obj: WildlandObject, name: Optional[str], force=False):
+        obj_manifest_path = utils.find_object_manifest_path(obj, self.client)
+        if obj_manifest_path:
+            if not force:
+                raise FileExistsError(utils.get_object_id(obj))
+            self.client.save_object(obj.type, obj, obj_manifest_path, enforce_original_bytes=True)
+            logger.info('Updated: %s', obj_manifest_path)
+        else:
+            new_obj_manifest_path = self.client.save_new_object(
+                obj.type,
+                obj,
+                name,
+                enforce_original_bytes=True
+            )
+            logger.info('Created: %s', new_obj_manifest_path)
         return utils.wildland_object_to_wl_object(obj, self.client)
 
     def put_file(self, local_file_path: str, wl_path: str) -> WildlandResult:

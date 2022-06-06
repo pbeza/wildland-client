@@ -90,8 +90,8 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         """
 
     @abc.abstractmethod
-    def object_import_from_yaml(self, yaml_data: bytes, object_name: Optional[str]) -> \
-            Tuple[WildlandResult, Optional[WLObject]]:
+    def object_import_from_yaml(self, yaml_data: bytes, object_name: Optional[str],
+                                force=False) -> Tuple[WildlandResult, Optional[WLObject]]:
         """
         Import object from raw data. Only copies the provided object to appropriate WL manifest
         directory, does not create any bridges or other objects.
@@ -101,7 +101,7 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         """
 
     @abc.abstractmethod
-    def object_import_from_url(self, url: str, object_name: Optional[str]) -> \
+    def object_import_from_url(self, url: str, object_name: Optional[str], force=False) -> \
             Tuple[WildlandResult, Optional[WLObject]]:
         """
         Import object from raw data. Only copies the provided object to appropriate WL manifest
