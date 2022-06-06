@@ -296,7 +296,7 @@ class Storage(PublishableWildlandObject, obj_type=WildlandObject.Type.STORAGE):
         return new_storage
 
 
-def _get_storage_by_id_or_type(id_or_type: str, storages: List[Storage]) -> Storage:
+def get_storage_by_id_or_type(id_or_type: str, storages: List[Storage]) -> Storage:
     """
     Helper function to find a storage by listed id or type.
     """

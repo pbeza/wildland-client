@@ -40,7 +40,7 @@ from .cli_common import sign, verify, edit, modify_manifest, set_fields, \
     add_fields, del_fields, dump, check_if_any_options, check_options_conflict, \
     publish, unpublish, remount_container
 from ..container import Container
-from ..storage import Storage, _get_storage_by_id_or_type
+from ..storage import Storage, get_storage_by_id_or_type
 from ..manifest.template import TemplateManager, StorageTemplate
 from ..publish import Publisher
 from ..log import get_logger
@@ -333,7 +333,7 @@ def _delete(obj: ContextObj, name: str, force: bool, no_cascade: bool, container
                 return
 
     for c in container_to_sync:
-        storage_to_delete = _get_storage_by_id_or_type(name, obj.client.all_storages(c))
+        storage_to_delete = get_storage_by_id_or_type(name, obj.client.all_storages(c))
         click.echo(f'Outdated storage for container {c.uuid}, attempting to sync storage.')
         target = None
         try:

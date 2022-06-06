@@ -149,6 +149,32 @@ def test_edit(cli, cli_fail, base_dir):
     cli_fail('user', 'edit', storage_path, '--editor', editor)
     cli_fail('user', 'edit', container_path, '--editor', editor)
 
+def test_edit_with_storage_sync(cli, base_dir):
+    # Create paths
+    storage1_dir = base_dir / 'storage1'
+    storage2_dir = base_dir / 'storage2'
+    os.mkdir(storage1_dir)
+    os.mkdir(storage2_dir)
+
+    # Mock data
+    cli('user', 'create', 'User', '--key', '0xaaa')
+    cli('container', 'create', 'Container', '--path', base_dir)
+    cli('storage', 'create', 'local', 'Storage1', '--location', storage1_dir,
+        '--container', 'Container')
+    cli('storage', 'create', 'local', 'Storage2', '--location', storage2_dir,
+        '--container', 'Container')
+
+    # Make file to check if it synced
+    make_file(storage2_dir / 'testfile', 'test data')
+
+    # Remove second storage's lines to test storage sync
+    editor = r'sed -i 16,19d'
+    container_dir = base_dir / 'containers/Container.container.yaml'
+    result = cli('edit', container_dir, '--editor', editor, capture=True)
+    assert "Outdated storage for container" in result.splitlines()[0]
+
+    # Check if file synced to the other storage.
+    assert wait_for_file(storage1_dir / 'testfile', 'test data')
 
 # Users
 

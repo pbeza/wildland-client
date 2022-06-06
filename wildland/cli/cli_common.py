@@ -54,7 +54,8 @@ from ..manifest.manifest import (
 from ..manifest.schema import SchemaError
 from ..exc import WildlandError
 from ..utils import yaml_parser
-from ..storage import Storage
+from ..storage_sync.base import SyncState
+from ..storage import Storage, get_storage_by_id_or_type
 from ..user import User
 from ..publish import Publisher
 from ..log import get_logger
@@ -373,6 +374,7 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
         try:
             new_manifest = Manifest.from_unsigned_bytes(data, obj.client.session.sig)
             new_manifest.skip_verification()
+            _sync_removed_storages(obj, manifest, new_manifest)
         except (ManifestError, WildlandError) as e:
             click.secho(f'Manifest parse error: {e}', fg="red")
             if click.confirm('Do you want to edit the manifest again to fix the error?'):
@@ -405,6 +407,78 @@ def edit(ctx: click.Context, editor: Optional[str], input_file: str, remount: bo
 
     return True
 
+def _sync_removed_storages(obj, old_manifest, new_manifest):
+    #check whether it was container edit and if there were any changes
+    if old_manifest._fields['object'] != 'container':
+        return
+    if new_manifest._fields['object'] != 'container':
+        return
+    if old_manifest == new_manifest:
+        return
+
+    #check if container isn't already syncing
+    container = WildlandObject.from_manifest(old_manifest, WildlandObject.Type.CONTAINER)
+    status = obj.client.get_sync_job_state(container.sync_id)
+    if status is None:
+        try:
+            edited_container = WildlandObject.from_manifest(new_manifest,
+                                                            WildlandObject.Type.CONTAINER)
+        except Exception as error:
+            click.echo(f"Could not load storages from the new manifest: {error}")
+            return
+    elif status[0] != SyncState.SYNCED:
+        click.echo(f"Syncing of {container.uuid} is in progress.")
+        return
+
+    #check old manifest's list of storage ids
+    old_storage_ids = []
+    container.client = obj.client
+    for i in obj.client.get_all_storages(container):
+        old_storage_ids.append(i.backend_id)
+
+    #check safely new manifest's list of storage ids
+    new_storage_ids = []
+    edited_container.client = obj.client
+    try:
+        for i in obj.client.get_all_storages(edited_container):
+            new_storage_ids.append(i.backend_id)
+    except Exception as error:
+        click.echo(f"Getting storages from edited manifest: {error}")
+
+    #check if new manifest has at least one storage to sync to
+    if len(new_storage_ids) == 0:
+        return
+
+    #if any old storage not on the new list, synchronize
+    for storage_id in old_storage_ids:
+        if storage_id not in new_storage_ids:
+            storage_to_delete = get_storage_by_id_or_type(storage_id,
+                                                           obj.client.all_storages(container))
+            click.echo(f'Outdated storage for container {container.uuid}, \
+                                                         attempting to sync storage.')
+            target = None
+            try:
+                #get first existing remote storage from new manifest.
+                target = obj.client.get_remote_storage(container,
+                                                       remote_storage=new_storage_ids[0])
+            except WildlandError:
+                pass
+            if not target:
+                try:
+                    #get first existing local storage from new manifest
+                    target = obj.client.get_local_storage(container,
+                                                          local_storage=new_storage_ids[0])
+                except WildlandError:
+                    # pylint: disable=raise-missing-from
+                    raise WildlandError("Cannot find storage to sync data into.")
+            LOGGER.debug("sync: {%s} -> {%s}", storage_to_delete, target)
+            response = obj.client.do_sync(container.uuid,
+                                          container.sync_id,
+                                          storage_to_delete.params,
+                                          target.params,
+                                          one_shot=True,
+                                          unidir=True)
+            LOGGER.debug(response)
 
 def hard_remount_container(obj, container_path: Path, old_manifest: Manifest):
     """
