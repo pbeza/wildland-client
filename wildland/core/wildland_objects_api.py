@@ -116,6 +116,8 @@ class WLStorage(WLObject):
     """
     #: storage backend type
     storage_type: str
+    #: storage backend id
+    backend_id: str
     #: id of the container owning this storage
     container: str  # container id
     #: is this storage trusted

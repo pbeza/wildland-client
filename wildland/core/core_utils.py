@@ -20,18 +20,21 @@
 Set of convenience utils for WLCore implementations
 """
 from copy import deepcopy
-from typing import Optional
 from pathlib import PurePosixPath
+from typing import Optional
 
 from wildland.exc import WildlandError
-from ..client import Client
-from ..user import User
-from ..container import Container
-from ..bridge import Bridge
-from ..storage import Storage
-from ..manifest.manifest import Manifest
-from ..wildland_object.wildland_object import WildlandObject, PublishableWildlandObject
+from wildland.log import get_logger
 from .wildland_objects_api import WLUser, WLBridge, WLStorage, WLContainer, WLObjectType, WLObject
+from ..bridge import Bridge
+from ..client import Client
+from ..container import Container
+from ..manifest.manifest import Manifest
+from ..storage import Storage
+from ..user import User
+from ..wildland_object.wildland_object import WildlandObject, PublishableWildlandObject
+
+logger = get_logger('core_utils')
 
 
 def get_object_id(obj: WildlandObject):
@@ -41,7 +44,7 @@ def get_object_id(obj: WildlandObject):
     if isinstance(obj, User):
         return f'{obj.owner}:'
     if isinstance(obj, Container):
-        return str(obj.uuid_path)
+        return f'{obj.owner}:{obj.uuid_path}:'
     if isinstance(obj, Bridge):
         return str(obj.paths[0])  # TODO
     if isinstance(obj, Storage):
@@ -68,7 +71,7 @@ def user_to_wluser(user: User, client: Client) -> WLUser:
     return wl_user
 
 
-def container_to_wlcontainer( container: Container) -> WLContainer:
+def container_to_wlcontainer(container: Container) -> WLContainer:
     """
     Convert Container to WLContainer
     """
@@ -112,6 +115,7 @@ def storage_to_wl_storage(storage: Storage) -> WLStorage:
         trusted=storage.trusted,
         primary=storage.primary,
         access_ids=[],  # TODO
+        backend_id=storage.backend_id,
     )
     return wl_storage
 

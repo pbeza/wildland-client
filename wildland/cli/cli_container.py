@@ -27,7 +27,7 @@ Manage containers
 """
 from itertools import combinations
 from pathlib import PurePosixPath, Path
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Iterable, List, Optional, Sequence, Tuple, Dict
 import os
 import sys
 import re
@@ -44,13 +44,15 @@ from xdg import BaseDirectory
 import wildland.cli.cli_common as cli_common
 
 from wildland.client import Client
-from wildland.control_client import ControlClientUnableToConnectError
 from wildland.wildland_object.wildland_object import WildlandObject
 from wildland.fs_client import StorageInfo
+import wildland.core.core_utils as core_utils
 from .cli_base import aliased_group, ContextObj
 from .cli_exc import CliError
 from .cli_storage import do_create_storage_from_templates
 from ..container import Container
+from ..core.wildland_core import WildlandCore
+from ..core.wildland_objects_api import WLObjectType
 from ..exc import WildlandError
 from ..manifest.manifest import ManifestError
 from ..manifest.template import TemplateManager
@@ -171,6 +173,19 @@ def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Opt
             raise CliError('--category option requires --title or container name')
         title = name
 
+    result, container_tuple = obj.wlcore.container_create(list(path), list(access),
+                                                          encrypt_manifest, list(category), title,
+                                                          owner, name)
+    if result.failure or not container_tuple or len(container_tuple) < 2:
+        raise CliError(f'Failed to create container: {str(result)}')
+    (container, container_path) = container_tuple
+    if not container or not container_path:
+        raise CliError('Failed to create container')
+
+    click.echo(f'Created: {container_path}')
+
+    # TODO: replace with core.storage_create_from_template
+    #  Issue: https://gitlab.com/wildland/wildland-client/-/issues/700
     storage_templates = []
 
     if storage_template:
@@ -181,40 +196,13 @@ def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Opt
         except WildlandError as we:
             raise CliError(f'Could not load [{storage_template}] storage template. {we}') from we
 
-    if access:
-        access_list = []
-        for a in access:
-            if WildlandPath.WLPATH_RE.match(a):
-                # We use canonical form of a Wildland path because we want the whole
-                # path with prefix into manifest
-                access_list.append({"user-path": WildlandPath.get_canonical_form(a)})
-            else:
-                access_list.append({"user": obj.client.load_object_from_name(
-                    WildlandObject.Type.USER, a).owner})
-    elif not encrypt_manifest:
-        access_list = [{'user': '*'}]
-    else:
-        access_list = []
-
-    owner_user = obj.client.load_object_from_name(
-        WildlandObject.Type.USER, owner or '@default-owner')
-
-    container = Container(
-        owner=owner_user.owner,
-        paths=[PurePosixPath(p) for p in path],
-        backends=[],
-        client=obj.client,
-        title=title,
-        categories=[PurePosixPath(c) for c in category],
-        access=access_list
-    )
-
-    container_path = obj.client.save_new_object(WildlandObject.Type.CONTAINER, container, name)
-    click.echo(f'Created: {container_path}')
+    result, _container = obj.wlcore.container_find_by_id(container.id)
+    if not result.success or not _container:
+        raise CliError(str(result))
 
     if storage_templates:
         try:
-            do_create_storage_from_templates(obj.client, container, storage_templates, local_dir,
+            do_create_storage_from_templates(obj.client, _container, storage_templates, local_dir,
                                              no_publish=no_publish)
         except (WildlandError, ValueError) as ex:
             click.echo(f'Removing container: {container_path}')
@@ -222,22 +210,17 @@ def create(obj: ContextObj, owner: Optional[str], path: Sequence[str], name: Opt
             raise WildlandError(f'Failed to create storage from template. {ex}') from ex
 
     if update_user:
-        if not owner_user.local_path:
-            raise WildlandError('Cannot update user because the manifest path is unknown')
-        click.echo(f'Attaching container to user [{owner_user.owner}]')
+        result = obj.wlcore.user_add_container_catalog_entry(owner or '@default-owner',
+                                                             container.id)
+        if not result.success:
+            raise WildlandError(str(result))
 
-        owner_user.add_catalog_entry(str(obj.client.local_url(container_path)))
-        obj.client.save_object(WildlandObject.Type.USER, owner_user)
+    if no_publish:
+        return
 
-    if not no_publish:
-        try:
-            owner_user = obj.client.load_object_from_name(WildlandObject.Type.USER, container.owner)
-            if owner_user.has_catalog:
-                click.echo(f'Publishing container: [{container.get_primary_publish_path()}]')
-                publisher = Publisher(obj.client, owner_user)
-                publisher.publish(container)
-        except WildlandError as ex:
-            raise WildlandError(f"Failed to publish container: {ex}") from ex
+    result = obj.wlcore.container_publish(container.id)
+    if not result.success:
+        raise CliError(str(result))
 
 
 @container_.command(short_help='update container')
@@ -249,25 +232,24 @@ def update(obj: ContextObj, storage, cont):
     """
     Update a container manifest.
     """
-
-    container = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, cont)
-    if container.local_path is None:
-        raise WildlandError('Can only update a local manifest')
+    result, wl_container = obj.wlcore.object_get(WLObjectType.CONTAINER, cont)
+    if not result.success or not wl_container:
+        raise WildlandError(str(result))
 
     if not storage:
         click.echo('No change')
         return
 
-    for storage_name in storage:
-        storage = obj.client.load_object_from_name(WildlandObject.Type.STORAGE, storage_name)
-        assert storage.local_path
-        click.echo(f'Adding storage: {storage.local_path}')
-        container.add_storage_from_obj(storage, inline=False, storage_name=storage_name)
-
-    obj.client.save_object(WildlandObject.Type.CONTAINER, container)
+    result = obj.wlcore.container_add_storage(wl_container.id, storage)
+    if not result.success:
+        raise WildlandError(str(result))
 
 
-def _container_info(client, container, users_and_bridge_paths):
+def _container_info(obj, wl_container, users_and_bridge_paths):
+    container_result, container = obj.wlcore.container_find_by_id(wl_container.id)
+    if not container_result.success or not container:
+        raise WildlandError(str(container_result))
+
     container_fields = container.to_repr_fields(include_sensitive=False)
     bridge_paths = []
     try:
@@ -278,8 +260,8 @@ def _container_info(client, container, users_and_bridge_paths):
     if bridge_paths:
         container_fields['bridge-paths-to-owner'] = bridge_paths
 
-    cache = client.cache_storage(container)
-    if cache:
+    result, cache = obj.wlcore.container_get_storage_cache(wl_container.id)
+    if result.success and cache:
         storage_type = cache.storage_type
         result = {
             "type": storage_type,
@@ -303,13 +285,34 @@ def list_(obj: ContextObj):
     """
     Display known containers.
     """
+    _, default_user = obj.wlcore.env.get_default_user()
     users_and_bridge_paths = {}
-    for user, bridge_paths in obj.client.load_users_with_bridge_paths(only_default_user=True):
+    result_users, users = obj.wlcore.user_list()
+    result_bridges, bridges = obj.wlcore.bridge_list()
+    result_containers, containers = obj.wlcore.container_list()
+
+    if not result_bridges.success or not result_users.success or not result_containers.success:
+        click.echo('Failed to list containers:')
+        for e in result_users.errors + result_bridges.errors + result_containers.errors:
+            click.echo(f'Error {e.code}: {e.description}')
+
+    # TODO: this used to use a client method called load_users_with_bridge_paths; perhaps this
+    #  will be obsolete soon? repeated code from cli_user.py::list_
+    bridges_from_default_user: Dict[str, List[str]] = dict()
+    for bridge in bridges:
+        if bridge.owner != default_user:
+            continue
+        if bridge.user_id not in bridges_from_default_user:
+            bridges_from_default_user[bridge.user_id] = []
+        bridges_from_default_user[bridge.user_id].extend(bridge.paths)
+
+    for user in users:
+        bridge_paths = bridges_from_default_user.get(user.owner)
         if bridge_paths:
             users_and_bridge_paths[user.owner] = bridge_paths
 
-    for container in obj.client.load_all(WildlandObject.Type.CONTAINER):
-        _container_info(obj.client, container, users_and_bridge_paths)
+    for container in containers:
+        _container_info(obj, container, users_and_bridge_paths)
 
 
 @container_.command(short_help='show container summary')
@@ -319,14 +322,35 @@ def info(obj: ContextObj, name):
     """
     Show information about single container.
     """
+    _, default_user = obj.wlcore.env.get_default_user()
     users_and_bridge_paths = {}
-    for user, bridge_paths in obj.client.load_users_with_bridge_paths(only_default_user=True):
+    result_users, users = obj.wlcore.user_list()
+    result_bridges, bridges = obj.wlcore.bridge_list()
+
+    if not result_bridges.success or not result_users.success:
+        click.echo('Failed to list containers:')
+        for e in result_users.errors + result_bridges.errors:
+            click.echo(f'Error {e.code}: {e.description}')
+
+    # TODO: this used to use a client method called load_users_with_bridge_paths; perhaps this
+    #  will be obsolete soon? repeated code from cli_user.py::list_
+    bridges_from_default_user: Dict[str, List[str]] = dict()
+    for bridge in bridges:
+        if bridge.owner != default_user:
+            continue
+        if bridge.user_id not in bridges_from_default_user:
+            bridges_from_default_user[bridge.user_id] = []
+        bridges_from_default_user[bridge.user_id].extend(bridge.paths)
+
+    for user in users:
+        bridge_paths = bridges_from_default_user.get(user.owner)
         if bridge_paths:
             users_and_bridge_paths[user.owner] = bridge_paths
 
-    container = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, name)
-
-    _container_info(obj.client, container, users_and_bridge_paths)
+    container_result, container = obj.wlcore.object_get(WLObjectType.CONTAINER, name)
+    if not container_result.success or not container:
+        raise WildlandError(str(container_result))
+    _container_info(obj, container, users_and_bridge_paths)
 
 
 @container_.command('delete', short_help='delete a container', alias=['rm', 'remove'])
@@ -355,16 +379,13 @@ def delete(obj: ContextObj, names, force: bool, cascade: bool, no_unpublish: boo
 
 
 def _delete(obj: ContextObj, name: str, force: bool, cascade: bool, no_unpublish: bool):
-    # TODO: also consider detecting user-container link (i.e. user's main container).
-
-    try:
-        container = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, name)
-    except ManifestError as ex:
+    result, container = obj.wlcore.object_get(WLObjectType.CONTAINER, name)
+    if not result.success or not container:
         if force:
-            logger.warning('Failed to load manifest: %s', ex)
+            logger.warning('Failed to load manifest: %s', str(result))
             try:
-                path = obj.client.find_local_manifest(WildlandObject.Type.CONTAINER, name)
-                if path:
+                result, path = obj.wlcore.object_get_manifest_path(WLObjectType.CONTAINER, name)
+                if result.success and path:
                     click.echo(f'Deleting file {path}')
                     path.unlink()
             except ManifestError:
@@ -373,82 +394,65 @@ def _delete(obj: ContextObj, name: str, force: bool, cascade: bool, no_unpublish
             if cascade:
                 logger.warning('Unable to cascade remove: manifest failed to load.')
             return
-        logger.warning('Failed to load manifest, cannot delete: %s', ex)
+        logger.warning('Failed to load manifest, cannot delete: %s', result)
         click.echo('Use --force to force deletion.')
         return
 
-    if not container.local_path:
-        raise CliError('Can only delete a local manifest')
+    result, _container = obj.wlcore.container_find_by_id(container.id)
+    if not result.success or not _container:
+        raise WildlandError(str(result))
 
-    user = obj.client.load_object_from_name(WildlandObject.Type.USER, container.owner)
-    has_catalog_entry = user.has_catalog_entry(obj.client.local_url(container.local_path))
+    if not _container.local_path:
+        raise FileNotFoundError('Can only delete a local manifest.')
 
-    if has_catalog_entry and not cascade and not force:
+    result, has_user_catalog_entry = obj.wlcore.container_has_user_catalog_entries(container.id)
+    if not result.success or has_user_catalog_entry is None:
+        raise WildlandError(str(result))
+
+    if has_user_catalog_entry and not cascade and not force:
         logger.warning('User has catalog entry associated with this container.')
         click.echo('Use --cascade to delete all content associated with this container or --force '
                    'to force deletion')
         return
 
-    # unmount if mounted
-    try:
-        for mount_path in obj.fs_client.get_unique_storage_paths(container):
-            storage_and_pseudo_ids = obj.fs_client.find_storage_id_by_path(
-                mount_path)
+    result, storage_ids = obj.wlcore.find_container_storage_ids(container.id)
+    if isinstance(storage_ids, list):
+        for storage_id in storage_ids:
+            result = obj.wlcore.container_storage_unmount(storage_id)
+            if not result.success:
+                raise CliError(str(result))
 
-            for ident in storage_and_pseudo_ids:
-                obj.fs_client.unmount_storage(ident)
-
-            for storage_id in obj.fs_client.find_all_subcontainers_storage_ids(container):
-                obj.fs_client.unmount_storage(storage_id)
-    except ControlClientUnableToConnectError:
-        pass
-
+    result, backend_paths = obj.wlcore.container_find_backends_usages(container.id)
+    if not result.success or backend_paths is None:
+        raise WildlandError(str(result))
     has_local = False
-
-    for backend in container.load_raw_backends(include_inline=False):
-        path = obj.client.parse_file_url(backend, container.owner)
-        if path and path.exists():
-            if cascade:
-                click.echo('Deleting storage: {}'.format(path))
-                path.unlink()
-            else:
-                click.echo('Container refers to a local manifest: {}'.format(path))
-                has_local = True
+    for path in backend_paths:
+        if cascade:
+            click.echo('Deleting storage: {}'.format(path))
+            path.unlink()
+        else:
+            click.echo('Container refers to a local manifest: {}'.format(path))
+            has_local = True
 
     if has_local and not force:
         raise CliError('Container refers to local manifests, not deleting '
                        '(use --force or --cascade)')
 
-    # unpublish
     if not no_unpublish:
-        try:
-            click.echo(f'Unpublishing container: [{container.get_primary_publish_path()}]')
-            Publisher(obj.client, user).unpublish(container)
-        except WildlandError:
-            # not published
-            pass
-
-    try:
-        Publisher(obj.client, user).remove_from_cache(container)
-    except WildlandError as e:
-        logger.warning('Failed to remove container from cache: %s', e)
-        if not force:
-            click.echo('Cannot remove container. Use --force to force deletion.')
-            return
+        obj.wlcore.container_unpublish(container.id)
 
     if cascade:
-        try:
-            if container.local_path:
-                user.remove_catalog_entry(obj.client.local_url(container.local_path))
-                obj.client.save_object(WildlandObject.Type.USER, user)
-        except WildlandError as e:
-            logger.warning('Failed to remove catalog entry: %s', e)
+        result = obj.wlcore.user_remove_container_catalog_entry(container.id)
+        if not result.success:
+            logger.warning('Failed to remove catalog entry: %s', str(result))
             if not force:
-                click.echo('Cannot remove container. Use --force to force deletion.')
-                return
+                logger.debug('Cannot remove container. ')
+            raise WildlandError(str(result))
 
-    click.echo(f'Deleting: {container.local_path}')
-    container.local_path.unlink()
+    delete_result = obj.wlcore.container_delete(container.id, force)
+
+    if not delete_result.success:
+        raise CliError(str(delete_result))
 
 
 container_.add_command(cli_common.sign)
@@ -487,37 +491,27 @@ def modify(ctx: click.Context,
     unless publish is False.
     """
     _option_check(ctx, add_path, del_path, add_category, del_category, title, add_access,
-                  del_access, encrypt_manifest,
-                  no_encrypt_manifest, del_storage)
+                  del_access, encrypt_manifest, no_encrypt_manifest, del_storage)
 
-    add_access_owners = []
-    for a in add_access:
-        if WildlandPath.WLPATH_RE.match(a):
-            add_access_owners.append(
-                {'user-path': WildlandPath.get_canonical_form(a)}
-            )
-        else:
-            add_access_owners.append(
-                {'user': ctx.obj.client.load_object_from_name(WildlandObject.Type.USER, a).owner}
-            )
+    def get_user_owners(user_name):
+        if WildlandPath.WLPATH_RE.match(user_name):
+            # We use canonical form of a Wildland path because we want the whole
+            # path with prefix into manifest
+            return {'user-path': WildlandPath.get_canonical_form(user_name)}
+
+        result, user = ctx.obj.wlcore.object_get(WLObjectType.USER, user_name)
+        if not result.success or not user:
+            raise CliError(f'{result}')
+        return {'user': user.owner}
+
+    add_access_owners = [get_user_owners(user_name) for user_name in add_access]
     to_add = {'paths': add_path, 'categories': add_category, 'access': add_access_owners}
 
     container_access = _get_container_accesses(ctx, input_file)
     if add_access_owners and {'user': '*'} in container_access:
         raise CliError("Cannot add more access entry while access is set to '*'.")
 
-    del_access_owners = []
-    for a in del_access:
-        if WildlandPath.WLPATH_RE.match(a):
-            # We use canonical form of a Wildland path because we want the whole
-            # path with prefix into manifest
-            del_access_owners.append(
-                {'user-path': WildlandPath.get_canonical_form(a)}
-            )
-        else:
-            del_access_owners.append(
-                {'user': ctx.obj.client.load_object_from_name(WildlandObject.Type.USER, a).owner}
-            )
+    del_access_owners = [get_user_owners(user_name) for user_name in del_access]
     to_del = {'paths': del_path, 'categories': del_category, 'access': del_access_owners}
 
     to_del_nested = _get_storages_idx_to_del(ctx, del_storage, input_file)
@@ -549,7 +543,7 @@ def modify(ctx: click.Context,
     assert isinstance(container, Container)
 
     if modified:
-        _publish_container_after_modification(ctx.obj.client, container, publish)
+        _publish_container_after_modification(ctx, container, publish)
 
 
 def _option_check(ctx, add_path, del_path, add_category, del_category, title, add_access,
@@ -571,22 +565,24 @@ def _option_check(ctx, add_path, del_path, add_category, del_category, title, ad
 
 
 def _get_storages_idx_to_del(ctx, del_storage, input_file):
-    to_del_nested = {}
-    if del_storage:
-        idxs_to_delete = []
-        container_manifest = cli_common.find_manifest_file(
-            ctx.obj.client, input_file, 'container').read_bytes()
-        container_yaml = list(yaml_parser.safe_load_all(container_manifest))[1]
-        storages_obj = container_yaml.get('backends', {}).get('storage', {})
-        for s in del_storage:
-            if s.isnumeric():
-                idxs_to_delete.append(int(s))
-            else:
-                for idx, obj_storage in enumerate(storages_obj):
-                    if obj_storage['backend-id'] == s:
-                        idxs_to_delete.append(idx)
-        click.echo('Storage indexes to remove: ' + str(idxs_to_delete))
-        to_del_nested[('backends', 'storage')] = idxs_to_delete
+    to_del_nested: Dict[tuple, list] = {}
+    if not del_storage:
+        return to_del_nested
+
+    idxs_to_delete = []
+    container_manifest = cli_common.find_manifest_file(
+        ctx.obj.client, input_file, 'container').read_bytes()
+    container_yaml = list(yaml_parser.safe_load_all(container_manifest))[1]
+    storages_obj = container_yaml.get('backends', {}).get('storage', {})
+    for s in del_storage:
+        if s.isnumeric():
+            idxs_to_delete.append(int(s))
+        else:
+            for idx, obj_storage in enumerate(storages_obj):
+                if obj_storage['backend-id'] == s:
+                    idxs_to_delete.append(idx)
+    click.echo('Storage indexes to remove: ' + str(idxs_to_delete))
+    to_del_nested[('backends', 'storage')] = idxs_to_delete
 
     return to_del_nested
 
@@ -748,12 +744,13 @@ def _create_cache(client: Client, container: Container, template_name: str,
     return cache
 
 
-def _delete_cache(client: Client, container: Container) -> bool:
+def _delete_cache(wlcore: WildlandCore, container: Container) -> bool:
     """
     Delete cache associated with the container. Returns True if cache was present.
     """
-    cache = client.cache_storage(container)
-    if cache:
+    result, cache = wlcore.container_get_storage_cache(
+        core_utils.container_to_wlcontainer(container).id)
+    if result.success and cache:
         click.echo(f'Deleting cache: {cache.local_path}')
         cache.local_path.unlink()
         return True
@@ -787,7 +784,7 @@ def delete_cache(obj: ContextObj, container_names):
     for name in container_names:
         containers = obj.client.load_containers_from(name)
         for container in containers:
-            if not _delete_cache(obj.client, container):
+            if not _delete_cache(obj.wlcore, container):
                 click.echo('Cache not set for the container')
 
 
@@ -1083,12 +1080,14 @@ def _collect_storage_ids_by_container_name(
     for container in containers:
         unique_storage_paths = obj.fs_client.get_unique_storage_paths(container, True)
 
-        cache = obj.client.cache_storage(container)
+        result, cache = obj.wlcore.container_get_storage_cache(
+            core_utils.container_to_wlcontainer(container).id)
+
         for mount_path in unique_storage_paths:
             storage_id, pm_id = obj.fs_client.find_storage_id_by_path(mount_path)
 
             backend_id = _mount_path_to_backend_id(mount_path)
-            if cache and cache.params['backend-id'] == backend_id:
+            if result.success and cache and cache.params['backend-id'] == backend_id:
                 cache_ids.append(storage_id)
             else:
                 storage_ids.append(storage_id)
@@ -1097,9 +1096,10 @@ def _collect_storage_ids_by_container_name(
 
         if with_subcontainers:
             sub_ids = obj.fs_client.find_all_subcontainers_storage_ids(container)
-            cache = obj.client.cache_storage(container)
+            result, cache = obj.wlcore.container_get_storage_cache(
+                core_utils.container_to_wlcontainer(container).id)
             for storage_id in sub_ids:
-                if cache and cache.params['backend-id'] == storage_id:
+                if result.success and cache and cache.params['backend-id'] == storage_id:
                     cache_ids.append(storage_id)
                 else:
                     storage_ids.append(storage_id)
@@ -1122,10 +1122,11 @@ def _collect_storage_ids_by_container_path(
 
     for storage_id in all_storage_ids:
         container = obj.fs_client.get_container_from_storage_id(storage_id)
-        cache = obj.client.cache_storage(container)
+        result, cache = obj.wlcore.container_get_storage_cache(
+            core_utils.container_to_wlcontainer(container).id)
         mount_path = obj.fs_client.get_primary_unique_mount_path_from_storage_id(storage_id)
         backend_id = _mount_path_to_backend_id(mount_path)
-        if cache and cache.params['backend-id'] == backend_id:
+        if result.success and cache and cache.params['backend-id'] == backend_id:
             cache_ids.append(storage_id)
         else:
             storage_ids.append(storage_id)
@@ -1339,12 +1340,18 @@ def duplicate(obj: ContextObj, new_name, cont):
     """
     Duplicate an existing container manifest.
     """
+    result, container = obj.wlcore.object_get(WLObjectType.CONTAINER, cont)
+    if not result.success or not container:
+        raise CliError(f'Could not resolve container {cont}\n{str(result)}')
 
-    container = obj.client.load_object_from_name(WildlandObject.Type.CONTAINER, cont)
-    new_container = container.copy(new_name)
+    result, container_tuple = obj.wlcore.container_duplicate(container.id, new_name)
+    if not result.success:
+        raise CliError(str(result))
+    if not container_tuple or not container_tuple[0] or not container_tuple[1]:
+        raise CliError('Failed to duplicate container')
 
-    path = obj.client.save_new_object(WildlandObject.Type.CONTAINER, new_container, new_name)
-    click.echo(f'Created: {path}')
+    container_path = container_tuple[1]
+    click.echo(f'Created: {container_path}')
 
 
 @container_.command(short_help='find container by absolute file or directory path')
@@ -1356,19 +1363,25 @@ def find(obj: ContextObj, path: str):
     be relative with respect to the current working directory (not to the Wildland's mountpoint).
     """
     absolute_path = Path(path).resolve()
-    results = set(sorted([
-        (fileinfo.backend_id, f'wildland:{fileinfo.storage_owner}:{fileinfo.container_path}:')
-        for fileinfo in obj.fs_client.pathinfo(absolute_path)
-    ]))
+    if not absolute_path.exists():
+        raise CliError(f'[{absolute_path}] does not exist')
+    try:
+        relpath = absolute_path.resolve().relative_to(obj.fs_client.mount_dir)
+    except ValueError as e:
+        raise CliError(f'Given path [{absolute_path}] is not a subpath of the mountpoint '
+                       f'[{obj.fs_client.mount_dir}]') from e
 
-    if not results:
+    result, wl_objects = obj.wlcore.container_find_by_path(str(relpath))
+
+    if not result.success:
+        raise CliError(str(result))
+
+    if not wl_objects:
         raise CliError('Given path was not found in any storage')
 
-    for result in results:
-        (backend_id, wlpath) = result
-
-        click.echo(f'Container: {wlpath}\n'
-                   f'  Backend id: {backend_id}')
+    for container, storage in wl_objects:
+        click.echo(f'Container: wildland:{container.id}\n'
+                   f'  Backend id: {storage.backend_id}')
 
 
 @container_.command(short_help='verify and dump contents of a container')
@@ -1401,11 +1414,11 @@ def edit(ctx: click.Context, path: str, publish: bool, editor: Optional[str], re
     assert isinstance(container, Container)
 
     if modified:
-        _publish_container_after_modification(ctx.obj.client, container, publish)
+        _publish_container_after_modification(ctx, container, publish)
 
 
 def _publish_container_after_modification(
-            client: Client,
+            ctx: click.Context,
             container: Container,
             publish: bool
         ) -> None:
@@ -1415,11 +1428,8 @@ def _publish_container_after_modification(
     """
     owner = container.owner
 
-    if Publisher.is_published(client, owner, container.get_primary_publish_path()):
+    if Publisher.is_published(ctx.obj.client, owner, container.get_primary_publish_path()):
         if publish or publish is None:
-            cli_common.republish_object(client, container)
-    else:
-        if publish:
-            user = client.load_object_from_name(WildlandObject.Type.USER, owner)
-            click.echo('Publishing container')
-            Publisher(client, user).publish(container)
+            cli_common.republish_object(ctx.obj.client, container)
+    elif publish:
+        ctx.obj.wlcore.container_publish(core_utils.container_to_wlcontainer(container).id)

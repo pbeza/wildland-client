@@ -20,11 +20,14 @@
 API for Wildland Core
 """
 import abc
+from pathlib import Path
 from typing import List, Tuple, Optional, Callable, Dict
 from enum import Enum
 from .wildland_result import WildlandResult
 from .wildland_objects_api import WLObject, WLTemplateFile, WLBridge, WLObjectType, WLUser, \
     WLStorageBackend, WLStorage, WLContainer
+from ..container import Container
+from ..storage import Storage
 
 
 class ModifyMethod(Enum):
@@ -124,6 +127,16 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def object_get_local_path(self, object_type: WLObjectType, object_id: str) -> \
             Tuple[WildlandResult, Optional[str]]:
+        """
+        Return local path to object, if available.
+        :param object_id: object_id of the object
+        :param object_type: type of the object
+        :return: tuple of WildlandResult and local file path or equivalent, if available
+        """
+
+    @abc.abstractmethod
+    def object_get_manifest_path(self, object_type: WLObjectType, object_id: str) -> \
+            Tuple[WildlandResult, Optional[Path]]:
         """
         Return local path to object, if available.
         :param object_id: object_id of the object
@@ -260,6 +273,23 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         """
         Delete provided user.
         :param user_id: User ID (in the form of user fingerprint)
+        :return: WildlandResult
+        """
+
+    def user_remove_container_catalog_entry(self, container_id: str) -> WildlandResult:
+        """
+        Remove container from user catalog entry
+        :param container_id: id of the container to be duplicated, in the form of
+        owner_id:/.uuid/container_uuid
+        :return: WildlandResult
+        """
+
+    def user_add_container_catalog_entry(self, user_name: str, container_id: str) -> WildlandResult:
+        """
+        Add a container to user catalog
+        :param user_name: the name of the user
+        :param container_id: id of the container to be duplicated, in the form of
+        owner_id:/.uuid/container_uuid
         :return: WildlandResult
         """
 
@@ -410,7 +440,7 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
                          categories: Optional[List[str]] = None,
                          title: Optional[str] = None, owner: Optional[str] = None,
                          name: Optional[str] = None) -> \
-            Tuple[WildlandResult, Optional[WLContainer]]:
+            Tuple[WildlandResult, Optional[Tuple[WLContainer, Path]]]:
         """
         Create a new container manifest
         :param paths: container paths (must be absolute paths)
@@ -423,7 +453,8 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         :param title: title of the container, will be used to generate mount paths
         :param owner: owner of the container; if omitted, default owner will be used
         :param name: name of the container to be created, used in naming container file
-        :return: Tuple of WildlandResult and, if successful, the created WLContainer
+        :return: Tuple of WildlandResult and, if successful, the created WLContainer together with
+        its path
         """
 
     @abc.abstractmethod
@@ -434,15 +465,43 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         """
 
     @abc.abstractmethod
-    def container_delete(self, container_id: str) -> WildlandResult:
+    def container_storage_unmount(self, storage_id: str):
+        """
+        Unmount a storage with given storage id.
+        """
+
+    @abc.abstractmethod
+    def find_container_storage_ids(self, container_id: str) -> Tuple[WildlandResult, List[int]]:
+        """
+        Unmount container's storages if they are mounted
+        """
+
+    @abc.abstractmethod
+    def container_find_backends_usages(self, container_id: str) -> \
+            Tuple[WildlandResult, Optional[List[Path]]]:
+        """
+        Find paths of all container backends
+        """
+
+    @abc.abstractmethod
+    def container_has_user_catalog_entries(self, container_id: str) -> \
+            Tuple[WildlandResult, Optional[bool]]:
+        """
+        Check if catalog entry is present in container owner user's manifest
+        """
+
+    @abc.abstractmethod
+    def container_delete(self, container_id: str, force: bool = False) -> WildlandResult:
         """
         Delete provided container.
         :param container_id: container ID (in the form of user_id:/.uuid/container_uuid)
+        :param force: delete even when using local storage manifests; ignore errors on parse
+        :return: WildlandResult
         """
 
     @abc.abstractmethod
     def container_duplicate(self, container_id: str, name: Optional[str] = None) -> \
-            Tuple[WildlandResult, Optional[WLContainer]]:
+            Tuple[WildlandResult, Optional[Tuple[WLContainer, Path]]]:
         """
         Create a copy of the provided container at the provided friendly name, with a newly
         generated id and copied storages
@@ -450,7 +509,8 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         owner_id:/.uuid/container_uuid
         :param name: optional name for the new container. If omitted, will be generated
         automatically
-        :return: WildlandResult and, if duplication was successful, the new container
+        :return: Tuple of WildlandResult and, if successful, the created WLContainer together with
+        its path
         """
 
     @abc.abstractmethod
@@ -475,6 +535,16 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         cache storage (becomes primary storage for the container while mounted)
         :return: WildlandResult
         :rtype:
+        """
+
+    @abc.abstractmethod
+    def container_get_storage_cache(self, container_id: str) \
+            -> Tuple[WildlandResult, Optional[Storage]]:
+        """
+        Get cache storage for a container.
+        :param container_id: id of the container (in the form of its publish_path,
+        userid:/.uuid/container_uuid)
+        :return: tuple of WildlandResult and, if successful, the cache storage
         """
 
     @abc.abstractmethod
@@ -515,6 +585,16 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         """
 
     @abc.abstractmethod
+    def container_add_storage(self, container_id: str, storage_names: List[str]) -> WildlandResult:
+        """
+        Add storages to container
+        :param container_id: id of the container to be modified, in the form of
+        user_id:/.uuid/container_uuid
+        :param storage_names: list of storage names
+        :return: WildlandResult
+        """
+
+    @abc.abstractmethod
     def container_publish(self, container_id) -> WildlandResult:
         """
         Publish the given container.
@@ -531,13 +611,21 @@ class WildlandCoreApi(metaclass=abc.ABCMeta):
         """
 
     @abc.abstractmethod
-    def container_find(self, path: str) -> \
+    def container_find_by_path(self, path: str) -> \
             Tuple[WildlandResult, List[Tuple[WLContainer, WLStorage]]]:
         """
         Find container by path relative to Wildland mount root.
         :param path: path to file (relative to Wildland mount root)
         :return: tuple of WildlandResult and list of tuples of WLContainer, WLStorage that contain
         the provided path
+        """
+
+    @abc.abstractmethod
+    def container_find_by_id(self, container_id: str) -> Tuple[WildlandResult, Optional[Container]]:
+        """
+        Find container by id.
+        :param container_id: id of the container to be found (user_id:/.uuid/container_uuid)
+        :return: tuple of WildlandResult and, if successful, the WLContainer
         """
 
     # STORAGES
